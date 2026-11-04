@@ -1,0 +1,50 @@
+# Environment files (keep templates)
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+next-env.d.ts
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Flutter / Dart generated files
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+**/android/local.properties
+**/android/.gradle/
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Flutter/.last_build_id
+
+# Editors and OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Secrets and certificates
+*.pem
+*.key
+
+# Sensitive debugging information
+*.hprof
+context/current-issues.md

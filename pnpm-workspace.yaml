@@ -1,0 +1,10 @@
+# TypeScript workspace: web, backend, and shared packages.
+# apps/mobile (Flutter) is intentionally excluded and managed with pub.
+packages:
+  - apps/api
+  - apps/web
+  - packages/*
+
+# Dependencies allowed to run install scripts (pnpm blocks them by default).
+onlyBuiltDependencies:
+  - esbuild
