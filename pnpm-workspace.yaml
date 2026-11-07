@@ -8,3 +8,5 @@ packages:
 # Dependencies allowed to run install scripts (pnpm blocks them by default).
 onlyBuiltDependencies:
   - esbuild
+  - "@prisma/engines"
+  - prisma

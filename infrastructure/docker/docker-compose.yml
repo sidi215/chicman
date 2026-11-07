@@ -71,6 +71,37 @@ services:
     volumes:
       - object-storage-data:/data
 
+  # Background jobs (apps/api/src/workers/): phone-change history retention,
+  # once at start and then every 24 hours (spec 04). One instance only: the
+  # fixed container_name makes `--scale worker=2` fail, and a PostgreSQL
+  # advisory lock makes any other worker process (for example a host-run
+  # `pnpm worker`) skip its runs. Logs: `docker compose ... logs -t worker`.
+  worker:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    image: chicman-api:dev
+    container_name: chicman-worker
+    command: ["pnpm", "--filter", "@chicman/api", "worker"]
+    init: true
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      TZ: UTC
+      # The development database of the `postgres` service above, on the Compose network.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chicman}:${POSTGRES_PASSWORD:-chicman}@postgres:5432/${POSTGRES_DB:-chicman}
+    depends_on:
+      postgres:
+        condition: service_healthy
+        restart: true
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 volumes:
   postgres-data:
   redis-data:

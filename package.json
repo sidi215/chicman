@@ -2,7 +2,7 @@
   "name": "chicman",
   "version": "0.1.0",
   "private": true,
-  "description": "Chicman marketplace monorepo (pnpm workspace for web, API, and shared TypeScript packages)",
+  "description": "Chicman marketplace monorepo (pnpm workspace for web, API, shared TypeScript packages, and design tokens)",
   "packageManager": "pnpm@10.27.0",
   "engines": {
     "node": ">=22",
@@ -11,8 +11,11 @@
   "scripts": {
     "build": "pnpm -r build",
     "build:shared": "pnpm --filter @chicman/shared build",
+    "tokens": "pnpm --filter @chicman/design-tokens generate",
+    "tokens:check": "pnpm --filter @chicman/design-tokens check",
     "typecheck": "pnpm build:shared && pnpm -r typecheck",
     "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
     "dev:api": "pnpm build:shared && pnpm --filter @chicman/api dev",
     "dev:web": "pnpm build:shared && pnpm --filter @chicman/web dev"
   }

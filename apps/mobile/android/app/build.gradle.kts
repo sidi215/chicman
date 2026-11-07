@@ -1,8 +1,26 @@
+import java.net.URI
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Host of the verified App Links for `<SITE_URL>/auth/callback` (spec 03).
+// Taken from `-Pchicman.appLinkHost=<host>`, else from the SITE_URL
+// `--dart-define`. The fallback never verifies, so no domain is hardcoded.
+val dartDefines: Map<String, String> =
+    (project.findProperty("dart-defines") as String?)
+        ?.split(",")
+        ?.mapNotNull { encoded -> runCatching { String(Base64.getDecoder().decode(encoded)) }.getOrNull() }
+        ?.mapNotNull { entry -> entry.split("=", limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }
+        ?.toMap()
+        ?: emptyMap()
+val appLinkHost: String =
+    (project.findProperty("chicman.appLinkHost") as String?)
+        ?: dartDefines["SITE_URL"]?.let { runCatching { URI(it).host }.getOrNull() }
+        ?: "app-links.invalid"
 
 android {
     namespace = "com.chicman.chicman"
@@ -23,6 +41,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appLinkHost"] = appLinkHost
     }
 
     buildTypes {

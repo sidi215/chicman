@@ -1,0 +1,20 @@
+{
+  "name": "@chicman/design-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Single source of truth for Chicman design tokens; generates the web (CSS) and Flutter (Dart) theme definitions",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "generate": "tsx src/generate.ts",
+    "check": "tsx src/generate.ts --check",
+    "typecheck": "tsc --noEmit && tsx src/generate.ts --check"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

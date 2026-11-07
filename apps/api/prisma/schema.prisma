@@ -1,0 +1,113 @@
+// Chicman marketplace — PostgreSQL schema (Prisma ORM).
+// Timestamps are stored in UTC (`timestamptz`).
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  runtime             = "nodejs"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Application roles (feature 03). Roles are granted only by server-side
+// operations and are never read from token claims or client input.
+enum Role {
+  CUSTOMER
+  SELLER
+  ADMIN
+}
+
+// Authoritative shop approval state (architecture.md, Auth and Access Model).
+enum ShopStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+// Application user, linked to the Supabase Auth identity by the verified
+// token `sub`. Created by the account bootstrap (feature 04).
+model User {
+  id               String                @id @default(uuid()) @db.Uuid
+  supabaseUserId   String                @unique @db.Uuid
+  createdAt        DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime              @updatedAt @db.Timestamptz(3)
+  roles            UserRole[]
+  shop             Shop?
+  customerProfile  CustomerProfile?
+  // Phone changes this user made (always their own in the initial release).
+  phoneChangesMade CustomerPhoneChange[] @relation("PhoneChangeActor")
+}
+
+// A user holds a set of roles (for example CUSTOMER and SELLER).
+model UserRole {
+  userId    String   @db.Uuid
+  role      Role
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, role])
+}
+
+// Shop ownership and approval status — the minimum needed by the seller
+// authorization check (`requireApprovedSeller`). Application fields, audit
+// records, and the approval workflow are added by feature 06.
+model Shop {
+  id          String     @id @default(uuid()) @db.Uuid
+  // One shop per user (initial release), enforced by the database.
+  ownerUserId String     @unique @db.Uuid
+  status      ShopStatus @default(PENDING)
+  createdAt   DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime   @updatedAt @db.Timestamptz(3)
+  owner       User       @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
+}
+
+// Supported interface languages (feature 04).
+enum Locale {
+  fr
+  ar
+}
+
+// How a customer phone number was set (feature 04, Phone Change History).
+enum CustomerPhoneChangeType {
+  ACCOUNT_SETUP
+  CUSTOMER_UPDATE
+}
+
+// Customer profile (feature 04). Exactly one per bootstrapped user, created
+// together with the User in the bootstrap transaction. `phone` is required,
+// unverified contact information (E.164); it is not an authentication
+// identity and has no verification state.
+model CustomerProfile {
+  id              String                @id @default(uuid()) @db.Uuid
+  userId          String                @unique @db.Uuid
+  fullName        String?               @db.VarChar(100)
+  preferredLocale Locale                @default(fr)
+  phone           String                @db.VarChar(16)
+  createdAt       DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime              @updatedAt @db.Timestamptz(3)
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  phoneChanges    CustomerPhoneChange[]
+}
+
+// Private, append-only history of customer phone changes (feature 04).
+// Written in the same transaction as the phone write; deleted only by the
+// 12-month retention job. Never returned by any API.
+model CustomerPhoneChange {
+  id                String                  @id @default(uuid()) @db.Uuid
+  customerProfileId String                  @db.Uuid
+  actorUserId       String                  @db.Uuid
+  changeType        CustomerPhoneChangeType
+  previousPhone     String?                 @db.VarChar(16)
+  newPhone          String                  @db.VarChar(16)
+  createdAt         DateTime                @default(now()) @db.Timestamptz(3)
+  customerProfile   CustomerProfile         @relation(fields: [customerProfileId], references: [id], onDelete: Restrict)
+  actor             User                    @relation("PhoneChangeActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([customerProfileId, createdAt])
+  @@index([createdAt])
+}

@@ -1,0 +1,24 @@
+# Build context for apps/api/Dockerfile (repository root).
+# Secrets never enter an image: every env file is excluded.
+**/.env
+**/.env.*
+!**/.env.example
+
+**/node_modules
+**/dist
+**/.next
+**/coverage
+**/*.log
+**/*.tsbuildinfo
+apps/api/src/generated
+
+.git
+.mcp.json
+**/.claude
+**/.agents
+**/.windsurf
+apps/mobile
+apps/web
+context
+docs
+infrastructure

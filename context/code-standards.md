@@ -26,7 +26,7 @@
 
 ## Styling
 - Follow the project's design system across web and mobile.
-- Use shared design tokens for colors, typography, spacing, and border radius.
+- Use shared design tokens for colors, typography, spacing, and border radius. Define or change values only in `packages/design-tokens/src/tokens.ts`, then run `pnpm tokens`. Never edit `*.generated.*` / `*.g.dart` files or duplicate token values in app code.
 - Use Tailwind CSS and shadcn/ui for the web application.
 - Use Flutter themes and Material 3 components for the mobile application.
 - Avoid hardcoded colors and inconsistent styles.
@@ -42,9 +42,20 @@
 - Check user roles and resource ownership before allowing access.
 - Handle errors through centralized error middleware.
 
+## Testing
+- API: `node:test` run with `tsx`, in `apps/api/test/`. Tests that need PostgreSQL use `TEST_DATABASE_URL` (a separate database) and are skipped without it. Auth tests use a local JWKS server and test key pairs, never a real Supabase project. Rate-limit integration tests also need `REDIS_URL` and use their own Redis key prefix. Never print secrets, tokens, or connection URLs in test output.
+- Web: `node:test` for logic kept outside components (`*.test.ts`).
+- Mobile: `flutter test`, with fake repositories and `http`'s `MockClient` for API calls.
+- Never run `dart format` over generated files (`*.g.dart`); restore them with `pnpm tokens`.
+
+## Logging and Errors
+- Error responses carry only a stable error code (`{ "error": { "code": "…" } }`), never messages, stack traces, or database details.
+- Log error types, codes, and stack frames, never error messages that can quote data, request bodies, headers, tokens, credentials, connection URLs, or personal data.
+- Do not swallow failures silently: a degraded path (fallback, `503`) logs its reason.
+
 ## Data and Storage
 - Use PostgreSQL as the primary database.
-- Use Prisma for database access and migrations.
+- Use Prisma for database access and migrations. The Prisma Client is generated into `apps/api/src/generated/` and is not committed.
 - Use Supabase Auth for user authentication.
 - Use S3-compatible storage for product images and uploaded files.
 - Use Redis for caching and background jobs.
@@ -66,7 +77,8 @@ project/
 │   └── api/                 # Node.js + Express backend
 │
 ├── packages/
-│   |── shared/              # Shared types and utilities
+│   ├── shared/              # Shared types and utilities
+│   └── design-tokens/       # Design token source + platform generators
 │
 ├── infrastructure/          # Docker and deployment configuration
 │

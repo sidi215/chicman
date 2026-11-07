@@ -21,7 +21,7 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 2. Customer browses fashion categories and searches for products.
 3. Customer views product details, prices, images, and seller information.
 4. Customer adds products from one or multiple shops to the shopping cart.
-5. Customer registers using a phone number, verifies it through OTP, and creates a password.
+5. Customer signs up with an email address and a password (no phone on the sign-up form), confirms the email address through the confirmation link (on any device), then completes account setup by entering a phone number (contact information).
 6. Customer provides a delivery location using GPS detection or manual entry and confirms the location.
 7. Customer reviews their cart, selects a delivery address, and places an order.
 8. The marketplace creates separate seller orders under the customer's overall order.
@@ -56,10 +56,11 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 
 ### Customer Management
 
-- Customer registration using phone number and password.
-- OTP verification during registration.
-- Customer login and account management.
-- Password recovery.
+- Customer registration using email and password, with a required phone number entered during account setup as contact information (not verified in the initial release; editable in the profile).
+- Mandatory email confirmation during registration.
+- Customer login with email and password, and account management. Sign-in email changes are not supported in the first release.
+- Password recovery by email.
+- Bot protection (Cloudflare Turnstile CAPTCHA) on registration, login, and password recovery.
 - Customer profile management.
 - Delivery location detection through GPS.
 - Manual delivery location entry when GPS is unavailable or permission is denied.
@@ -131,7 +132,7 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 
 ### Notifications
 
-- OTP verification messages.
+- Account emails: email confirmation and password recovery (sent by Supabase Auth).
 - Order confirmation notifications.
 - Seller acceptance and rejection notifications.
 - Order status updates.
@@ -158,7 +159,7 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 - Web application built with Next.js.
 - Mobile applications built with Flutter.
 - Shared backend using Node.js and Express.
-- Supabase Auth for authentication and OTP verification.
+- Supabase Auth for email + password authentication, email confirmation, and password recovery.
 - PostgreSQL as the primary database.
 - S3-compatible object storage for product images and media.
 - Meilisearch for product search.
@@ -185,10 +186,11 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 - Loyalty programs and subscription services.
 - Advanced marketing automation.
 - Native desktop applications.
+- Phone-number authentication, phone OTP verification, and SMS delivery in the initial version (phone verification may be added later).
 
 ## Success Criteria
 
-1. Customers can register using their phone number, verify it through OTP, and access their accounts.
+1. Customers can register using their email address and password, confirm their email, and access their accounts. Their phone number is collected as contact information.
 2. Customers can browse products without registering but must authenticate before placing orders.
 3. Customers can discover and purchase clothing, shoes, and fashion accessories.
 4. Customers can add products from multiple shops to one cart and complete a single checkout.

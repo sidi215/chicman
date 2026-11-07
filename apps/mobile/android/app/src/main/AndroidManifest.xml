@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Supabase Auth and the Chicman API (release builds; debug adds it automatically). -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="chicman"
         android:name="${applicationName}"
@@ -23,6 +25,17 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Links are handled by the app (app_links), not Flutter's router. -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
+            <!-- Android App Links for email confirmation and recovery (spec 03).
+                 The host comes from SITE_URL (see app/build.gradle.kts) and is
+                 verified with https://<host>/.well-known/assetlinks.json. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="${appLinkHost}" android:pathPrefix="/auth/callback" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
