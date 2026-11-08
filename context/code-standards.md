@@ -43,7 +43,7 @@
 - Handle errors through centralized error middleware.
 
 ## Testing
-- API: `node:test` run with `tsx`, in `apps/api/test/`. Tests that need PostgreSQL use `TEST_DATABASE_URL` (a separate database) and are skipped without it. Auth tests use a local JWKS server and test key pairs, never a real Supabase project. Rate-limit integration tests also need `REDIS_URL` and use their own Redis key prefix. Never print secrets, tokens, or connection URLs in test output.
+- API: `node:test` run with `tsx`, in `apps/api/test/`. Tests that need PostgreSQL use `TEST_DATABASE_URL` (a separate database) and are skipped without it. Auth tests use a local JWKS server and test key pairs, never a real Supabase project. Rate-limit integration tests also need `REDIS_URL` and use their own Redis key prefix. Object-storage integration tests need `TEST_S3_ENDPOINT` (with `TEST_S3_ACCESS_KEY_ID` and `TEST_S3_SECRET_ACCESS_KEY`), create and delete their own buckets, and are skipped without it; other storage tests use an in-memory fake with failure injection. Never print secrets, tokens, or connection URLs in test output.
 - Web: `node:test` for logic kept outside components (`*.test.ts`).
 - Mobile: `flutter test`, with fake repositories and `http`'s `MockClient` for API calls.
 - Never run `dart format` over generated files (`*.g.dart`); restore them with `pnpm tokens`.

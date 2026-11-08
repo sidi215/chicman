@@ -8,13 +8,15 @@ import 'package:chicman/features/auth/domain/email_link.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-/// In-memory [AuthRepository] recording calls (never tokens).
+/// In-memory [AuthRepository] recording calls. [captchaTokens] holds the fake
+/// CAPTCHA tokens of the tests, to prove what each request carried.
 class FakeAuthRepository implements AuthRepository {
   FakeAuthRepository({AuthSession? restored}) : _session = restored;
 
   AuthSession? _session;
   final _changes = StreamController<AuthSession?>.broadcast();
   final calls = <String>[];
+  final captchaTokens = <String?>[];
   AuthFailure? signInFailure;
   AuthFailure? registerFailure;
   AuthFailure? verifyFailure;
@@ -41,6 +43,7 @@ class FakeAuthRepository implements AuthRepository {
     String? captchaToken,
   }) async {
     calls.add('register $email');
+    captchaTokens.add(captchaToken);
     return registerFailure;
   }
 
@@ -60,6 +63,7 @@ class FakeAuthRepository implements AuthRepository {
     String? captchaToken,
   }) async {
     calls.add('signIn $email');
+    captchaTokens.add(captchaToken);
     if (signInFailure != null) return signInFailure;
     _setSession(AuthSession(userId: 'u1', email: email));
     return null;
@@ -71,6 +75,7 @@ class FakeAuthRepository implements AuthRepository {
     String? captchaToken,
   }) async {
     calls.add('reset $email');
+    captchaTokens.add(captchaToken);
     return null;
   }
 

@@ -72,7 +72,8 @@ services:
       - object-storage-data:/data
 
   # Background jobs (apps/api/src/workers/): phone-change history retention,
-  # once at start and then every 24 hours (spec 04). One instance only: the
+  # once at start and then every 24 hours (spec 04), and the shop logo
+  # cleanup and reconciliation job every 5 minutes (spec 06). One instance only: the
   # fixed container_name makes `--scale worker=2` fail, and a PostgreSQL
   # advisory lock makes any other worker process (for example a host-run
   # `pnpm worker`) skip its runs. Logs: `docker compose ... logs -t worker`.
@@ -90,10 +91,21 @@ services:
       TZ: UTC
       # The development database of the `postgres` service above, on the Compose network.
       DATABASE_URL: postgresql://${POSTGRES_USER:-chicman}:${POSTGRES_PASSWORD:-chicman}@postgres:5432/${POSTGRES_DB:-chicman}
+      # Object storage of the `object-storage` service, for the logo cleanup job.
+      S3_ENDPOINT: http://object-storage:8333
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-chicman}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-chicman-dev-secret}
+      S3_UPLOADS_BUCKET: ${S3_UPLOADS_BUCKET:-chicman-uploads}
+      S3_MEDIA_BUCKET: ${S3_MEDIA_BUCKET:-chicman-media}
+      # Must equal the API's MEDIA_PUBLIC_BASE_URL (the job matches Shop.logoUrl against it).
+      MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-http://localhost:8333/chicman-media}
     depends_on:
       postgres:
         condition: service_healthy
         restart: true
+      object-storage:
+        condition: service_started
     stop_signal: SIGTERM
     stop_grace_period: 30s
     logging:

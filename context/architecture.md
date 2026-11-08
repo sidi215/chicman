@@ -18,7 +18,7 @@
 | Search Engine | Meilisearch | Product search, filtering, and indexing |
 | Cache / Queue | Redis | Caching, background jobs, and asynchronous processing |
 | Notifications | Application notification service; account emails sent by Supabase Auth (Resend through Supabase custom SMTP in production; Inbucket locally) | Customer and seller notifications; email confirmation and password recovery messages. No SMS provider at initial launch (an SMS channel, for example for future phone verification, may be added later). |
-| Maps | MapLibre + OpenStreetMap | GPS location visualization and delivery location selection |
+| Maps | MapLibre + OpenStreetMap (OpenFreeMap vector tiles, configurable style URL) | GPS location visualization and delivery location selection (`maplibre-gl` on the web, `maplibre_gl` on Flutter) |
 | Package Management | pnpm Workspaces (root) | Shared TypeScript packages between web and backend, plus the design-token generator; Flutter is managed independently with pub |
 | Containerization | Docker | Consistent development and deployment environments |
 | CI/CD | GitHub Actions | Automated testing and deployment |
@@ -28,7 +28,7 @@
 
 - `apps/web/` — Next.js application responsible for the customer storefront, seller dashboard, and administrator dashboard.
 
-- `apps/mobile/` — Flutter application responsible for mobile customer and seller experiences.
+- `apps/mobile/` — Flutter application responsible for mobile customer and seller experiences. Seller product management on mobile is a future feature that reuses the existing `/api/v1/sellers/me/products` routes.
 
 - `apps/api/` — Node.js + Express backend responsible for REST endpoints, request validation, authentication verification, authorization, and marketplace business logic.
 
@@ -38,19 +38,21 @@
 
 - `apps/api/src/modules/shops/` — Shop registration, shop profiles, business information, the `Shop.status` lifecycle, and the shop authorization rules (onboarding exceptions and `requireApprovedSeller`). Administrator decisions are exposed through `modules/admin/`.
 
-- `apps/api/src/modules/products/` — Product catalog, categories, product variants, images, prices, and product availability.
+- `apps/api/src/modules/products/` — Product catalog, categories, product variants, images, prices, and product availability. Seller routes live under `/api/v1/sellers/me/products` (`requireApprovedSeller`). `PUBLIC_PRODUCT_WHERE` is the single definition of a publicly visible product (`feature-specs/07-product-management.md`). Archiving is reversible: restoring returns a product to `DRAFT` and never publishes it.
 
-- `apps/api/src/modules/inventory/` — Stock management, inventory updates, and product availability validation.
+- `apps/api/src/modules/media/` — Server-side image normalization shared by shop logos and product images: signature check, header pixel limit, orientation, resizing, re-encoding without metadata, and one process-wide processing limit. Each feature supplies its own limits and error codes.
+
+- `apps/api/src/modules/inventory/` — Stock management, inventory updates, and product availability validation. Seller stock updates are compare-and-set under the product row lock (spec 07). Availability has one definition here, derived from current stock and separate from publication visibility. Checkout reservation is not built yet.
 
 - `apps/api/src/modules/cart/` — Shopping cart operations, cart items, and guest-to-authenticated cart merging.
 
-- `apps/api/src/modules/addresses/` — Customer delivery addresses, GPS coordinates, location confirmation, and address management.
+- `apps/api/src/modules/addresses/` — Customer delivery addresses, GPS coordinates, location confirmation, and address management. Addresses belong to the authenticated user, always have a confirmed map location inside Mauritania, and are limited to 10 per customer with one default (`feature-specs/05-address-management.md`). Orders must store a snapshot of the delivery address.
 
 - `apps/api/src/modules/orders/` — Customer orders, seller-specific orders, order lifecycle, acceptance, rejection, and cancellation.
 
 - `apps/api/src/modules/delivery/` — Seller-managed delivery operations, delivery fees, delivery status, and failed delivery handling.
 
-- `apps/api/src/modules/notifications/` — Notification creation, delivery, and notification history.
+- `apps/api/src/modules/notifications/` — Notification creation, delivery, and notification history. Today it records `Notification` rows (allowlisted payloads) inside the transaction of the event that triggers them (shop decisions, spec 06); delivery channels and a read API are not built yet.
 
 - `apps/api/src/modules/reviews/` — Product reviews and ratings.
 
@@ -58,7 +60,7 @@
 
 - `apps/api/src/modules/admin/` — Administrative operations, seller approvals, marketplace monitoring, and platform management.
 
-- `apps/api/src/workers/` — Background processing for notifications, search indexing, and asynchronous tasks.
+- `apps/api/src/workers/` — Background processing for notifications, search indexing, and asynchronous tasks. Current jobs: phone-change history retention (every 24 h), shop logo cleanup and reconciliation (every 5 min), and product image cleanup and reconciliation (every 5 min), each behind its own PostgreSQL advisory lock.
 
 - `packages/shared/` — Shared API contracts, validation schemas, enums, and common business definitions where compatible with both web and backend TypeScript applications. Application code only: no visual design tokens.
 
@@ -72,7 +74,7 @@
 
 - **Supabase Auth**: Stores and manages authentication identities (email), email-confirmation status, credentials (passwords are never stored in PostgreSQL), and authentication sessions, and sends confirmation and recovery emails. Application profiles (including the customer's unverified contact phone) and marketplace permissions remain managed by the backend.
 
-- **S3-Compatible Object Storage**: Stores product images, shop logos, banners, and other uploaded media. PostgreSQL stores file references and metadata rather than binary image contents. Local development uses SeaweedFS (Docker Compose); production uses Cloudflare R2. The backend talks to both only through the S3-compatible API, so the provider is selected by configuration (endpoint, bucket, credentials), never by provider-specific code. Client uploads go directly to storage with short-lived presigned PUT URLs into a **private staging bucket**. The backend verifies each object's real content before copying it to the **public media bucket** and saving its URL; unverified uploads are never publicly served (shop logos: `feature-specs/06-shop-management.md`).
+- **S3-Compatible Object Storage**: Stores product images, shop logos, banners, and other uploaded media. PostgreSQL stores file references and metadata rather than binary image contents. Local development uses SeaweedFS (Docker Compose); production uses Cloudflare R2. The backend talks to both only through the S3-compatible API, so the provider is selected by configuration (endpoint, bucket, credentials), never by provider-specific code. Client uploads go directly to storage with short-lived presigned PUT URLs into a **private staging bucket**. The backend verifies each object's real content and normalizes it (a resized re-encode without metadata) before writing the result to the **public media bucket** and saving its reference; the uploaded file and unverified content are never publicly served (`feature-specs/06-shop-management.md`, `feature-specs/07-product-management.md`). Buckets are prepared with `pnpm --filter @chicman/api storage:setup`; the media bucket is made public with the `public-read` ACL on SeaweedFS and through the dashboard on R2 (which has no ACLs). The staging bucket is never public.
 
 - **Redis**: Stores temporary cache data, session-related temporary data when needed, queue data, rate-limit counters, and background job state.
 
@@ -111,7 +113,7 @@
   - `REJECTED`: application rejected; the owner may correct and resubmit it (→ `PENDING`).
   - `SUSPENDED`: a previously approved shop suspended by an administrator; it keeps no operational access. An administrator may reinstate it (→ `APPROVED`).
 
-  Allowed transitions: `PENDING` → `APPROVED` / `REJECTED` (admin), `REJECTED` → `PENDING` (owner), `APPROVED` → `SUSPENDED` (admin), `SUSPENDED` → `APPROVED` (admin). Any other transition is rejected server-side. Only administrators approve, reject, suspend, or reinstate. Client-provided status values are never trusted.
+  Allowed transitions: `PENDING` → `APPROVED` / `REJECTED` (admin), `REJECTED` → `PENDING` (owner), `APPROVED` → `SUSPENDED` (admin), `SUSPENDED` → `APPROVED` (admin). Any other transition is rejected server-side. Only administrators approve, reject, suspend, or reinstate. An administrator cannot perform administrative decisions on a shop they own, even when their account has the ADMIN role. (Checked server-side inside each decision transaction; the same applies to change-request decisions and to the shop's administrative history.) Client-provided status values are never trusted.
 - **Becoming a seller (`SELLER` role transitions):** any bootstrapped user may create a shop (apply) without holding `SELLER`. Applying does not grant it.
   - **Initial approval** (`PENDING` → `APPROVED`, including approval of a resubmitted application): grants `SELLER` if not already held, in the same transaction as the status change and the recorded decision. The shop becomes eligible for normal seller operations.
   - **Resubmission** (`REJECTED` → `PENDING`, by the owner): no role change. It never grants `SELLER`; only a later approval does.

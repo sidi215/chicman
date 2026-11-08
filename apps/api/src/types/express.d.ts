@@ -13,6 +13,8 @@ declare global {
       appUser?: AppUser | null;
       /** Set by `requireApprovedSeller`: the user's own approved shop. */
       sellerShop?: OwnedShop;
+      /** Set by `requireOwnedShop`: the user's own shop, in any status. */
+      ownedShop?: OwnedShop;
     }
   }
 }

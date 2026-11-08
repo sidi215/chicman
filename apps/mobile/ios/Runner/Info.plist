@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Chicman utilise votre position uniquement pour placer votre adresse de livraison sur la carte.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Chicman utilise vos photos uniquement pour choisir le logo de votre boutique.</string>
 	<!-- Links are handled by the app (app_links), not Flutter's router. -->
 	<key>FlutterDeepLinkingEnabled</key>
 	<false/>

@@ -7,9 +7,15 @@ export interface WorkerLock {
   release(): Promise<void>;
 }
 
-export interface RetentionScheduleOptions {
-  /** Deletes expired rows and returns how many were deleted. */
-  purge: () => Promise<number>;
+export interface RetentionScheduleOptions<T = number> {
+  /** Runs the job: by default deletes expired rows and returns how many were deleted. */
+  purge: () => Promise<T>;
+  /** Job name used in log lines (default `phone-change retention`). */
+  name?: string;
+  /** Lock name used in log lines (default `retention`). */
+  lockName?: string;
+  /** Describes a successful run's result (default: phone-history wording). */
+  summarize?: (result: T) => string;
   lock: WorkerLock;
   log: (line: string) => void;
   /** Logs a failure. Receives the error so the caller can redact it. */
@@ -34,8 +40,11 @@ export interface RetentionSchedule {
  * is still in progress is skipped. A process that does not hold the lock
  * skips its runs, so two workers never purge at the same time.
  */
-export function createRetentionSchedule(options: RetentionScheduleOptions): RetentionSchedule {
+export function createRetentionSchedule<T = number>(options: RetentionScheduleOptions<T>): RetentionSchedule {
   const intervalMs = options.intervalMs ?? RETENTION_INTERVAL_MS;
+  const name = options.name ?? "phone-change retention";
+  const lockName = options.lockName ?? "retention";
+  const summarize = options.summarize ?? ((deleted: T) => `deleted ${String(deleted)} row(s) older than 12 months`);
   const now = options.now ?? (() => new Date());
   const schedule = options.setInterval ?? ((run, ms) => globalThis.setInterval(run, ms));
   const unschedule =
@@ -48,18 +57,16 @@ export function createRetentionSchedule(options: RetentionScheduleOptions): Rete
 
   async function runOnce(): Promise<void> {
     runNumber += 1;
-    const label = `phone-change retention run #${runNumber}`;
+    const label = `${name} run #${runNumber}`;
     const startedAt = now();
     try {
       if (!(await options.lock.tryAcquire())) {
-        options.log(`${label} skipped at ${startedAt.toISOString()}: another worker instance holds the retention lock`);
+        options.log(`${label} skipped at ${startedAt.toISOString()}: another worker instance holds the ${lockName} lock`);
         return;
       }
-      const deleted = await options.purge();
+      const result = await options.purge();
       const next = new Date(startedAt.getTime() + intervalMs);
-      options.log(
-        `${label} succeeded at ${startedAt.toISOString()}: deleted ${deleted} row(s) older than 12 months; next run at ${next.toISOString()}`,
-      );
+      options.log(`${label} succeeded at ${startedAt.toISOString()}: ${summarize(result)}; next run at ${next.toISOString()}`);
     } catch (error) {
       options.logError(`${label} failed at ${startedAt.toISOString()}`, error);
     }
@@ -68,7 +75,7 @@ export function createRetentionSchedule(options: RetentionScheduleOptions): Rete
   function trigger(): Promise<void> {
     if (stopped) return Promise.resolve();
     if (running) {
-      options.log("phone-change retention tick skipped: the previous run is still in progress");
+      options.log(`${name} tick skipped: the previous run is still in progress`);
       return running;
     }
     running = runOnce().finally(() => {

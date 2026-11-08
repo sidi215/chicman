@@ -32,15 +32,22 @@ enum ShopStatus {
 // Application user, linked to the Supabase Auth identity by the verified
 // token `sub`. Created by the account bootstrap (feature 04).
 model User {
-  id               String                @id @default(uuid()) @db.Uuid
-  supabaseUserId   String                @unique @db.Uuid
-  createdAt        DateTime              @default(now()) @db.Timestamptz(3)
-  updatedAt        DateTime              @updatedAt @db.Timestamptz(3)
-  roles            UserRole[]
-  shop             Shop?
-  customerProfile  CustomerProfile?
+  id                        String                 @id @default(uuid()) @db.Uuid
+  supabaseUserId            String                 @unique @db.Uuid
+  createdAt                 DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                 DateTime               @updatedAt @db.Timestamptz(3)
+  roles                     UserRole[]
+  shop                      Shop?
+  customerProfile           CustomerProfile?
   // Phone changes this user made (always their own in the initial release).
-  phoneChangesMade CustomerPhoneChange[] @relation("PhoneChangeActor")
+  phoneChangesMade          CustomerPhoneChange[]  @relation("PhoneChangeActor")
+  // Shop audit records this user is the actor of (feature 06).
+  shopStatusEvents          ShopStatusEvent[]
+  shopFieldChanges          ShopFieldChangeEvent[]
+  shopChangeRequestsMade    ShopChangeRequest[]    @relation("ChangeRequestSubmitter")
+  shopChangeRequestsDecided ShopChangeRequest[]    @relation("ChangeRequestDecider")
+  notifications             Notification[]
+  customerAddresses         CustomerAddress[]
 }
 
 // A user holds a set of roles (for example CUSTOMER and SELLER).
@@ -53,17 +60,206 @@ model UserRole {
   @@id([userId, role])
 }
 
-// Shop ownership and approval status — the minimum needed by the seller
-// authorization check (`requireApprovedSeller`). Application fields, audit
-// records, and the approval workflow are added by feature 06.
+// A shop and its application (features 03 and 06). One per user
+// (`ownerUserId` is unique). `status` is the authoritative approval state.
+// Application fields are plain text (NFC, trimmed) validated by the API;
+// phones are E.164 business contacts, separate from the customer phone.
 model Shop {
-  id          String     @id @default(uuid()) @db.Uuid
+  id             String                 @id @default(uuid()) @db.Uuid
   // One shop per user (initial release), enforced by the database.
-  ownerUserId String     @unique @db.Uuid
-  status      ShopStatus @default(PENDING)
-  createdAt   DateTime   @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime   @updatedAt @db.Timestamptz(3)
-  owner       User       @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
+  ownerUserId    String                 @unique @db.Uuid
+  status         ShopStatus             @default(PENDING)
+  shopName       String                 @db.VarChar(100)
+  description    String                 @db.VarChar(2000)
+  contactPhone   String                 @db.VarChar(16)
+  city           String                 @db.VarChar(100)
+  address        String                 @db.VarChar(300)
+  whatsappPhone  String?                @db.VarChar(16)
+  // Public media URL of the shop's ACTIVE ShopLogoObject; set only by the
+  // verified logo upload flow (or cleared by the owner).
+  logoUrl        String?                @db.VarChar(2048)
+  createdAt      DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime               @updatedAt @db.Timestamptz(3)
+  owner          User                   @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
+  statusEvents   ShopStatusEvent[]
+  fieldChanges   ShopFieldChangeEvent[]
+  changeRequests ShopChangeRequest[]
+  logoUploads    ShopLogoUpload[]
+  logoObjects    ShopLogoObject[]
+  products       Product[]
+}
+
+// Which administrative decision produced a shop status (feature 06). Not a status.
+enum ShopDecisionType {
+  APPLICATION_APPROVED
+  APPLICATION_REJECTED
+  SUSPENDED
+  REINSTATED
+}
+
+// Append-only audit of every shop status change (feature 06), written in
+// the transaction that changes the status. Owner actions (creation,
+// resubmission) have no decision type and no reasons.
+model ShopStatusEvent {
+  id              String            @id @default(uuid()) @db.Uuid
+  shopId          String            @db.Uuid
+  fromStatus      ShopStatus?
+  toStatus        ShopStatus
+  actorUserId     String            @db.Uuid
+  decisionType    ShopDecisionType?
+  // Internal only; required for every decision except application rejection.
+  internalReason  String?           @db.VarChar(500)
+  // Owner-visible; the single reason of an application rejection.
+  applicantReason String?           @db.VarChar(500)
+  internalNote    String?           @db.VarChar(1000)
+  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
+  shop            Shop              @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  actor           User              @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([shopId, createdAt])
+}
+
+enum ShopChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// A proposed shopName/city change of an approved shop (feature 06). At most
+// one PENDING per shop (partial unique index in the migration). The decision
+// is recorded on the row, which is never deleted.
+model ShopChangeRequest {
+  id                String                  @id @default(uuid()) @db.Uuid
+  shopId            String                  @db.Uuid
+  proposedShopName  String?                 @db.VarChar(100)
+  proposedCity      String?                 @db.VarChar(100)
+  status            ShopChangeRequestStatus @default(PENDING)
+  submittedByUserId String                  @db.Uuid
+  submittedAt       DateTime                @default(now()) @db.Timestamptz(3)
+  decidedByUserId   String?                 @db.Uuid
+  decidedAt         DateTime?               @db.Timestamptz(3)
+  internalReason    String?                 @db.VarChar(500)
+  internalNote      String?                 @db.VarChar(1000)
+  shop              Shop                    @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  submittedBy       User                    @relation("ChangeRequestSubmitter", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  decidedBy         User?                   @relation("ChangeRequestDecider", fields: [decidedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([shopId, submittedAt])
+}
+
+enum ShopField {
+  shopName
+  description
+  contactPhone
+  city
+  address
+  whatsappPhone
+  logoUrl
+}
+
+enum ShopFieldChangeSource {
+  OWNER_UPDATE
+  CHANGE_REQUEST_APPROVED
+  LOGO_UPLOAD
+}
+
+// Append-only audit of application field changes (feature 06), one row per
+// changed field, written in the transaction that makes the change.
+model ShopFieldChangeEvent {
+  id          String                @id @default(uuid()) @db.Uuid
+  shopId      String                @db.Uuid
+  field       ShopField
+  oldValue    String?               @db.VarChar(2048)
+  newValue    String?               @db.VarChar(2048)
+  actorUserId String                @db.Uuid
+  source      ShopFieldChangeSource
+  createdAt   DateTime              @default(now()) @db.Timestamptz(3)
+  shop        Shop                  @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  actor       User                  @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([shopId, createdAt])
+}
+
+enum ShopLogoUploadStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  REJECTED
+  EXPIRED
+}
+
+// One presigned logo upload request (feature 06, Shop logo upload). The staged
+// original is private and may be up to 15 MB.
+model ShopLogoUpload {
+  id                  String               @id @db.Uuid
+  shopId              String               @db.Uuid
+  stagingKey          String               @unique @db.VarChar(512)
+  declaredContentType String               @db.VarChar(32)
+  declaredSize        Int
+  status              ShopLogoUploadStatus @default(PENDING)
+  attempt             Int                  @default(0)
+  leaseExpiresAt      DateTime?            @db.Timestamptz(3)
+  expiresAt           DateTime             @db.Timestamptz(3)
+  completeBy          DateTime             @db.Timestamptz(3)
+  rejectionCode       String?              @db.VarChar(64)
+  lastErrorCode       String?              @db.VarChar(64)
+  resultObjectId      String?              @unique @db.Uuid
+  completedAt         DateTime?            @db.Timestamptz(3)
+  stagingDeletedAt    DateTime?            @db.Timestamptz(3)
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
+  shop                Shop                 @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  resultObject        ShopLogoObject?      @relation("UploadResult", fields: [resultObjectId], references: [id], onDelete: Restrict)
+  objects             ShopLogoObject[]     @relation("UploadObjects")
+
+  @@index([shopId, createdAt])
+  @@index([status, completeBy])
+}
+
+enum ShopLogoObjectStatus {
+  PENDING
+  ACTIVE
+  RELEASED
+  DELETED
+}
+
+// One normalized public media object written by the server (feature 06). Recorded
+// before the object is written, so every object can be reconciled. At most
+// one ACTIVE per shop (partial unique index in the migration).
+model ShopLogoObject {
+  id              String               @id @db.Uuid
+  shopId          String               @db.Uuid
+  uploadId        String               @db.Uuid
+  attempt         Int
+  objectKey       String               @unique @db.VarChar(512)
+  status          ShopLogoObjectStatus @default(PENDING)
+  deleteAttempts  Int                  @default(0)
+  lastDeleteError String?              @db.VarChar(64)
+  createdAt       DateTime             @default(now()) @db.Timestamptz(3)
+  releasedAt      DateTime?            @db.Timestamptz(3)
+  deletedAt       DateTime?            @db.Timestamptz(3)
+  shop            Shop                 @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  upload          ShopLogoUpload       @relation("UploadObjects", fields: [uploadId], references: [id], onDelete: Restrict)
+  resultOf        ShopLogoUpload?      @relation("UploadResult")
+
+  @@index([status, createdAt])
+}
+
+// Notification records (notifications module). Recorded in the transaction
+// that commits the event; `payload` is an allowlisted template payload, never
+// a copy of a decision record. Delivery channels belong to that module.
+model Notification {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  type        String    @db.VarChar(64)
+  payload     Json
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  deliveredAt DateTime? @db.Timestamptz(3)
+  readAt      DateTime? @db.Timestamptz(3)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([deliveredAt, createdAt])
 }
 
 // Supported interface languages (feature 04).
@@ -110,4 +306,158 @@ model CustomerPhoneChange {
 
   @@index([customerProfileId, createdAt])
   @@index([createdAt])
+}
+
+enum AddressLocationSource {
+  GPS
+  MANUAL
+}
+
+// Customer delivery address (feature 05). Owned by the authenticated user;
+// every address has a confirmed map location. At most one default per user
+// (partial unique index in the migration). Orders must snapshot addresses.
+model CustomerAddress {
+  id                  String                @id @default(uuid()) @db.Uuid
+  userId              String                @db.Uuid
+  label               String?               @db.VarChar(50)
+  city                String                @db.VarChar(100)
+  district            String                @db.VarChar(100)
+  landmark            String                @db.VarChar(300)
+  deliveryPhone       String?               @db.VarChar(16)
+  latitude            Decimal               @db.Decimal(9, 6)
+  longitude           Decimal               @db.Decimal(9, 6)
+  locationSource      AddressLocationSource
+  accuracyMeters      Int?
+  locationConfirmedAt DateTime              @db.Timestamptz(3)
+  isDefault           Boolean               @default(false)
+  createdAt           DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime              @updatedAt @db.Timestamptz(3)
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, updatedAt])
+}
+
+// The only supported categories (feature 07).
+enum ProductCategory {
+  CLOTHING
+  SHOES
+  FASHION_ACCESSORIES
+}
+
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+// A product of one shop (feature 07). Never deleted: archiving keeps the row.
+// `price` is in MRU. `stock` is used only while the product has no variants.
+model Product {
+  id          String               @id @default(uuid()) @db.Uuid
+  shopId      String               @db.Uuid
+  name        String               @db.VarChar(150)
+  description String               @db.VarChar(5000)
+  category    ProductCategory
+  brand       String?              @db.VarChar(100)
+  price       Decimal              @db.Decimal(12, 2)
+  stock       Int                  @default(0)
+  status      ProductStatus        @default(DRAFT)
+  publishedAt DateTime?            @db.Timestamptz(3)
+  archivedAt  DateTime?            @db.Timestamptz(3)
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime             @updatedAt @db.Timestamptz(3)
+  shop        Shop                 @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  variants    ProductVariant[]
+  images      ProductImage[]
+  uploads     ProductImageUpload[]
+
+  @@index([shopId, createdAt])
+  @@index([status, createdAt])
+}
+
+// A size and/or color of a product, with its own stock (feature 07). Unique
+// per product, ignoring case (expression index in the migration).
+model ProductVariant {
+  id        String   @id @default(uuid()) @db.Uuid
+  productId String   @db.Uuid
+  size      String?  @db.VarChar(30)
+  color     String?  @db.VarChar(50)
+  stock     Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([productId])
+}
+
+enum ProductImageUploadStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  REJECTED
+  EXPIRED
+}
+
+// One presigned product image upload request (feature 07), with the same
+// lease and fencing rules as ShopLogoUpload (feature 06). The staged original
+// is private and may be up to 15 MB.
+model ProductImageUpload {
+  id                  String                   @id @db.Uuid
+  productId           String                   @db.Uuid
+  stagingKey          String                   @unique @db.VarChar(512)
+  declaredContentType String                   @db.VarChar(32)
+  declaredSize        Int
+  status              ProductImageUploadStatus @default(PENDING)
+  attempt             Int                      @default(0)
+  leaseExpiresAt      DateTime?                @db.Timestamptz(3)
+  expiresAt           DateTime                 @db.Timestamptz(3)
+  completeBy          DateTime                 @db.Timestamptz(3)
+  rejectionCode       String?                  @db.VarChar(64)
+  lastErrorCode       String?                  @db.VarChar(64)
+  resultImageId       String?                  @unique @db.Uuid
+  completedAt         DateTime?                @db.Timestamptz(3)
+  stagingDeletedAt    DateTime?                @db.Timestamptz(3)
+  createdAt           DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime                 @updatedAt @db.Timestamptz(3)
+  product             Product                  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  resultImage         ProductImage?            @relation("UploadResult", fields: [resultImageId], references: [id], onDelete: Restrict)
+  images              ProductImage[]           @relation("UploadImages")
+
+  @@index([productId, createdAt])
+  @@index([status, completeBy])
+}
+
+enum ProductImageStatus {
+  PENDING
+  ACTIVE
+  RELEASED
+  DELETED
+}
+
+// Metadata of one normalized public media object written by the server (feature 07).
+// Recorded before the object is written, so every object can be reconciled.
+// Only the object key is stored; the public URL is derived from it.
+model ProductImage {
+  id              String              @id @db.Uuid
+  productId       String              @db.Uuid
+  uploadId        String              @db.Uuid
+  attempt         Int
+  objectKey       String              @unique @db.VarChar(512)
+  contentType     String              @db.VarChar(32)
+  sizeBytes       Int
+  width           Int
+  height          Int
+  position        Int                 @default(0)
+  status          ProductImageStatus  @default(PENDING)
+  deleteAttempts  Int                 @default(0)
+  lastDeleteError String?             @db.VarChar(64)
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+  releasedAt      DateTime?           @db.Timestamptz(3)
+  deletedAt       DateTime?           @db.Timestamptz(3)
+  product         Product             @relation(fields: [productId], references: [id], onDelete: Restrict)
+  upload          ProductImageUpload  @relation("UploadImages", fields: [uploadId], references: [id], onDelete: Restrict)
+  resultOf        ProductImageUpload? @relation("UploadResult")
+
+  @@index([productId, status])
+  @@index([status, createdAt])
 }

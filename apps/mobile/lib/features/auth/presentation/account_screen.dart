@@ -3,6 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../profile/presentation/profile_settings_screen.dart';
+import '../../addresses/application/address_providers.dart';
+import '../../addresses/domain/address.dart';
+import '../../addresses/presentation/address_messages.dart';
+import '../../addresses/presentation/address_screens.dart';
+import '../../shop/presentation/shop_screen.dart';
 import '../application/auth_providers.dart';
 import '../data/auth_repository.dart';
 import '../domain/account_setup.dart';
@@ -30,6 +35,7 @@ class AccountScreen extends ConsumerWidget {
           '${t.sessionActive} ${t.roles} : ${session.roles.join(', ')}',
         ),
         const _ContactPhone(),
+        const _DeliveryAddresses(),
       ],
       AsyncData(value: SessionNotBootstrapped()) => [const AccountSetupForm()],
       AsyncData(value: SessionUnavailable()) => [
@@ -103,6 +109,13 @@ class _ContactPhone extends ConsumerWidget {
           ),
           child: Text(t.profileSettings),
         ),
+        OutlinedButton(
+          key: const Key('account-shop'),
+          onPressed: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute<void>(builder: (_) => const ShopScreen())),
+          child: Text(t.myShop),
+        ),
       ],
     );
   }
@@ -147,6 +160,12 @@ class _AccountSetupFormState extends ConsumerState<AccountSetupForm> {
         case SetupDone():
           ref.invalidate(sessionCheckProvider);
           ref.invalidate(customerAccountProvider);
+          // Spec 05: offer the delivery location right after account setup (skippable).
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const AddressEditorScreen(onboarding: true),
+            ),
+          );
         case SetupInvalidPhone():
           _phoneError = AuthFailure.invalidPhone;
         case SetupEmailNotConfirmed():
@@ -202,6 +221,71 @@ class _AccountSetupFormState extends ConsumerState<AccountSetupForm> {
           child: Text(t.submitSetup),
         ),
         const SizedBox(height: AppSpacing.s2),
+      ],
+    );
+  }
+}
+
+/// Delivery addresses (spec 05): the list, and a prompt while the customer
+/// has none (until "Plus tard" on this device).
+class _DeliveryAddresses extends ConsumerWidget {
+  const _DeliveryAddresses();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = AddressMessages.of(context);
+    final list = ref.watch(addressListProvider).value;
+    final dismissed = ref.watch(addressPromptDismissedProvider);
+    final none =
+        list?.kind == AddressOutcomeKind.ok && (list?.data?.isEmpty ?? false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        OutlinedButton(
+          key: const Key('account-addresses'),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const AddressListScreen()),
+          ),
+          child: Text(t.myAddresses),
+        ),
+        if (none && !dismissed)
+          Card(
+            key: const Key('account-address-prompt'),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.s4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    t.promptTitle,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: AppSpacing.s1),
+                  Text(
+                    t.promptBody,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: AppSpacing.s3),
+                  FilledButton(
+                    key: const Key('account-address-prompt-add'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AddressEditorScreen(),
+                      ),
+                    ),
+                    child: Text(t.add),
+                  ),
+                  TextButton(
+                    key: const Key('account-address-prompt-later'),
+                    onPressed: () => ref
+                        .read(addressPromptDismissedProvider.notifier)
+                        .dismiss(),
+                    child: Text(t.later),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
