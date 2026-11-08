@@ -181,22 +181,41 @@ Do not implement cart, checkout, orders, favorites, or advanced search infrastru
 
 ## Verification Checklist
 
-- [ ] Customers can browse without authentication.
-- [ ] Only published products from approved shops are visible.
-- [ ] Suspended-shop products are excluded.
-- [ ] Category filtering works.
-- [ ] Price filtering works.
-- [ ] Size and color filtering work where applicable.
-- [ ] Sorting works correctly.
-- [ ] Pagination works with filters and sorting.
-- [ ] Product details display correct information.
-- [ ] Unavailable products are clearly identified.
-- [ ] Published products at zero stock stay visible and return to available when replenished, without republishing.
-- [ ] Unavailable products and variants offer no purchase action.
-- [ ] Public queries use `PUBLIC_PRODUCT_WHERE`, and availability is applied separately.
-- [ ] Archived products stay hidden, and restored products stay hidden until published again.
-- [ ] Product visibility is enforced by the backend.
-- [ ] French and Arabic are supported.
-- [ ] RTL layouts work correctly.
-- [ ] Web and mobile use consistent API contracts.
-- [ ] Relevant tests and project quality checks pass.
+- [x] Customers can browse without authentication.
+- [x] Only published products from approved shops are visible.
+- [x] Suspended-shop products are excluded.
+- [x] Category filtering works.
+- [x] Price filtering works.
+- [x] Size and color filtering work where applicable.
+- [x] Sorting works correctly.
+- [x] Pagination works with filters and sorting.
+- [x] Product details display correct information.
+- [x] Unavailable products are clearly identified.
+- [x] Published products at zero stock stay visible and return to available when replenished, without republishing.
+- [x] Unavailable products and variants offer no purchase action. (No purchase action exists yet; specs 09 and 10 add it and must keep this rule.)
+- [x] Public queries use `PUBLIC_PRODUCT_WHERE`, and availability is applied separately.
+- [x] Archived products stay hidden, and restored products stay hidden until published again.
+- [x] Product visibility is enforced by the backend.
+- [x] French and Arabic are supported. (The web has a language switch; web and mobile follow the profile language once it is known.)
+- [x] RTL layouts work correctly. (Web in a browser; Flutter by widget tests and rendered screens, not yet on a device.)
+- [x] Web and mobile use consistent API contracts.
+- [x] Relevant tests and project quality checks pass.
+
+## Implementation Notes
+
+Decisions the spec left open (2026-11-08):
+
+- **Routes:** `GET /api/v1/products`, `GET /api/v1/products/facets`, and `GET /api/v1/products/:productId` (`modules/products/catalog.*`), with no authentication guard. A category listing is `GET /products?category=…`. Unknown and hidden products give the same `404 PRODUCT_NOT_FOUND`.
+- **Query:** `category`, `minPrice`, `maxPrice`, `availability=available`, `size`, `color`, `sort` (`newest`, `price_asc`, `price_desc`), `page`, `pageSize` (default 20, maximum 50). Strict: an unknown parameter is `400`. A later search parameter is added to the same schema.
+- **Filter meaning:** price bounds are inclusive and decimal. `size` and `color` ignore case and match the whole value (`%` and `_` are escaped, because Prisma runs this as `ILIKE`). Together they must match one variant, and with `availability` that variant must be in stock.
+- **Newest** means by `publishedAt`, so a republished product counts as new. The product ID breaks ties, so pages stay stable.
+- **Facets (added):** the filter chips need the sizes and colors that exist, because sellers type them freely. The endpoint returns public values only, once each ignoring case, per category, up to 100 distinct values per attribute.
+- **Public data:** availability is a state; stock quantities stay private. Public shop fields are name, description, city, and logo; contact phones, the address, and the owner are never loaded.
+- **Rate limit (added):** 3000 requests per customer address per 10 minutes, generous because mobile customers can share a carrier address. The web server calls these routes while rendering pages, so it passes the customer's address with a shared key (`CATALOG_INTERNAL_KEY`); the API ignores that address without the key, and counts by `req.ip` as usual.
+- **Product cards:** none existed, so one was created on each platform. It shows exactly the spec's fields; the Shop button, favorite heart, and rating from `ui-context.md` wait for their features.
+- **Product details:** size and color are chosen separately. Unavailable values stay selectable and are marked, and the page states whether the choice is available, unavailable, or a combination not sold.
+- **Web:** the listing's state lives in the URL with the API's parameter names; an invalid parameter is ignored rather than failing the page. Home, listing, and product pages are server-rendered from the API on every request, without a cache, so hidden products and stock changes show at once. Only the filter chips' sizes and colors are read from the browser.
+- **SEO (added 2026-11-08):** product name, price, description, and JSON-LD are in the response HTML, with a title, description, Open Graph tags, a canonical URL, and `hreflang` links. Filtered and sorted listings are canonical to their category's page. A missing product answers a real `404`, checked in `proxy.ts` on full page loads. A failed load answers `200` with `noindex` on product and listing pages. `robots.txt` and the sitemap open once a public domain is configured; see `architecture.md`, Server-Rendered Storefront.
+- **Language (added 2026-11-08):** routing is described in `architecture.md`, Web Localization.
+- **Mobile:** the app now opens on the public storefront (`AppShell`, dock with Home and Account). `AuthGate` stays mounted to receive email links, which open the Account tab, but it builds no login screen (and no Turnstile WebView) until shown. Listings use previous and next pages, like the web.
+- **Not built:** database indexes for price sorting and variant filters (no migration); they can follow real catalog sizes. A dedicated shop page, because the spec lists no shop route.

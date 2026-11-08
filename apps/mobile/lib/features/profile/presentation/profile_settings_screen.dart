@@ -128,7 +128,8 @@ class _ProfileFormState extends ConsumerState<ProfileForm> {
   late String _locale = widget.account.preferredLocale;
   ProfileFieldError? _fullNameError;
   ProfileFieldError? _phoneError;
-  (String, bool)? _notice;
+  // The text is chosen when shown: saving a language changes the interface's.
+  (String Function(ProfileMessages), bool)? _notice;
   bool _pending = false;
 
   @override
@@ -140,7 +141,6 @@ class _ProfileFormState extends ConsumerState<ProfileForm> {
 
   Future<void> _submit() async {
     if (_pending) return;
-    final t = ProfileMessages.of(context);
     final result = buildProfileUpdate(
       ProfileFormValues(
         fullName: _fullName.text,
@@ -153,7 +153,9 @@ class _ProfileFormState extends ConsumerState<ProfileForm> {
       _notice = null;
       _fullNameError = result.fullNameError;
       _phoneError = result.phoneError;
-      if (result.isValid && !result.hasChanges) _notice = (t.noChanges, false);
+      if (result.isValid && !result.hasChanges) {
+        _notice = ((t) => t.noChanges, false);
+      }
     });
     if (!result.isValid || !result.hasChanges) return;
     setState(() => _pending = true);
@@ -167,17 +169,17 @@ class _ProfileFormState extends ConsumerState<ProfileForm> {
           _fullName.text = account.fullName ?? '';
           _phone.text = account.phone;
           _locale = account.preferredLocale;
-          _notice = (t.saved, false);
+          _notice = ((t) => t.saved, false);
         case ProfileInvalidPhone():
           _phoneError = ProfileFieldError.invalidPhone;
         case ProfileInvalid():
-          _notice = (t.invalid, true);
+          _notice = ((t) => t.invalid, true);
         case ProfileUnavailable():
-          _notice = (t.unavailable, true);
+          _notice = ((t) => t.unavailable, true);
         case ProfileRateLimited():
-          _notice = (t.rateLimited, true);
+          _notice = ((t) => t.rateLimited, true);
         case ProfileNotBootstrapped() || ProfileUpdateError():
-          _notice = (t.generic, true);
+          _notice = ((t) => t.generic, true);
         case ProfileSignedOut():
           break;
       }
@@ -239,7 +241,7 @@ class _ProfileFormState extends ConsumerState<ProfileForm> {
           ),
         ),
         const SizedBox(height: AppSpacing.s4),
-        if (notice != null) AuthMessageText(notice.$1, isError: notice.$2),
+        if (notice != null) AuthMessageText(notice.$1(t), isError: notice.$2),
         FilledButton(
           key: const Key('profile-save'),
           onPressed: _pending ? null : _submit,

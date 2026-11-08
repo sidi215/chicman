@@ -1,6 +1,7 @@
 import type { LogoRejectionCode, ShopChangeRequestStatus, ShopDecisionType, ShopStatus } from "@chicman/shared"
 
-import { DEFAULT_LOCALE, type Locale } from "@/lib/locale"
+import type { Locale } from "@/lib/locale"
+import { useLocale } from "@/lib/locale-provider"
 
 import type { ShopFieldErrorKey, ShopFormField } from "./shop-form"
 
@@ -196,12 +197,12 @@ export const SHOP_MESSAGES = {
 
 export type ShopMessages = (typeof SHOP_MESSAGES)[Locale]
 
-/** Shop texts for the current locale (the default until locale selection exists). */
+/** Shop texts for the current locale. */
 export function useShopMessages(): ShopMessages {
-  return SHOP_MESSAGES[DEFAULT_LOCALE]
+  return SHOP_MESSAGES[useLocale()]
 }
 
 /** Date and time in the UI locale. */
-export function formatDateTime(iso: string, locale: Locale = DEFAULT_LOCALE): string {
+export function formatDateTime(iso: string, locale: Locale): string {
   return new Intl.DateTimeFormat(locale === "ar" ? "ar-MR" : "fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso))
 }

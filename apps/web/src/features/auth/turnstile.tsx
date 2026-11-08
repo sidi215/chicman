@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
-import { DEFAULT_LOCALE } from "@/lib/locale"
+import { useLocale } from "@/lib/locale-provider"
 
 /**
  * Cloudflare Turnstile (spec 03, Bot Protection). The widget only produces a
@@ -79,6 +79,7 @@ export interface CaptchaLabels {
 }
 
 export function useCaptcha(action: "signup" | "login" | "recovery" | "resend", labels: CaptchaLabels): Captcha {
+  const locale = useLocale()
   const siteKey = getTurnstileSiteKey()
   const [state, setState] = useState<CaptchaState>(siteKey ? "loading" : "disabled")
   const [token, setToken] = useState<string | undefined>(undefined)
@@ -96,7 +97,7 @@ export function useCaptcha(action: "signup" | "login" | "recovery" | "resend", l
         widgetId.current = api.render(element, {
           sitekey: siteKey,
           action,
-          language: DEFAULT_LOCALE,
+          language: locale,
           callback: (value) => {
             setToken(value)
             setState("solved")
@@ -125,7 +126,7 @@ export function useCaptcha(action: "signup" | "login" | "recovery" | "resend", l
       if (widgetId.current && window.turnstile) window.turnstile.remove(widgetId.current)
       widgetId.current = null
     }
-  }, [siteKey, element, action, attempt])
+  }, [siteKey, element, action, attempt, locale])
 
   const reset = useCallback(() => {
     setToken(undefined)

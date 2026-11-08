@@ -4,7 +4,9 @@ import type { CustomerProfileResponse } from "@chicman/shared"
 import { useState, type FormEvent } from "react"
 
 import { Button } from "@/components/ui/button"
+import { useSaveProfileLocale } from "@/features/profile/use-locale-sync"
 import { apiRequest } from "@/lib/api-client"
+import { useLocale } from "@/lib/locale-provider"
 
 import { interpretSetupResult } from "../account-setup"
 import { useAuth } from "../auth-provider"
@@ -20,6 +22,8 @@ import { FormField, FormMessage } from "./form-field"
 export function AccountSetupForm({ onDone }: { onDone: (account: CustomerProfileResponse) => void }) {
   const t = useAuthMessages()
   const { getAccessToken, signOut } = useAuth()
+  const locale = useLocale()
+  const saveProfileLocale = useSaveProfileLocale()
   const [phone, setPhone] = useState("")
   const [fieldErrors, setFieldErrors] = useState<FieldErrors<"phone">>({})
   const [formError, setFormError] = useState<AuthErrorKey | "authUnavailable" | "emailNotConfirmed" | null>(null)
@@ -48,7 +52,9 @@ export function AccountSetupForm({ onDone }: { onDone: (account: CustomerProfile
       )
       switch (outcome.state) {
         case "done":
-          return onDone(outcome.account)
+          // A new account starts in the language its owner is using, not the default.
+          if (outcome.account.profile.preferredLocale !== locale) await saveProfileLocale(locale)
+          return onDone({ ...outcome.account, profile: { ...outcome.account.profile, preferredLocale: locale } })
         case "invalid-phone":
           return setFieldErrors({ phone: "invalidPhone" })
         case "email-not-confirmed":

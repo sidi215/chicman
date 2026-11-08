@@ -141,7 +141,7 @@ Implementation is complete. The only open item is a verification, not implementa
 - Both clients send only the allowlisted fields that changed (`fullName` trimmed, and NFC on web; `phone` normalized to E.164; `preferredLocale` `fr`/`ar`). An untouched form sends no request (an empty `PATCH` would be `400`). The same phone in another format is not a change.
 - Client checks mirror the API: name 1–100 characters, no control characters; a set name cannot be cleared; the phone is required and cannot be cleared. The API validates again.
 - Responses: `200` → saved; `400 INVALID_PHONE` → phone field error; other `400` → invalid; `401` → sign-out; `403`/`404` → back to account setup; `429` → rate-limited message; `503` (any code) or a network error → unavailable message, form kept.
-- The phone stays labelled "non vérifié". `preferredLocale` is stored only; the interface language does not switch until the i18n feature exists.
+- The phone stays labelled "non vérifié". `preferredLocale` now sets the interface language on the web and mobile (2026-11-08; see `architecture.md`, Web Localization and Mobile Localization).
 - The theme selector sits in an Appearance section. It stays device-local (`chicman-theme`) and makes no API call (mobile widget test).
 - Tests: web `src/features/profile/profile.test.ts` (13); mobile `test/features/profile/` (17).
 

@@ -4,6 +4,7 @@ import { Toggle } from "@base-ui/react/toggle"
 import { ToggleGroup } from "@base-ui/react/toggle-group"
 import { Monitor, Moon, Sun, type LucideIcon } from "lucide-react"
 import type { Locale } from "@/lib/locale"
+import { useLocale } from "@/lib/locale-provider"
 import { THEME_PREFERENCES, isThemePreference, type ThemePreference } from "@/lib/theme"
 import { cn } from "@/lib/utils"
 import { useThemePreference } from "./use-theme-preference"
@@ -20,15 +21,9 @@ const LABELS: Record<Locale, Record<ThemePreference, string> & { group: string }
 }
 
 /** Segmented System / Light / Dark selector; the choice is saved on the device. */
-export function ThemeSelector({
-  locale = "fr",
-  className,
-}: {
-  locale?: Locale
-  className?: string
-}) {
+export function ThemeSelector({ className }: { className?: string }) {
   const [preference, setPreference] = useThemePreference()
-  const labels = LABELS[locale]
+  const labels = LABELS[useLocale()]
 
   return (
     <ToggleGroup

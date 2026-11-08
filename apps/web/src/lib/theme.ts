@@ -78,6 +78,9 @@ export function resetThemePreferenceForTests(): void {
   storageSyncRegistered = false;
 }
 
+/** Set on `window` by the theme script, so it never runs twice. */
+export const THEME_INIT_FLAG = "__chicmanThemeReady";
+
 /**
  * Inline <script> for the root layout <head>: applies the theme before first
  * paint and keeps it in sync with OS, other-tab, and in-page changes.
@@ -91,6 +94,7 @@ export function resetThemePreferenceForTests(): void {
  * localStorage cannot be written.
  */
 export const themeInitScript = `(function () {
+  window[${JSON.stringify(THEME_INIT_FLAG)}] = true;
   var storageKey = ${JSON.stringify(THEME_STORAGE_KEY)};
   var changeEvent = ${JSON.stringify(THEME_CHANGE_EVENT)};
   var fallback = ${JSON.stringify(DEFAULT_THEME_PREFERENCE)};

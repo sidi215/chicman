@@ -8,6 +8,7 @@ import 'package:chicman/features/auth/application/auth_providers.dart';
 import 'package:chicman/features/auth/data/auth_repository.dart';
 import 'package:chicman/features/shop/application/shop_providers.dart';
 import 'package:chicman/features/shop/presentation/shop_screen.dart';
+import 'package:chicman/features/auth/presentation/auth_gate.dart';
 import 'package:chicman/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -148,7 +149,7 @@ Future<void> _openShop(WidgetTester tester, ApiClient api) async {
         incomingLinksProvider.overrideWithValue(null),
         logoPickerProvider.overrideWithValue(() async => _png),
       ],
-      child: const MyApp(),
+      child: const MyApp(home: AuthGate()),
     ),
   );
   await tester.pumpAndSettle();

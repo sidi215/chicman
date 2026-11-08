@@ -1,11 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/locale/app_locale_controller.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../auth/domain/account_setup.dart';
 import '../domain/profile_update.dart';
 
 /// `PATCH /customers/me` with the changed allowlisted fields (spec 04).
-/// A 401 ends the session; on success the account is reloaded.
+/// A 401 ends the session; on success the account is reloaded and the interface
+/// follows the saved language.
 Future<ProfileUpdateOutcome> submitProfileUpdate(
   WidgetRef ref,
   Map<String, String> changes,
@@ -27,7 +29,13 @@ Future<ProfileUpdateOutcome> submitProfileUpdate(
   switch (outcome) {
     case ProfileSignedOut():
       await repository.signOut();
-    case ProfileSaved() || ProfileNotBootstrapped():
+    case ProfileSaved(:final account):
+      ref.invalidate(customerAccountProvider);
+      ref.invalidate(sessionCheckProvider);
+      await ref
+          .read(appLocaleProvider.notifier)
+          .setLanguage(account.preferredLocale);
+    case ProfileNotBootstrapped():
       ref.invalidate(customerAccountProvider);
       ref.invalidate(sessionCheckProvider);
     default:

@@ -4,6 +4,8 @@ export {
   PRODUCT_WRITE_RATE_LIMIT,
   type ProductDependencies,
 } from "./product.routes.js";
+export { CATALOG_RATE_LIMIT, createCatalogRouter, type CatalogDependencies } from "./catalog.routes.js";
+export { CatalogService, catalogWhere } from "./catalog.service.js";
 export { ProductService } from "./product.service.js";
 export { PUBLIC_PRODUCT_WHERE } from "./product-visibility.js";
 export { ProductImageService, type ProductImageServiceFaults } from "./images/product-image.service.js";

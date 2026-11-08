@@ -14,6 +14,7 @@ import { useAuth } from "@/features/auth/auth-provider"
 import { FormMessage } from "@/features/auth/components/form-field"
 import { TextLink } from "@/features/auth/components/text-link"
 import { formatDateTime } from "@/features/shop/messages"
+import { useLocale } from "@/lib/locale-provider"
 import { apiRequest } from "@/lib/api-client"
 
 import {
@@ -84,6 +85,7 @@ function Shell({ t, children }: { t: AdminMessages; children: React.ReactNode })
 
 /** `/admin/shops`: the review list. */
 export function AdminShopList() {
+  const locale = useLocale()
   const t = useAdminMessages()
   const { status, call } = useAdminApi()
   const [filter, setFilter] = useState<Filter>("PENDING")
@@ -132,7 +134,7 @@ export function AdminShopList() {
                 <li key={shop.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div className="flex flex-col gap-1">
                     <p className="type-title-small">{shop.shopName}</p>
-                    <p className="type-body-small text-muted-foreground">{`${shop.city} · ${formatDateTime(shop.updatedAt)}`}</p>
+                    <p className="type-body-small text-muted-foreground">{`${shop.city} · ${formatDateTime(shop.updatedAt, locale)}`}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline">{t.status[shop.status]}</Badge>
@@ -246,6 +248,7 @@ function DecisionForm({
 
 /** `/admin/shops/[shopId]`: details, decisions, change-request review, and full history. */
 export function AdminShopDetail({ shopId }: { shopId: string }) {
+  const locale = useLocale()
   const t = useAdminMessages()
   const { status, call } = useAdminApi()
   const [outcome, setOutcome] = useState<AdminOutcome<AdminShopDetailResponse> | null>(null)
@@ -354,7 +357,7 @@ export function AdminShopDetail({ shopId }: { shopId: string }) {
         <Card className="w-full max-w-3xl rounded-3xl p-6">
           <CardHeader>
             <CardTitle className="type-title-large">{t.changeRequestTitle}</CardTitle>
-            <CardDescription>{formatDateTime(openRequest.submittedAt)}</CardDescription>
+            <CardDescription>{formatDateTime(openRequest.submittedAt, locale)}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             {openRequest.proposedShopName !== null ? (
@@ -392,7 +395,7 @@ export function AdminShopDetail({ shopId }: { shopId: string }) {
                       event.decisionType ? t.decisionType[event.decisionType] : t.ownerAction
                     }`}
                   </p>
-                  <p className="text-muted-foreground">{`${formatDateTime(event.createdAt)} · ${t.by} ${event.actorUserId}`}</p>
+                  <p className="text-muted-foreground">{`${formatDateTime(event.createdAt, locale)} · ${t.by} ${event.actorUserId}`}</p>
                   {event.applicantReason ? <p className="whitespace-pre-line">{`${t.applicantReason} : ${event.applicantReason}`}</p> : null}
                   {event.internalReason ? <p className="whitespace-pre-line">{`${t.internalReason} : ${event.internalReason}`}</p> : null}
                   {event.internalNote ? <p className="whitespace-pre-line">{`${t.internalNote} : ${event.internalNote}`}</p> : null}
@@ -408,7 +411,7 @@ export function AdminShopDetail({ shopId }: { shopId: string }) {
                   <li key={change.id} className="rounded-2xl bg-muted p-3 type-body-small">
                     <p className="type-label-large">{`${t.fields[change.field]} · ${t.source[change.source]}`}</p>
                     <p className="break-all">{`${change.oldValue ?? "—"} → ${change.newValue ?? "—"}`}</p>
-                    <p className="text-muted-foreground">{`${formatDateTime(change.createdAt)} · ${t.by} ${change.actorUserId}`}</p>
+                    <p className="text-muted-foreground">{`${formatDateTime(change.createdAt, locale)} · ${t.by} ${change.actorUserId}`}</p>
                   </li>
                 ))}
               </ol>
@@ -420,11 +423,11 @@ export function AdminShopDetail({ shopId }: { shopId: string }) {
               <ol className="flex flex-col gap-2">
                 {changeRequests.map((request) => (
                   <li key={request.id} className="rounded-2xl bg-muted p-3 type-body-small">
-                    <p className="type-label-large">{`${t.changeStatus[request.status]} · ${formatDateTime(request.submittedAt)}`}</p>
+                    <p className="type-label-large">{`${t.changeStatus[request.status]} · ${formatDateTime(request.submittedAt, locale)}`}</p>
                     {request.proposedShopName !== null ? <p>{`${t.fields.shopName} : ${request.proposedShopName}`}</p> : null}
                     {request.proposedCity !== null ? <p>{`${t.fields.city} : ${request.proposedCity}`}</p> : null}
                     {request.decidedAt ? (
-                      <p className="text-muted-foreground">{`${formatDateTime(request.decidedAt)} · ${t.by} ${request.decidedByUserId ?? ""}`}</p>
+                      <p className="text-muted-foreground">{`${formatDateTime(request.decidedAt, locale)} · ${t.by} ${request.decidedByUserId ?? ""}`}</p>
                     ) : null}
                     {request.internalReason ? <p className="whitespace-pre-line">{`${t.internalReason} : ${request.internalReason}`}</p> : null}
                     {request.internalNote ? <p className="whitespace-pre-line">{`${t.internalNote} : ${request.internalNote}`}</p> : null}

@@ -7,6 +7,7 @@ import 'package:chicman/features/addresses/application/address_providers.dart';
 import 'package:chicman/features/addresses/domain/address.dart';
 import 'package:chicman/features/auth/application/auth_providers.dart';
 import 'package:chicman/features/auth/data/auth_repository.dart';
+import 'package:chicman/features/auth/presentation/auth_gate.dart';
 import 'package:chicman/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -114,7 +115,7 @@ Future<void> _open(
         fakeMapOverride,
         if (locator != null) deviceLocatorProvider.overrideWithValue(locator),
       ],
-      child: const MyApp(),
+      child: const MyApp(home: AuthGate()),
     ),
   );
   await tester.pumpAndSettle();

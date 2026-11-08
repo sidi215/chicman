@@ -1,4 +1,5 @@
-import { DEFAULT_LOCALE, type Locale } from "@/lib/locale"
+import type { Locale } from "@/lib/locale"
+import { useLocale } from "@/lib/locale-provider"
 
 import type { AddressFieldError, AddressTextField, GeolocationFailure, LocationError } from "./address-form"
 
@@ -165,5 +166,5 @@ export const ADDRESS_MESSAGES = {
 export type AddressMessages = (typeof ADDRESS_MESSAGES)[Locale]
 
 export function useAddressMessages(): AddressMessages {
-  return ADDRESS_MESSAGES[DEFAULT_LOCALE]
+  return ADDRESS_MESSAGES[useLocale()]
 }

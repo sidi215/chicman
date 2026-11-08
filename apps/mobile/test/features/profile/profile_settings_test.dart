@@ -6,6 +6,7 @@ import 'package:chicman/core/storage/shared_preferences_provider.dart';
 import 'package:chicman/core/theme/theme_mode_controller.dart';
 import 'package:chicman/features/auth/application/auth_providers.dart';
 import 'package:chicman/features/auth/data/auth_repository.dart';
+import 'package:chicman/features/auth/presentation/auth_gate.dart';
 import 'package:chicman/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -76,7 +77,7 @@ Future<FakeAuthRepository> _openSettings(
         apiClientProvider.overrideWithValue(api),
         incomingLinksProvider.overrideWithValue(null),
       ],
-      child: const MyApp(),
+      child: const MyApp(home: AuthGate()),
     ),
   );
   await tester.pumpAndSettle();
@@ -125,7 +126,9 @@ void main() {
       'phone': '+22233445566',
     });
     expect(patch.headers['authorization'], 'Bearer access-token');
-    expect(find.text('Profil enregistré.'), findsOneWidget);
+    // The interface follows the saved language at once, the message included.
+    expect(find.text('Profil enregistré.'), findsNothing);
+    expect(find.text('تم حفظ الملف الشخصي.'), findsOneWidget);
     expect(find.text('+22233445566'), findsOneWidget);
   });
 

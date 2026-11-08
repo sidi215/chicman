@@ -656,11 +656,13 @@ describe("product management (spec 07, PostgreSQL)", { skip: databaseUrl === und
     const visible = async () =>
       (await h.prisma.product.findMany({ where: PUBLIC_PRODUCT_WHERE, select: { id: true } })).map((p) => p.id);
 
-    it("no public route exposes products yet", async () => {
+    it("a draft stays out of the public routes, and seller routes still need a token", async () => {
       const product = await created();
-      for (const path of ["/products", `/products/${product.id}`, base, `${base}/${product.id}`]) {
-        const res = await h.call(path, null);
-        assert.ok(res.status === 404 || res.status === 401, `${path} → ${res.status}`);
+      assert.equal((await h.call(`/products/${product.id}`, null)).status, 404);
+      const listed = (await (await h.call("/products", null)).json()) as { total: number };
+      assert.equal(listed.total, 0);
+      for (const path of [base, `${base}/${product.id}`]) {
+        assert.equal((await h.call(path, null)).status, 401, path);
       }
     });
 

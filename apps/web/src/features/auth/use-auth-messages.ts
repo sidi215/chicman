@@ -1,8 +1,8 @@
-import { DEFAULT_LOCALE } from "@/lib/locale"
+import { useLocale } from "@/lib/locale-provider"
 
 import { AUTH_MESSAGES, type AuthMessages } from "./messages"
 
-/** Auth texts for the current locale (the default until locale selection exists). */
+/** Auth texts for the current locale. */
 export function useAuthMessages(): AuthMessages {
-  return AUTH_MESSAGES[DEFAULT_LOCALE]
+  return AUTH_MESSAGES[useLocale()]
 }

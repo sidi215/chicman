@@ -45,10 +45,10 @@ const VARIANT: ProductVariantView = { id: "v", size: "M", color: null, stock: 1,
 
 describe("prices", () => {
   it("formats decimal strings in MRU without floating point", () => {
-    assert.equal(formatMru("1500.50", "fr"), "1 500,50 MRU")
-    assert.equal(formatMru("9999999999.99", "fr"), "9 999 999 999,99 MRU")
-    assert.equal(formatMru("0.30", "fr"), "0,30 MRU")
-    assert.equal(formatMru("1500.50", "ar"), "1,500.50 أوقية")
+    assert.equal(formatMru("1500.50", "fr"), "1\u00A0500,50\u00A0MRU")
+    assert.equal(formatMru("9999999999.99", "fr"), "9\u00A0999\u00A0999\u00A0999,99\u00A0MRU")
+    assert.equal(formatMru("0.30", "fr"), "0,30\u00A0MRU")
+    assert.equal(formatMru("1500.50", "ar"), "1,500.50\u00A0أوقية")
   })
 
   it("accepts what sellers type", () => {

@@ -1,6 +1,7 @@
 import type { ProductCategory, ProductImageRejectionCode, ProductStatus } from "@chicman/shared"
 
-import { DEFAULT_LOCALE, type Locale } from "@/lib/locale"
+import type { Locale } from "@/lib/locale"
+import { useLocale } from "@/lib/locale-provider"
 
 import type { ProductFailure, ProductFieldErrorKey, ProductFormField, VariantErrorKey } from "./product-form"
 
@@ -298,7 +299,7 @@ export const PRODUCT_MESSAGES = {
 
 export type ProductMessages = (typeof PRODUCT_MESSAGES)[Locale]
 
-/** Product texts for the current locale (the default until locale selection exists). */
+/** Product texts for the current locale. */
 export function useProductMessages(): ProductMessages {
-  return PRODUCT_MESSAGES[DEFAULT_LOCALE]
+  return PRODUCT_MESSAGES[useLocale()]
 }

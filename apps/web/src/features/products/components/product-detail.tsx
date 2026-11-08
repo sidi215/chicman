@@ -12,6 +12,7 @@ import { FormField, FormMessage } from "@/features/auth/components/form-field"
 import { TextLink } from "@/features/auth/components/text-link"
 import { formatDateTime } from "@/features/shop/messages"
 import { SectionCard } from "@/features/shop/components/shop-dashboard"
+import { useLocale } from "@/lib/locale-provider"
 import { formatMru } from "@/lib/money"
 import { cn } from "@/lib/utils"
 
@@ -124,6 +125,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
 }
 
 function Summary({ t, product, mutate }: { t: ProductMessages; product: SellerProductDetail; mutate: Mutate }) {
+  const locale = useLocale()
   const [notice, setNotice] = useState<Notice>(null)
   const [pending, setPending] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -147,7 +149,7 @@ function Summary({ t, product, mutate }: { t: ProductMessages; product: SellerPr
         <Badge variant={product.available ? "outline" : "destructive"}>{product.available ? t.available : t.unavailable}</Badge>
         <Badge variant="outline">{t.categories[product.category]}</Badge>
       </div>
-      <p className="type-title-medium">{formatMru(product.price)}</p>
+      <p className="type-title-medium">{formatMru(product.price, locale)}</p>
       {product.brand ? <p className="type-body-medium text-muted-foreground">{product.brand}</p> : null}
       <p className="type-body-medium whitespace-pre-line">{product.description}</p>
       <dl className="flex flex-col gap-1 type-body-small text-muted-foreground">
@@ -158,18 +160,18 @@ function Summary({ t, product, mutate }: { t: ProductMessages; product: SellerPr
         </div>
         <div className="flex flex-wrap gap-1">
           <dt>{t.createdOn}</dt>
-          <dd>{formatDateTime(product.createdAt)}</dd>
+          <dd>{formatDateTime(product.createdAt, locale)}</dd>
         </div>
         {actions.showPublishedAt && product.publishedAt ? (
           <div className="flex flex-wrap gap-1">
             <dt>{t.publishedOn}</dt>
-            <dd>{formatDateTime(product.publishedAt)}</dd>
+            <dd>{formatDateTime(product.publishedAt, locale)}</dd>
           </div>
         ) : null}
         {product.archivedAt ? (
           <div className="flex flex-wrap gap-1">
             <dt>{t.archivedOn}</dt>
-            <dd>{formatDateTime(product.archivedAt)}</dd>
+            <dd>{formatDateTime(product.archivedAt, locale)}</dd>
           </div>
         ) : null}
       </dl>

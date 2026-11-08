@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Chip } from "@/components/ui/chip"
 import { FormMessage } from "@/features/auth/components/form-field"
 import { TextLink } from "@/features/auth/components/text-link"
+import { useLocale } from "@/lib/locale-provider"
 import { formatMru } from "@/lib/money"
 
 import { useProductMessages } from "../messages"
@@ -22,6 +23,7 @@ type View = { state: "loading" } | { state: "ready"; data: SellerProductListResp
 
 /** The seller's products, newest first, by status and page. */
 export function ProductList() {
+  const locale = useLocale()
   const t = useProductMessages()
   const { status, call } = useProductApi()
   const [view, setView] = useState<View>({ state: "loading" })
@@ -122,7 +124,7 @@ export function ProductList() {
                   )}
                   <span className="flex min-w-0 flex-1 flex-col gap-1">
                     <span className="truncate type-title-small">{product.name}</span>
-                    <span className="type-body-medium">{formatMru(product.price)}</span>
+                    <span className="type-body-medium">{formatMru(product.price, locale)}</span>
                     <span className="flex flex-wrap items-center gap-2">
                       <Badge variant={STATUS_VARIANT[product.status]}>{t.status[product.status]}</Badge>
                       <Badge variant={product.available ? "outline" : "destructive"}>{product.available ? t.available : t.unavailable}</Badge>

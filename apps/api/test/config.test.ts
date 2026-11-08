@@ -32,6 +32,23 @@ describe("API configuration", () => {
     assert.deepEqual(duplicateEnvKeys(file).sort(), ["A", "B"]);
   });
 
+  describe("catalog internal key", () => {
+    const db = { ...base, DATABASE_URL: "postgresql://u:p@localhost:5442/chicman" };
+
+    it("is optional, and an empty value means unset", () => {
+      assert.equal(loadConfig({ ...db }).catalogInternalKey, undefined);
+      assert.equal(loadConfig({ ...db, CATALOG_INTERNAL_KEY: "" }).catalogInternalKey, undefined);
+    });
+
+    it("refuses a short key", () => {
+      assert.throws(() => loadConfig({ ...db, CATALOG_INTERNAL_KEY: "short" }), /CATALOG_INTERNAL_KEY: must be at least 32 characters/);
+    });
+
+    it("accepts a long key", () => {
+      assert.equal(loadConfig({ ...db, CATALOG_INTERNAL_KEY: "k".repeat(32) }).catalogInternalKey, "k".repeat(32));
+    });
+  });
+
   describe("object storage (spec 06)", () => {
     const db = { ...base, DATABASE_URL: "postgresql://u:p@localhost:5442/chicman", REDIS_URL: "redis://localhost:6379" };
     const storage = {

@@ -1,4 +1,5 @@
-import { DEFAULT_LOCALE, type Locale } from "@/lib/locale"
+import type { Locale } from "@/lib/locale"
+import { useLocale } from "@/lib/locale-provider"
 
 import type { ProfileErrorKey } from "./profile-form"
 
@@ -72,7 +73,7 @@ export const PROFILE_MESSAGES = {
 
 export type ProfileMessages = (typeof PROFILE_MESSAGES)[Locale]
 
-/** Profile texts for the current locale (the default until locale selection exists). */
+/** Profile texts for the current locale. */
 export function useProfileMessages(): ProfileMessages {
-  return PROFILE_MESSAGES[DEFAULT_LOCALE]
+  return PROFILE_MESSAGES[useLocale()]
 }

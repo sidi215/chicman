@@ -64,11 +64,17 @@ class ApiClient {
     required T Function(Object? json) decode,
   }) => send('GET', path, accessToken: accessToken, decode: decode);
 
+  /// Calls a public route. No token is attached, so it works for guests.
+  Future<ApiResult<T>> getPublic<T>(
+    String path, {
+    required T Function(Object? json) decode,
+  }) => send('GET', path, accessToken: null, decode: decode);
+
   /// Sends a request with an optional JSON body.
   Future<ApiResult<T>> send<T>(
     String method,
     String path, {
-    required String accessToken,
+    required String? accessToken,
     required T Function(Object? json) decode,
     Object? body,
   }) async {
@@ -76,7 +82,7 @@ class ApiClient {
     try {
       final request = http.Request(method, Uri.parse('$_baseUrl/api/v1$path'))
         ..headers.addAll({
-          'authorization': 'Bearer $accessToken',
+          if (accessToken != null) 'authorization': 'Bearer $accessToken',
           'accept': 'application/json',
           if (body != null) 'content-type': 'application/json',
         });

@@ -106,8 +106,7 @@ Dark mode inverts the black-pill language into white pills on a near-black canva
 - **Web:** `src/lib/theme.ts` stores the preference in `localStorage`. An inline script in the root layout applies `.dark` on `<html>` before first paint (no flash) and reacts to OS, cross-tab, and in-page changes. UI: `components/theme/theme-selector.tsx` (`ThemeSelector`), hook `useThemePreference`.
 - **Flutter:** `themeModeProvider` (Riverpod, `lib/core/theme/theme_mode_controller.dart`) persists through `shared_preferences` and drives `MaterialApp.themeMode`. UI: `ThemeModeSelector` (`lib/core/theme/widgets/`).
 - Selector labels: French `Système / Clair / Sombre`, Arabic `النظام / فاتح / داكن`.
-- **Placement:** the selector belongs in the **website header**, and in **customer profile settings** on web and mobile. Profile settings placement is done (web `/account/profile`, mobile profile settings screen, 2026-11-06); the web header placement waits for the storefront header. The preference stays device-local (`chicman-theme`); it is not a profile field and is not stored in PostgreSQL.
-- The default Next.js starter page (`apps/web/src/app/page.tsx`) and the Flutter demo home are temporary and are not the storefront. The selector is mounted there only until the storefront home feature (web header) and customer profile settings (spec 04) are built. Those features move it and remove the temporary placement.
+- **Placement:** the selector belongs in the **website header** (`StorefrontHeader`, done with spec 08), and in **customer profile settings** on web and mobile (web `/account/profile`, mobile profile settings screen, 2026-11-06). The preference stays device-local (`chicman-theme`); it is not a profile field and is not stored in PostgreSQL.
 
 ### Token Implementation
 
@@ -185,29 +184,31 @@ Spacing uses a 4-pt scale (Tailwind `--spacing`; Flutter `AppSpacing.s1`–`s12`
 - Material 3 as the foundation, customized to match the marketplace design system.
 - Reusable shared widgets for buttons, cards, inputs, filters, product displays, and navigation.
 - Centralized theme configuration for colors, typography, spacing, and radius (`lib/core/theme/`: `AppColors`, `AppTypography`, `AppTheme`, `AppRadius`, `AppSpacing`, `AppIconSize`, `AppSizes`).
-- Use directional APIs (`EdgeInsetsDirectional`, `AlignmentDirectional`) so layouts mirror in RTL. Supported locales are `fr` and `ar` through `flutter_localizations`.
+- Use directional APIs (`EdgeInsetsDirectional`, `AlignmentDirectional`) so layouts mirror in RTL. Supported locales are `fr` and `ar` through `flutter_localizations`. The app follows the profile's language, and the device's until that is known.
+- **Prices:** French groups thousands with a no-break space (U+00A0), on web and mobile: `1 500,50 MRU`. The narrow one (U+202F) is barely visible in Plus Jakarta Sans. Arabic: `1,500.50 أوقية`.
+- **Language switch (web):** `LanguageSwitch` offers the other language, written in that language, in `StorefrontHeader` and `AuthShell`. It keeps the current page and query, and does a full page load because the document's language and direction change.
 
 Web and mobile must share the same visual language but use platform-native component implementations.
 
 ## Layout Patterns
 
-- **Navigation (Web):** Top header with a profile entry (avatar images are out of scope for the initial release), localized greeting, notification icon, theme selector (System / Light / Dark), and shopping bag drawer trigger.
+- **Navigation (Web):** Top header with a profile entry (avatar images are out of scope for the initial release), localized greeting, notification icon, theme selector (System / Light / Dark), and shopping bag drawer trigger. Built so far (spec 08): wordmark, theme selector, account or login entry, and category links; sticky from the `md` breakpoint up. The others arrive with their features.
 
 - **Navigation (Mobile):** Compact top app bar with profile, notifications, and shopping bag actions.
 
-- **Floating Dock (Mobile):** Fixed bottom navigation bar anchored over the view with rounded pill styling, containing Home, Search, Favorites, and Profile destinations.
+- **Floating Dock (Mobile):** Fixed bottom navigation bar anchored over the view with rounded pill styling, containing Home, Search, Favorites, and Profile destinations. Built so far (spec 08): Home and Account (`AppShell`); Search and Favorites arrive with their features.
 
-- **Search & Filter Bar:** Full-width rounded search input accompanied by a horizontal scrollable row of rounded category filter chips: All, Traditional/Melhfa & Darra, Women, Men, Kids, Accessories.
+- **Search & Filter Bar:** Full-width rounded search input accompanied by a horizontal scrollable row of rounded category filter chips: All, Clothing, Shoes, and Fashion accessories, the only supported categories (spec 08). The search input arrives with search.
 
 - **Mobile Search & Filters:** Touch-friendly search, horizontally scrollable categories, and filter/sorting bottom sheets.
 
-- **Hero Offer Section:** Floating soft-blue card (`--accent-highlight`) featuring promo text, CTA button, and featured product cutout asset. Adapt the layout to smaller mobile screens.
+- **Hero Offer Section:** Floating soft-blue card (`--accent-highlight`) featuring promo text, CTA button, and featured product cutout asset. Adapt the layout to smaller mobile screens. Built so far (spec 08): the marketplace tagline and a link to all products; no promotion or cutout, because no promotions exist yet.
 
 - **Product Grid (Web):** Two-column responsive layout on smaller screens, expanding on larger screens.
 
 - **Product Grid (Mobile):** Two-column product layout with optimized spacing and touch-friendly interactions.
 
-- **Product Cards:** 3:4 portrait product images, floating black pill action buttons (Shop), heart icon favorite overlays, store/vendor name, price in Ouguiya (MRU), and star rating indicator.
+- **Product Cards:** 3:4 portrait product images, floating black pill action buttons (Shop), heart icon favorite overlays, store/vendor name, price in Ouguiya (MRU), and star rating indicator. Built so far (spec 08, web `ProductCard`, Flutter `ProductCard`): image, name, price, shop, and an unavailable badge; the Shop button, heart, and rating arrive with the cart, favorites, and reviews.
 
 - **Product Details:** Dedicated product detail experience with large product imagery, product variants, seller information, pricing, and prominent add-to-cart action.
 

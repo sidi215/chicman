@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:chicman/core/storage/shared_preferences_provider.dart';
 import 'package:chicman/core/theme/theme_mode_controller.dart';
+import 'package:chicman/features/auth/presentation/auth_gate.dart';
 import 'package:chicman/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -88,7 +89,7 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             overrides: [sharedPreferencesProvider.overrideWithValue(null)],
-            child: const MyApp(),
+            child: const MyApp(home: AuthGate()),
           ),
         );
         // The selector is on the auth screen, shown once the session resolves.
