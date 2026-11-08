@@ -1,4 +1,4 @@
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 
 import { HttpError, serviceUnavailable } from "../lib/http-error.js";
 import type { RateLimiter } from "../lib/rate-limiter.js";
@@ -27,10 +27,14 @@ export class RateLimitError extends HttpError {
  * The limiter is expected to handle its own store failures (see
  * `FallbackRateLimiter`). If it still throws, the request is refused with
  * `503` (fail closed): rate limiting is never silently switched off.
+ *
+ * `clientAddress` replaces `req.ip` for a request made on a customer's behalf.
+ * It must only return an address from an authenticated source.
  */
-export function rateLimit(limiter: RateLimiter, rule: RateLimitRule): RequestHandler {
+export function rateLimit(limiter: RateLimiter, rule: RateLimitRule, clientAddress?: (req: Request) => string | undefined): RequestHandler {
   return async (req, _res, next) => {
-    const keys: [string, number][] = [[`${rule.name}:ip:${req.ip ?? "unknown"}`, rule.perIp]];
+    const address = clientAddress?.(req) ?? req.ip ?? "unknown";
+    const keys: [string, number][] = [[`${rule.name}:ip:${address}`, rule.perIp]];
     if (req.auth !== undefined) keys.push([`${rule.name}:user:${req.auth.supabaseUserId}`, rule.perUser]);
     for (const [key, limit] of keys) {
       let result;

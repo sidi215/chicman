@@ -1,6 +1,7 @@
 import type { ShopChangeRequestStatus, ShopDecisionType, ShopFieldChangeSource, ShopStatus } from "@chicman/shared"
 
-import { DEFAULT_LOCALE, type Locale } from "@/lib/locale"
+import type { Locale } from "@/lib/locale"
+import { useLocale } from "@/lib/locale-provider"
 
 import type { DecisionErrorKey, ShopDecisionAction } from "./admin-shops"
 
@@ -155,5 +156,5 @@ export const ADMIN_MESSAGES = {
 export type AdminMessages = (typeof ADMIN_MESSAGES)[Locale]
 
 export function useAdminMessages(): AdminMessages {
-  return ADMIN_MESSAGES[DEFAULT_LOCALE]
+  return ADMIN_MESSAGES[useLocale()]
 }

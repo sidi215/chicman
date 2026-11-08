@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/app_config.dart';
+import '../../../core/locale/app_locale_controller.dart';
 import '../../../core/network/api_client.dart';
 import '../data/auth_repository.dart';
 import '../domain/account_setup.dart';
@@ -66,8 +67,54 @@ final customerAccountProvider = FutureProvider.autoDispose<CustomerAccount?>((
   return result is ApiOk<CustomerAccount> ? result.data : null;
 });
 
+/// The app follows the profile's language: it is read when a signed-in user is
+/// first seen, at launch or at sign-in. Token refreshes keep the same user, so
+/// they read nothing. A failed read leaves the current language; the next launch
+/// tries again. Kept alive by `MyApp`.
+final profileLocaleSyncProvider = Provider<void>((ref) {
+  String? syncedUserId;
+
+  Future<void> sync() async {
+    final repository = ref.read(authRepositoryProvider);
+    final token = await repository?.accessToken();
+    if (token == null) return;
+    final languageBefore = ref.read(appLocaleProvider);
+    final result = await ref
+        .read(apiClientProvider)
+        .get(
+          '/customers/me',
+          accessToken: token,
+          decode: CustomerAccount.fromJson,
+        );
+    // A save made during the read is newer than what was read.
+    if (result is! ApiOk<CustomerAccount> ||
+        ref.read(appLocaleProvider) != languageBefore) {
+      return;
+    }
+    await ref
+        .read(appLocaleProvider.notifier)
+        .setLanguage(result.data.preferredLocale);
+  }
+
+  ref.listen(authSessionProvider, (_, session) {
+    if (session is! AsyncData<AuthSession?>) return;
+    final userId = session.value?.userId;
+    if (userId == syncedUserId) return;
+    syncedUserId = userId;
+    if (userId != null) sync();
+  }, fireImmediately: true);
+});
+
 /// Account setup: the contact phone (E.164), then bootstrap (spec 04).
-Future<SetupOutcome> submitAccountSetup(WidgetRef ref, String phone) async {
+///
+/// Bootstrap accepts only the phone, so a new account starts in the default
+/// language. It then saves [languageCode], the language its owner is using, so
+/// the app does not change language on the next launch.
+Future<SetupOutcome> submitAccountSetup(
+  WidgetRef ref,
+  String phone, {
+  required String languageCode,
+}) async {
   final repository = ref.read(authRepositoryProvider);
   final token = await repository?.accessToken();
   if (repository == null || token == null) return const SetupSignedOut();
@@ -83,6 +130,20 @@ Future<SetupOutcome> submitAccountSetup(WidgetRef ref, String phone) async {
         ),
   );
   if (outcome is SetupSignedOut) await repository.signOut();
+  if (outcome is SetupDone) {
+    if (outcome.account.preferredLocale != languageCode) {
+      await ref
+          .read(apiClientProvider)
+          .send(
+            'PATCH',
+            '/customers/me',
+            accessToken: token,
+            body: {'preferredLocale': languageCode},
+            decode: CustomerAccount.fromJson,
+          );
+    }
+    await ref.read(appLocaleProvider.notifier).setLanguage(languageCode);
+  }
   return outcome;
 }
 

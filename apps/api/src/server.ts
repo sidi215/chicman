@@ -13,7 +13,7 @@ import { AddressService } from "./modules/addresses/index.js";
 import { AdminShopQueries } from "./modules/admin/index.js";
 import { PrismaCustomerRepository } from "./modules/customers/index.js";
 import { StockService } from "./modules/inventory/index.js";
-import { ProductImageService, ProductService } from "./modules/products/index.js";
+import { CatalogService, ProductImageService, ProductService } from "./modules/products/index.js";
 import {
   LogoService,
   PrismaShopAccessRepository,
@@ -54,6 +54,10 @@ const productImages =
     ? undefined
     : new ProductImageService({ prisma, storage: objectStorage, timing: config.logo, mediaPublicBaseUrl });
 
+if (config.nodeEnv === "production" && config.catalogInternalKey === undefined) {
+  console.warn("CATALOG_INTERNAL_KEY is not set: all server-rendered storefront pages share the web server's rate limit.");
+}
+
 const app = createApp({
   corsOrigins: config.corsOrigins,
   trustProxyHops: config.trustProxyHops,
@@ -76,6 +80,7 @@ const app = createApp({
     images: productImages,
     rateLimiter,
   },
+  catalog: { catalog: new CatalogService(prisma, mediaPublicBaseUrl), rateLimiter, internalKey: config.catalogInternalKey },
 });
 
 const server = app.listen(config.port, () => {

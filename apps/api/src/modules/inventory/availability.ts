@@ -1,3 +1,5 @@
+import type { Prisma } from "../../generated/prisma/client.js";
+
 /**
  * The single definition of stock availability (spec 07, section 7). It is
  * derived from current stock on every read and never stored, so replenishing
@@ -20,3 +22,11 @@ export function productAvailability(ownStock: number, variants: readonly { stock
   const stock = variants.length > 0 ? variants.reduce((total, variant) => total + variant.stock, 0) : ownStock;
   return { stock, available: isStockAvailable(stock) };
 }
+
+/** `isStockAvailable` as a query condition on a variant. */
+export const AVAILABLE_VARIANT_WHERE = { stock: { gt: 0 } } as const satisfies Prisma.ProductVariantWhereInput;
+
+/** `productAvailability(...).available` as a query condition, for an explicit availability filter. */
+export const AVAILABLE_PRODUCT_WHERE = {
+  OR: [{ variants: { some: AVAILABLE_VARIANT_WHERE } }, { variants: { none: {} }, stock: { gt: 0 } }],
+} as const satisfies Prisma.ProductWhereInput;

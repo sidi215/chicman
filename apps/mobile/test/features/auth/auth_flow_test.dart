@@ -7,6 +7,7 @@ import 'package:chicman/core/storage/shared_preferences_provider.dart';
 import 'package:chicman/features/auth/application/auth_providers.dart';
 import 'package:chicman/features/auth/data/auth_repository.dart';
 import 'package:chicman/features/auth/domain/auth_failure.dart';
+import 'package:chicman/features/auth/presentation/auth_gate.dart';
 import 'package:chicman/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -57,7 +58,7 @@ Future<void> pumpApp(
         incomingLinksProvider.overrideWithValue(links),
         fakeMapOverride,
       ],
-      child: const MyApp(),
+      child: const MyApp(home: AuthGate()),
     ),
   );
   await tester.pumpAndSettle();
@@ -227,6 +228,8 @@ void main() {
       final post = requests.singleWhere((r) => r.method == 'POST');
       expect(jsonDecode(post.body), {'phone': '+22222123456'});
       expect(post.headers['authorization'], 'Bearer access-token');
+      // The account already has the language in use: nothing more to save.
+      expect(requests.where((r) => r.method == 'PATCH'), isEmpty);
       // Spec 05: the delivery address is offered right after setup (skippable).
       expect(find.text('Où souhaitez-vous être livré ?'), findsOneWidget);
       await tester.tap(find.byKey(const Key('address-later')));
@@ -235,6 +238,54 @@ void main() {
       expect(find.textContaining('(non vérifié)'), findsOneWidget);
     },
   );
+
+  testWidgets('a new account keeps the language it was set up in', (
+    tester,
+  ) async {
+    tester.platformDispatcher.localesTestValue = const [Locale('ar')];
+    addTearDown(tester.platformDispatcher.clearLocalesTestValue);
+    var bootstrapped = false;
+    final requests = <http.Request>[];
+    final api = routedApi({
+      'GET /auth/session': (_) => bootstrapped
+          ? (200, _activeSession)
+          : (
+              403,
+              {
+                'error': {'code': 'FORBIDDEN'},
+              },
+            ),
+      'POST /customers/me': (_) {
+        bootstrapped = true;
+        return (201, _account);
+      },
+      'PATCH /customers/me': (_) => (200, _account),
+      'GET /customers/me': (_) => bootstrapped
+          ? (200, _account)
+          : (
+              403,
+              {
+                'error': {'code': 'FORBIDDEN'},
+              },
+            ),
+    }, requests: requests);
+    await pumpApp(
+      tester,
+      repository: FakeAuthRepository(
+        restored: const AuthSession(userId: 'u1', email: 'a@b.mr'),
+      ),
+      api: api,
+    );
+    await tester.enterText(find.byKey(const Key('setup-phone')), '22 12 34 56');
+    await tester.tap(find.byKey(const Key('setup-submit')));
+    await tester.pumpAndSettle();
+    final patch = requests.singleWhere((r) => r.method == 'PATCH');
+    expect(jsonDecode(patch.body), {'preferredLocale': 'ar'});
+    expect(
+      Directionality.of(tester.element(find.byType(Scaffold).first)),
+      TextDirection.rtl,
+    );
+  });
 
   testWidgets('the same link is handled once; other links are ignored', (
     tester,

@@ -151,7 +151,11 @@ class _AccountSetupFormState extends ConsumerState<AccountSetupForm> {
     });
     if (phone == null) return;
     setState(() => _pending = true);
-    final outcome = await submitAccountSetup(ref, phone);
+    final outcome = await submitAccountSetup(
+      ref,
+      phone,
+      languageCode: Localizations.localeOf(context).languageCode,
+    );
     if (!mounted) return;
     final t = AuthMessages.of(context);
     setState(() {

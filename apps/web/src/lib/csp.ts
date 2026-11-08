@@ -1,8 +1,8 @@
 /**
  * Content Security Policy (spec 03, Abuse Protection; spec 06, shop logos).
  *
- * Host allowlist, not nonces: every page is prerendered (static), and a
- * per-request nonce would force dynamic rendering of every route. Next.js
+ * Host allowlist, not nonces: pages have a prerendered shell, and a per-request
+ * nonce would force dynamic rendering of every route. Next.js
  * inlines its bootstrap scripts, so `script-src` needs 'unsafe-inline';
  * 'unsafe-eval' and WebSockets are allowed only in development (React
  * refresh / HMR).

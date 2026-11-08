@@ -26,9 +26,9 @@
 
 ## System Boundaries
 
-- `apps/web/` — Next.js application responsible for the customer storefront, seller dashboard, and administrator dashboard.
+- `apps/web/` — Next.js application responsible for the customer storefront, seller dashboard, and administrator dashboard. All routes live under `app/[locale]/`, and `src/proxy.ts` maps public URLs onto them (see Web Localization).
 
-- `apps/mobile/` — Flutter application responsible for mobile customer and seller experiences. Seller product management on mobile is a future feature that reuses the existing `/api/v1/sellers/me/products` routes.
+- `apps/mobile/` — Flutter application responsible for mobile customer and seller experiences. It opens on the public storefront; the account is a dock destination (`lib/app_shell.dart`). Seller product management on mobile is a future feature that reuses the existing `/api/v1/sellers/me/products` routes.
 
 - `apps/api/` — Node.js + Express backend responsible for REST endpoints, request validation, authentication verification, authorization, and marketplace business logic.
 
@@ -38,11 +38,11 @@
 
 - `apps/api/src/modules/shops/` — Shop registration, shop profiles, business information, the `Shop.status` lifecycle, and the shop authorization rules (onboarding exceptions and `requireApprovedSeller`). Administrator decisions are exposed through `modules/admin/`.
 
-- `apps/api/src/modules/products/` — Product catalog, categories, product variants, images, prices, and product availability. Seller routes live under `/api/v1/sellers/me/products` (`requireApprovedSeller`). `PUBLIC_PRODUCT_WHERE` is the single definition of a publicly visible product (`feature-specs/07-product-management.md`). Archiving is reversible: restoring returns a product to `DRAFT` and never publishes it.
+- `apps/api/src/modules/products/` — Product catalog, categories, product variants, images, prices, and product availability. Seller routes live under `/api/v1/sellers/me/products` (`requireApprovedSeller`). `PUBLIC_PRODUCT_WHERE` is the single definition of a publicly visible product (`feature-specs/07-product-management.md`). Archiving is reversible: restoring returns a product to `DRAFT` and never publishes it. Public discovery routes (`/api/v1/products`, `/products/facets`, `/products/:productId`) live in `catalog.routes.ts` and `catalog.service.ts`, need no authentication, and expose no stock quantities or private shop data (`feature-specs/08-product-discovery.md`).
 
 - `apps/api/src/modules/media/` — Server-side image normalization shared by shop logos and product images: signature check, header pixel limit, orientation, resizing, re-encoding without metadata, and one process-wide processing limit. Each feature supplies its own limits and error codes.
 
-- `apps/api/src/modules/inventory/` — Stock management, inventory updates, and product availability validation. Seller stock updates are compare-and-set under the product row lock (spec 07). Availability has one definition here, derived from current stock and separate from publication visibility. Checkout reservation is not built yet.
+- `apps/api/src/modules/inventory/` — Stock management, inventory updates, and product availability validation. Seller stock updates are compare-and-set under the product row lock (spec 07). Availability has one definition here (including its query form for the public availability filter), derived from current stock and separate from publication visibility. Checkout reservation is not built yet.
 
 - `apps/api/src/modules/cart/` — Shopping cart operations, cart items, and guest-to-authenticated cart merging.
 
@@ -67,6 +67,26 @@
 - `packages/design-tokens/` — Single source of truth for visual foundations: colors (light and dark), fonts, type scale, spacing, component and icon sizes, and border radii (`src/tokens.ts`). A generator (`pnpm tokens`) produces the platform theme definitions: CSS variables, Tailwind theme, and next/font loaders for `apps/web`, and Dart theme constants plus the pubspec font block for `apps/mobile`. Generated files are committed and never edited by hand. `pnpm tokens:check` (also run by `pnpm typecheck`) fails if they drift. Platform theme files (`globals.css`, `app_theme.dart`) only adapt the generated tokens to shadcn/ui and Material 3.
 
 - `infrastructure/` — Docker configuration, deployment configuration, environment templates, and infrastructure-related resources.
+
+### Web Localization
+
+- **Storefront pages have one URL per language:** French without a prefix (`/products/…`), Arabic under `/ar` (`/ar/products/…`). Crawlers keep no cookie, so this is what makes Arabic pages indexable. `hreflang` links connect the versions.
+- **All other pages keep one URL** (`/login`, `/account`, `/seller/…`, `/admin/…`, and `/auth/callback`, which is on the Supabase allowlist and opened by mobile links) and follow the `chicman_locale` cookie. `/ar/login` redirects to `/login`, so security headers matched on those paths always apply.
+- **Rules:** `routeLocale` in `apps/web/src/lib/locale.ts`, tested. A saved choice of Arabic redirects unprefixed storefront URLs to `/ar`; a request with no cookie gets the URL's language. Any cache or CDN added in front of the site must vary unprefixed storefront URLs on this cookie.
+- **Components** read the language with `useLocale()`; server code uses `currentLocale()` (`lib/page-metadata.ts`). Storefront links go through `localizedPath`.
+- **Language synchronization (web):** the profile's `preferredLocale` applies once per browser session, when a signed-in user is first seen. After that, the language switch and the profile form both update the profile and the cookie, and a `sessionStorage` marker stops an in-flight or failed save from changing the language back. A guest's choice stays on the device until sign-in, when the profile wins. A new account saves the language it was created in, because `POST /customers/me` accepts only the phone. Email-link pages (`/auth/…`) are never redirected.
+
+### Mobile Localization
+
+The app follows the profile's `preferredLocale` (`core/locale/app_locale_controller.dart`, `profileLocaleSyncProvider`). The language is kept on the device under `chicman-locale`, so it applies from the first frame, offline, and after signing out. It is read from the profile when a signed-in user is first seen, at launch or at sign-in, and a failed read leaves it unchanged. Saving the profile form applies it at once. A new account saves the language it was set up in. Without a saved language, such as for a guest who has never signed in, the app follows the device.
+
+### Server-Rendered Storefront
+
+- The web server reads the public API with no token and no cache (`features/storefront/catalog-server.ts`), with an 8-second timeout. `API_INTERNAL_URL` overrides the address when the server reaches the API differently from browsers.
+- **Rate limits stay per customer.** The web server sends `x-chicman-client-address` with `x-chicman-internal-key` (`CATALOG_INTERNAL_KEY`, same value on the API and web, server only). The API uses the address only with the right key. Without the key, all rendered pages share the web server's limit, and the API logs a warning in production.
+- **Real 404s:** a product page's shell is sent before the product is read, so `proxy.ts` checks the product first, on full page loads only (`HEAD /products/:id`, 1.5-second timeout), and rewrites a missing one to a route that answers 404. Only a `404` from the API counts: on any failure the page loads and reports it, so an outage never tells search engines a product is gone. Each full product page load therefore costs two API reads against the customer's rate limit. Client navigations use the page's own not-found view. Next sends an empty document for these responses and the browser fills it in, so the tab title stays the default. `ThemeInit` renders the theme script for the server and hydration, and adds it directly on those pages, because React does not run a script it creates on the client and warns about it.
+- **Search engine files:** `robots.txt` blocks everything and `sitemap.xml` is empty until `NEXT_PUBLIC_SITE_URL` is a public HTTPS domain (`configuredSiteUrl`). The sitemap lists home, listing, categories, and products in both languages, is cached for an hour, returns an error rather than a shortened list when the API fails, and is capped at 24,000 products (one file's limit); splitting it is the next step past that.
+- **Production requirement:** the web server must sit behind a proxy that sets `X-Forwarded-For`. `TRUST_PROXY_HOPS` on the web (default 1) says how many proxies to count from the right. A web server exposed directly would let clients choose the forwarded address.
 
 ## Storage Model
 

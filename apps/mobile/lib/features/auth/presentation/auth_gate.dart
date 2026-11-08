@@ -15,8 +15,13 @@ import 'update_password_screen.dart';
 /// - signed in after a recovery link → [UpdatePasswordScreen];
 /// - signed in → [AccountScreen] (account setup when not bootstrapped);
 /// - signed out → [LoginScreen].
+///
+/// It stays mounted while [visible] is false, so it keeps receiving email
+/// links, but it builds no account or login screen until it is shown.
 class AuthGate extends ConsumerStatefulWidget {
-  const AuthGate({super.key});
+  const AuthGate({super.key, this.visible = true});
+
+  final bool visible;
 
   @override
   ConsumerState<AuthGate> createState() => _AuthGateState();
@@ -52,6 +57,7 @@ class _AuthGateState extends ConsumerState<AuthGate> {
     if (pending != null) {
       return CallbackScreen(key: ObjectKey(pending), incoming: pending);
     }
+    if (!widget.visible) return const SizedBox.shrink();
     final recovering = ref.watch(passwordRecoveryProvider);
     final session = ref.watch(authSessionProvider);
     return switch (session) {

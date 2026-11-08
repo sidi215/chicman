@@ -8,7 +8,7 @@ import type { AuthGuards } from "./modules/auth/index.js";
 import { createAddressRouter, type AddressDependencies } from "./modules/addresses/index.js";
 import { createAdminRouter, type AdminDependencies } from "./modules/admin/index.js";
 import { createCustomerRouter, type CustomerDependencies } from "./modules/customers/index.js";
-import { createProductRouter, type ProductDependencies } from "./modules/products/index.js";
+import { createCatalogRouter, createProductRouter, type CatalogDependencies, type ProductDependencies } from "./modules/products/index.js";
 import { createShopRouter, type ShopDependencies } from "./modules/shops/index.js";
 
 export interface AppOptions {
@@ -24,13 +24,15 @@ export interface AppOptions {
   admin?: AdminDependencies;
   /** Seller product routes (spec 07). */
   products?: ProductDependencies;
+  /** Public product discovery (spec 08). */
+  catalog?: CatalogDependencies;
   /** Express `trust proxy` hops, so `req.ip` is the client address. */
   trustProxyHops?: number;
   /** Extra routers mounted under `/api/v1` (feature modules, test fixtures). */
   routers?: (guards: AuthGuards) => Router[];
 }
 
-export function createApp({ corsOrigins, auth, customers, addresses, shops, admin, products, trustProxyHops, routers }: AppOptions): Express {
+export function createApp({ corsOrigins, auth, customers, addresses, shops, admin, products, catalog, trustProxyHops, routers }: AppOptions): Express {
   const app = express();
   const guards = createAuthGuards(auth);
 
@@ -50,6 +52,7 @@ export function createApp({ corsOrigins, auth, customers, addresses, shops, admi
   if (shops !== undefined) app.use("/api/v1", createShopRouter(guards, shops));
   if (admin !== undefined) app.use("/api/v1", createAdminRouter(guards, admin));
   if (products !== undefined) app.use("/api/v1", createProductRouter(guards, products));
+  if (catalog !== undefined) app.use("/api/v1", createCatalogRouter(catalog));
   for (const router of routers?.(guards) ?? []) app.use("/api/v1", router);
 
   app.use(notFoundHandler);

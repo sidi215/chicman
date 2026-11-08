@@ -87,6 +87,21 @@ const envSchema = z.object({
       return hops;
     }),
 
+  // Shared with the web server, which renders public pages from the catalog and
+  // passes the customer's address with this key. Generate with `openssl rand -hex 32`.
+  CATALOG_INTERNAL_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value, ctx) => {
+      if (value === undefined || value === "") return undefined;
+      if (value.length < 32) {
+        ctx.addIssue({ code: "custom", message: "must be at least 32 characters" });
+        return z.NEVER;
+      }
+      return value;
+    }),
+
   // JWKS retrieval hardening (optional, with defaults).
   SUPABASE_JWKS_TIMEOUT_MS: optionalPositiveInt(3_000),
   SUPABASE_JWKS_COOLDOWN_MS: optionalPositiveInt(30_000),
@@ -126,6 +141,8 @@ export interface AppConfig {
   /** `undefined`: in-memory rate-limit counters (not allowed in production). */
   redisUrl: string | undefined;
   trustProxyHops: number;
+  /** `undefined`: server-rendered pages count against the web server's address. */
+  catalogInternalKey: string | undefined;
   supabase: {
     url: string;
     jwksUrl: URL;
@@ -241,6 +258,7 @@ export function loadConfig(source: NodeJS.ProcessEnv): AppConfig {
     databaseUrl: env.DATABASE_URL,
     redisUrl,
     trustProxyHops: env.TRUST_PROXY_HOPS,
+    catalogInternalKey: env.CATALOG_INTERNAL_KEY,
     supabase: {
       url: env.SUPABASE_URL,
       jwksUrl: new URL(env.SUPABASE_JWKS_URL),

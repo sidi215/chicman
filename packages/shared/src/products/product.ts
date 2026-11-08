@@ -103,7 +103,7 @@ export const PRODUCT_ERROR_CODES = {
 } as const;
 
 /** Up to 10 integer digits and 2 decimals, the range of `DECIMAL(12, 2)`. */
-const PRICE_PATTERN = /^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/;
+export const PRODUCT_PRICE_PATTERN = /^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/;
 
 /**
  * A price in MRU, as a decimal string ("1500" → "1500.00"). JSON numbers are
@@ -112,7 +112,7 @@ const PRICE_PATTERN = /^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/;
 export const productPriceSchema = z
   .string()
   .max(13)
-  .regex(PRICE_PATTERN)
+  .regex(PRODUCT_PRICE_PATTERN)
   .transform((value) => {
     const [whole = "0", fraction = ""] = value.split(".");
     return `${whole}.${fraction.padEnd(2, "0")}`;

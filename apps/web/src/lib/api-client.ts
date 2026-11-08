@@ -61,3 +61,25 @@ export async function apiRequest<T>(
   }
   return classifyResponse<T>(response)
 }
+
+export interface PublicRequestOptions {
+  /** Overrides the public base URL, for a server that reaches the API on another address. */
+  baseUrl?: string | undefined
+  headers?: Record<string, string>
+  signal?: AbortSignal
+}
+
+/** Calls a public API route. No token is attached, so it works for guests. */
+export async function publicApiRequest<T>(path: string, fetchImpl: typeof fetch = fetch, options: PublicRequestOptions = {}): Promise<ApiResult<T>> {
+  const baseUrl = options.baseUrl?.replace(/\/+$/, "") || getApiBaseUrl()
+  let response: Response
+  try {
+    response = await fetchImpl(`${baseUrl}/api/v1${path}`, {
+      headers: { ...options.headers, accept: "application/json" },
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    })
+  } catch {
+    return { kind: "network-error" }
+  }
+  return classifyResponse<T>(response)
+}

@@ -20,7 +20,7 @@ export function mediaUrlBuilder(mediaPublicBaseUrl: string): MediaUrl {
 }
 
 /** Active images in display order: the first is the main image. */
-const activeImages = {
+export const activeImages = {
   where: { status: "ACTIVE" },
   orderBy: [{ position: "asc" }, { createdAt: "asc" }, { id: "asc" }],
 } satisfies Prisma.Product$imagesArgs;

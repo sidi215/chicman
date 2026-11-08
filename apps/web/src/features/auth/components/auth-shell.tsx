@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { BrandLogo } from "@/components/brand/brand-logo"
 import { ThemeSelector } from "@/components/theme/theme-selector"
+import { LanguageSwitch } from "@/features/storefront/components/language-switch"
 
 /** Centered card layout shared by the auth screens. */
 export function AuthShell({
@@ -18,6 +19,7 @@ export function AuthShell({
 }) {
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-6 bg-page px-4 py-10">
+      <LanguageSwitch className="fixed top-4 start-4 z-10" />
       <ThemeSelector className="fixed top-4 end-4 z-10" />
       <BrandLogo label={brand} />
       <Card className="w-full max-w-md rounded-3xl p-6">

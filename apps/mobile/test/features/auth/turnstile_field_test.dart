@@ -3,6 +3,7 @@ import 'package:chicman/core/storage/shared_preferences_provider.dart';
 import 'package:chicman/features/auth/application/auth_providers.dart';
 import 'package:chicman/features/auth/domain/auth_failure.dart';
 import 'package:chicman/features/auth/presentation/turnstile_field.dart';
+import 'package:chicman/features/auth/presentation/auth_gate.dart';
 import 'package:chicman/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,7 +56,7 @@ Future<(FakeChallenge, FakeAuthRepository)> _openLogin(
         incomingLinksProvider.overrideWithValue(null),
         turnstileHostProvider.overrideWithValue(challenge.build),
       ],
-      child: const MyApp(),
+      child: const MyApp(home: AuthGate()),
     ),
   );
   await tester.pumpAndSettle();

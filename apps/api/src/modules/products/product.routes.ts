@@ -37,7 +37,8 @@ export const PRODUCT_IMAGE_UPLOAD_RATE_LIMIT: RateLimitRule = { name: "product-i
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function idParam(value: unknown, code: string): string {
+/** A malformed ID cannot exist, so it gets the resource's `404`. */
+export function idParam(value: unknown, code: string): string {
   const id = String(value ?? "");
   if (!UUID.test(id)) throw notFound(code);
   return id;
@@ -58,7 +59,7 @@ function seller(req: Request): ProductSeller {
  * `/api/v1/sellers/me/products` (spec 07). Every route requires an approved
  * seller. No route takes a shop or owner ID: the shop comes from the
  * authenticated user, and another shop's product resolves to `404`. There is
- * no delete route (archiving keeps history) and no public route here (spec 08).
+ * no delete route (archiving keeps history). Public routes: `catalog.routes.ts`.
  */
 export function createProductRouter(guards: AuthGuards, deps: ProductDependencies): Router {
   const router = Router();

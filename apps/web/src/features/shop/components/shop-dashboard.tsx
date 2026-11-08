@@ -15,6 +15,8 @@ import { apiRequest } from "@/lib/api-client"
 import { cn } from "@/lib/utils"
 
 import { uploadShopLogo } from "../logo-upload"
+import { useLocale } from "@/lib/locale-provider"
+
 import { formatDateTime, useShopMessages, type ShopMessages } from "../messages"
 import {
   buildChangeRequest,
@@ -340,6 +342,7 @@ function ApplicationForm({ t, onSubmit }: { t: ShopMessages; onSubmit: (body: un
 }
 
 function StatusCard({ t, shop, onResubmit }: { t: ShopMessages; shop: OwnerShopResponse; onResubmit: () => Promise<ShopOutcome> }) {
+  const locale = useLocale()
   const [notice, setNotice] = useState<Notice>(null)
   const [pending, setPending] = useState(false)
 
@@ -368,7 +371,7 @@ function StatusCard({ t, shop, onResubmit }: { t: ShopMessages; shop: OwnerShopR
       {shop.status === "APPROVED" ? <TextLink href="/seller/products">{t.myProducts}</TextLink> : null}
       {shop.latestDecision ? (
         <p className="type-body-small text-muted-foreground">
-          {`${t.latestDecision} : ${t.decision[shop.latestDecision.type]} · ${formatDateTime(shop.latestDecision.decidedAt)}`}
+          {`${t.latestDecision} : ${t.decision[shop.latestDecision.type]} · ${formatDateTime(shop.latestDecision.decidedAt, locale)}`}
         </p>
       ) : null}
       {shop.status === "REJECTED" && shop.rejection ? (
@@ -378,7 +381,7 @@ function StatusCard({ t, shop, onResubmit }: { t: ShopMessages; shop: OwnerShopR
           </p>
           {/* Plain text, rendered escaped. */}
           <p className="type-body-medium whitespace-pre-line">{shop.rejection.applicantReason}</p>
-          <p className="type-body-small text-muted-foreground">{`${t.rejectedOn} ${formatDateTime(shop.rejection.rejectedAt)}`}</p>
+          <p className="type-body-small text-muted-foreground">{`${t.rejectedOn} ${formatDateTime(shop.rejection.rejectedAt, locale)}`}</p>
         </section>
       ) : null}
       {shop.status === "SUSPENDED" ? <FormMessage tone="info">{t.suspendedNotice}</FormMessage> : null}
@@ -450,6 +453,7 @@ function FieldsForm({
 }
 
 function ChangeRequestStatus({ t, shop }: { t: ShopMessages; shop: OwnerShopResponse }) {
+  const locale = useLocale()
   const request = shop.changeRequest
   if (!request) return null
   return (
@@ -459,7 +463,7 @@ function ChangeRequestStatus({ t, shop }: { t: ShopMessages; shop: OwnerShopResp
         <p className="type-body-small">{`${t.fields.shopName} — ${t.proposed} : ${request.proposedShopName}`}</p>
       ) : null}
       {request.proposedCity !== null ? <p className="type-body-small">{`${t.fields.city} — ${t.proposed} : ${request.proposedCity}`}</p> : null}
-      <p className="type-body-small text-muted-foreground">{formatDateTime(request.decidedAt ?? request.submittedAt)}</p>
+      <p className="type-body-small text-muted-foreground">{formatDateTime(request.decidedAt ?? request.submittedAt, locale)}</p>
     </div>
   )
 }

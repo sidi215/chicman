@@ -15,6 +15,7 @@ Feature 03 (Authentication) is in progress. Feature 04 (Customer Profile) is **i
 - **Feature 06: implementation complete (2026-11-08)** on the API, web, and mobile: every checklist item verified, including web and Android by the project owner and Cloudflare R2. Automated tests across the project: API 200, web 84, Flutter 121. `S3_*` values are in `apps/api/.env`. Pending: the web storage origins for non-development builds (development falls back to local SeaweedFS), and a worker restart after the feature 04 24-hour check (see Next Steps).
 
 - **Feature 07: implementation complete (2026-11-08)** on the API and web (the spec lists no mobile work). API 327, web 107. The product decisions are recorded under Decisions.
+- **Feature 08: implementation complete (2026-11-08)** on the API, web, and mobile. The public storefront is live on `/`, and the mobile app opens on it. Follow-up done the same day: web language switch, visible thousands separator, server-rendered public pages. Language sync, real 404s, and a sitemap followed. The mobile app now follows the profile language too. API 400, web 162, Flutter 165. A check on a real Android device is pending.
 
 ### Authentication verification summary
 
@@ -40,8 +41,55 @@ Details: `feature-specs/03-authentication.md` (Verification Status) and `feature
 | 05 | Address Management | `feature-specs/05-address-management.md` | Implementation Complete (2026-11-08; built after feature 06 without changing it; checkout selection belongs to the checkout feature; manual web and Android check pending) |
 | 06 | Shop Management | `feature-specs/06-shop-management.md` | Implementation Complete (2026-11-08: every checklist item verified, including web and Android by the project owner and Cloudflare R2; the Compose worker still needs a restart to run the logo cleanup job) |
 | 07 | Product Management | `feature-specs/07-product-management.md` | Implementation Complete (2026-11-08: API and web; every checklist item verified by automated tests and a browser run with a test-signed session; sign-in with a real account, real phone photos, and product images on R2 pending; the Compose worker needs a rebuild to run the image cleanup job) |
+| 08 | Product Discovery | `feature-specs/08-product-discovery.md` | Implementation Complete (2026-11-08: API, web, and mobile; every checklist item verified by automated tests and, on the web, a browser run; Flutter on a real device pending) |
 
 ## Completed Work
+
+### Mobile follows the profile language; script warning fixed (2026-11-08)
+
+- **Decision (project owner):** the mobile app follows the profile's language. Rules: `architecture.md`, Mobile Localization. This replaces the earlier rule that Flutter follows the device, which stays as the fallback until a language is known.
+- **Mobile:** new `core/locale/app_locale_controller.dart` and `profileLocaleSyncProvider`; `MyApp` sets `locale`; the profile form applies a saved language at once, and its messages use the new language; account setup saves the language in use.
+- **Web warning:** "Encountered a script tag" came from the root layout's theme script on 404 pages, which React builds in the browser. `ThemeInit` replaces the script tag and `ThemeInitFallback`. JSON-LD was not the cause: React exempts data blocks. This also clears the dev-only warning recorded earlier.
+- **Consequence:** an existing account keeps its stored language, `fr` by default, so a phone in Arabic now shows French after sign-in until the profile is changed.
+- **Tests:** Flutter 165/165 (+10), `flutter analyze` clean, web 162/162, root typecheck, web lint, and the web production build pass. API not rerun: no API code changed.
+- **Browser (dev server, dark mode):** four 404 pages and four normal pages, French and Arabic: no script warning, no error overlay, dark mode kept. The only console errors are Turnstile's own and the expected 404s.
+- **Not verified:** the mobile language on a real device (widget tests only), including the Arabic layout with a real signed-in account.
+
+### 08 follow-up: language sync, real 404s, sitemap (2026-11-08)
+
+- **Language sync (web):** rules in `architecture.md`, Web Localization. New `lib/locale-choice.ts`, `features/profile/use-locale-sync.ts`, `LocaleSync`.
+- **Real 404s:** `proxy.ts` checks products before the page starts (`features/storefront/product-check.ts`), with a `missing-product` route. Tried first and rejected: a normal page with a status on the rewrite, because Next ignores it for a prerendered page and answers 200.
+- **Sitemap and robots:** `app/sitemap.ts`, `app/robots.ts`, gated on `configuredSiteUrl`.
+- **Bugs found and fixed:** `/products/facets` crashed the product page, because the word reached the API's facets route as an ID (from the first 08 work); product IDs are now checked as UUIDs. On every 404 the theme script did not run, so dark-mode users got a light page; fixed, now in `ThemeInit`.
+- **Tests:** web 162/162 (+12), root typecheck and web lint pass. API and Flutter were not rerun: no API or mobile code changed in this round (last results API 400/400, Flutter 155/155).
+- **Production build, API on the test database, curl:** real `404` for a draft, a suspended shop's product, an unknown UUID, `facets`, an invalid ID, and an extra segment, in French and Arabic and for browser, Googlebot, and Facebook agents; existing products `200`. API stopped: existing and unknown products both load (`200`), never a false 404. A separate build with a public domain gave the full `robots.txt` and a valid sitemap with both languages and no hidden products; without one, `Disallow: /` and an empty sitemap. With the API stopped, the sitemap kept serving its cached list.
+- **Browser (production build; signed-in flows used a stubbed session and stubbed profile responses, not a real account):** the profile language applies once per session; the switch writes only `preferredLocale`; a failed save does not bounce; guests send nothing; the profile form switches the interface; a new account keeps its language; `/auth/callback` is left alone. Dark mode and the selector work on 404 pages. Client navigation to a missing product shows the not-found view without a reload. Test data removed and the test database reset.
+- **Not verified:** a real signed-in account across two devices; the failed-sitemap path before any list is cached; a real crawl. The sitemap's API error path has no automated test.
+
+### 08 follow-up: language switch, thousands formatting, server rendering (2026-11-08)
+
+- **Decisions:** Arabic storefront pages get their own URLs (`/ar/…`) because crawlers keep no cookie; other pages keep one URL and follow a cookie. Public pages are rendered per request without a cache, so visibility and stock are always current. Details: `architecture.md` (Web Localization, Server-Rendered Storefront).
+- **Web:** all routes moved under `app/[locale]/`; new `src/proxy.ts`, `lib/locale-provider.tsx`, `lib/page-metadata.ts`, `features/storefront/{catalog-server,seo,home-sections}.ts`, `LanguageSwitch`, `CatalogFailureView`, localized not-found pages, and `robots.txt`. Every `use*Messages` hook now follows the page's language, so account, seller, and admin screens switch too. `formatMru` and `formatDateTime` now require a locale. `ThemeSelector` and Turnstile follow the language. Private page titles are translated.
+- **API:** `rateLimit` takes an optional address source; the catalog routes accept the customer's address with `CATALOG_INTERNAL_KEY` (optional, at least 32 characters, warning in production when unset).
+- **Thousands:** U+202F → U+00A0 on web and mobile.
+- **Bug found in the browser:** the product not-found view lost its page frame, because Next's not-found boundary sits above the page; fixed. Next's dev validation also raised an overlay on unknown URLs; the catch-all route opts out with `instant = false`. *(The dev warning about the theme script was fixed later the same day.)*
+- **Tests (default environment):** API 400/400 (+7), web 150/150 (+21), Flutter 155/155, `flutter analyze` clean. The worker lock and S3 suites are skipped in this run and were not run separately; no worker or storage code changed. Root typecheck, web lint, API and web production builds, and `git diff --check` pass.
+- **Raw HTML (production build, API on the test database, curl with no JavaScript):** product name, price, JSON-LD, title, canonical, and `hreflang` present for browser, Googlebot, and Facebook user agents. Metadata is in `<head>` for Facebook's agent and in `<body>` for Googlebot, which Next documents as supported. `/auth/callback` keeps its strict CSP and no-referrer in both languages. The forwarded address reached the rate-limit counter.
+- **Browser (Playwright, production build at 1280 and 390 px, then the dev server):** language switching both ways on the storefront and login, query kept, saved choice, RTL, no overflow, filters, sort, back button, pagination, variants, client navigation, not-found in both languages, no hydration errors or CSP violations from this site. The console on `/login` shows Turnstile's own messages. With the API stopped: failure message, `noindex` on product and listing pages. Test data removed (31 media objects) and the test database reset.
+- **Not verified:** a real crawl by Google (needs a public domain); `CATALOG_INTERNAL_KEY` behind a real production proxy; signed-in account, seller, and admin screens in Arabic in a browser (their pages redirect to login without a session; the login page was checked); the mobile separator on a device.
+
+### 08: product discovery — API, web, and mobile (2026-11-08)
+
+- **Shared (`packages/shared/src/products/catalog.ts`):** the query schemas, sorts, decimal price bounds, and public response types. `PRODUCT_PRICE_PATTERN` is now exported.
+- **API (`modules/products/catalog.*`):** `GET /products`, `/products/facets`, `/products/:productId`, with no guard. Every query starts from `PUBLIC_PRODUCT_WHERE`; `AVAILABLE_PRODUCT_WHERE` and `AVAILABLE_VARIANT_WHERE` sit beside the availability definition. No migration. Decisions are in spec 08, Implementation Notes.
+- **Web (`features/storefront/`, route group `app/(storefront)/`):** the home page replaces the temporary page, plus `/products` (filters, sort, and page in the URL) and `/products/[productId]`. `StorefrontHeader` carries the theme selector, whose temporary placement is gone. `publicApiRequest` sends no token.
+- **Mobile (`features/catalog/`, `lib/app_shell.dart`):** home, listing with filter and sort sheets, and details. The app now opens on the storefront. `ApiClient.getPublic` sends no token. `formatMru` matches the web.
+- **Existing tests changed for the intended behaviour:** six Flutter test files now pump `MyApp(home: AuthGate())`, because `MyApp` opens on the storefront; `AppShell` has its own tests, including an incoming email link. The spec 07 test "no public route exposes products yet" now checks that a draft stays out of the public routes and that seller routes still need a token.
+- **Bugs found and fixed while verifying:** `%` and `_` in a size or color filter acted as wildcards (Prisma's case-insensitive `equals` is `ILIKE`); the Flutter price used a normal space before the currency, unlike the web; Flutter card images had different heights in a row when one title wrapped; the web header took about a quarter of a phone screen and stayed sticky.
+- **Tests (default environment):** API 393/393 (+27 in `test/catalog.test.ts`, 3 of them without PostgreSQL), web 129/129 (+22), Flutter 155/155 (+34), `flutter analyze` clean. **Two API suites were skipped** and are not counted in the summary's `skipped 0`: the retention worker lock and S3-compatible storage. The worker suite was then run separately, 7/7; the S3 suite was not rerun, and no storage code changed. Root typecheck, web lint, API and web production builds, and `git diff --check` pass.
+- **Browser (Playwright, the running dev server, real CSP, API on the test database, SeaweedFS; 27 public products created through the real seller services, with real images):** French at 1280 and 390 px: 47 of 48 checks passed. The one failure was the check's own regex, which expected a normal space before `MRU`; the page's values were confirmed correct. Arabic with `DEFAULT_LOCALE` temporarily `ar` (restored): 9/9 at phone and desktop widths, in light mode. No CSP violation and no horizontal overflow. The only console errors were the expected `404`s for the draft, the suspended shop's product, and a malformed ID. Test objects were removed (31 media objects) and the test database reset.
+- **Not verified:** Flutter on a real device or emulator (none attached): screens were checked by widget tests and rendered images with the real fonts and theme, and those renders used placeholder images, so real network images and the Arabic product grid were not seen; a signed-in storefront header; production CSP with R2 media.
+- **Noticed:** the narrow thousands separator was barely visible in Plus Jakarta Sans. *(Fixed in the follow-up above.)*
 
 ### 06: shop logo normalization (2026-11-08)
 
@@ -632,7 +680,7 @@ Each finding was checked against the code first. Findings that the code already 
 - **Bootstrap:** zero application records before bootstrap; exactly one `User` and one `CustomerProfile` after, created or repaired in one transaction with bounded retry on unique conflicts. Refused for unconfirmed emails.
 - **JWKS hardening:** timeout, single flight, cooldown with backoff, a bounded negative cache, stale-on-error, and fail closed (`401` unknown key, `503` key set unavailable).
 - **Status icons:** meaningful status icons and text use the `state-*-text` tokens (≥ 3:1 and ≥ 4.5:1, both enforced by `tokens:check`). Light fills are for tints only.
-- **Storefront and theme selector:** the web home `/` is a temporary branded page (wordmark, links to sign-up and login), and the Flutter app opens on the auth gate; neither is the storefront. The theme selector belongs in the web header and in customer profile settings (device-local preference). It moves there when those features are built.
+- **Storefront and theme selector (updated by feature 08):** the web home `/` is the public storefront, and the Flutter app opens on it, with the account as a dock destination. The theme selector is in the web header and in customer profile settings (device-local preference).
 - **Theme behavior:** System by default, with a manual System / Light / Dark selector. The choice persists on the device (key `chicman-theme`); System follows the OS.
 - **Flutter fonts are bundled** (no runtime font fetching).
 
@@ -640,6 +688,7 @@ Each finding was checked against the code first. Findings that the code already 
 - **Archiving is reversible (feature 07):** restoring returns a product to `DRAFT` with its data preserved and never publishes it. Archived products stay out of public listings and purchasing.
 - **Publication (feature 07):** at least one valid image is required; zero stock does not prevent publication.
 - **Product image normalization (feature 07):** the server re-encodes every product image, reduces it to at most 1024 × 1024 and 2 MB, and removes all metadata. Only the result is public. Uploads may be up to 15 MB and 64 megapixels.
+- **Public catalog data (feature 08):** availability is exposed as a state, never as a stock quantity. Public shop data is limited to name, description, city, and logo.
 - **Mobile seller management:** not part of feature 07. It is a future feature that reuses the existing seller product API; it has no spec yet.
 
 ## Open Questions
@@ -678,11 +727,14 @@ Each finding was checked against the code first. Findings that the code already 
 
 ### Remaining questions
 
+- **First web visit:** defaults to French without reading the browser's language.
 - **Email-confirmation check at scale (technical decision):** `GET /auth/v1/user` shares Supabase's per-IP sign-in bucket (30 per 5 minutes), and every account setup comes from the API's IP. Options: the Admin API with the secret key on the API, or `Sb-Forwarded-For` with the secret key and IP forwarding. Either option would reintroduce a Supabase secret key, in the API environment only (it was removed on 2026-11-06 because nothing used it).
 - A general personal-data retention policy for the platform is not defined; only the phone change history has one.
 - **Notifications delivery (feature 06 follow-up):** shop decision notifications are recorded but not delivered; the channels (in-app list, push, email) and a read API belong to a notifications feature that has no spec yet.
 
 ## Next Steps
+
+**Before production (web storefront):** set the same `CATALOG_INTERNAL_KEY` on the API and web, set `NEXT_PUBLIC_SITE_URL` to the real domain (canonical URLs use it), and put the web server behind a proxy that sets `X-Forwarded-For`. `robots.txt` is fixed at build time, so build with the real domain set. Then submit `/sitemap.xml` to Google Search Console.
 
 **Feature 03, verification (no domain needed):**
 1. Registered-address anti-enumeration: login with a wrong password, the recovery email arriving, sign-up with an existing address (uses the 2 emails per hour of the built-in provider).
@@ -708,6 +760,10 @@ Each finding was checked against the code first. Findings that the code already 
 **Features 06 and 07, image verification (project owner):**
 1. Upload a real Android phone photo with EXIF as a shop logo and as a product image. Check the orientation, dimensions, and size, and inspect the public object for metadata (for example with `exiftool`).
 2. Deploy the migrations `product_image_upload_limit` and `shop_logo_upload_limit` with the matching API version.
+
+**Feature 08, remaining (project owner):**
+1. Run the storefront on an Android device against an API with published products: home, filters, sorting, details, real images, the Arabic layout, and opening an email link from the storefront.
+2. Open the storefront signed in on the web and check the header's account link.
 
 **Future feature (no spec yet):** mobile seller management in Flutter, reusing `/api/v1/sellers/me/products`.
 

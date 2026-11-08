@@ -14,6 +14,8 @@ import { useAuth } from "@/features/auth/auth-provider"
 import { FormField, FormMessage } from "@/features/auth/components/form-field"
 import { TextLink } from "@/features/auth/components/text-link"
 import { apiRequest } from "@/lib/api-client"
+import { goToLocale, markLocaleSynced } from "@/lib/locale-choice"
+import { useLocale } from "@/lib/locale-provider"
 
 import { useProfileMessages, type ProfileMessages } from "../messages"
 import {
@@ -37,7 +39,8 @@ type LoadState = "loading" | "ready" | "unavailable" | "error"
 export function ProfileSettings() {
   const t = useProfileMessages()
   const router = useRouter()
-  const { status, getAccessToken, signOut } = useAuth()
+  const { status, session, getAccessToken, signOut } = useAuth()
+  const pageLocale = useLocale()
   const [loadState, setLoadState] = useState<LoadState>("loading")
   const [profile, setProfile] = useState<CustomerProfile | null>(null)
   const [values, setValues] = useState<ProfileFormValues | null>(null)
@@ -112,6 +115,9 @@ export function ProfileSettings() {
         case "ok":
           setProfile(outcome.account.profile)
           setValues(profileFormValues(outcome.account.profile))
+          if (session !== null) markLocaleSynced(session.user.id)
+          // The interface follows the saved language at once.
+          if (outcome.account.profile.preferredLocale !== pageLocale) return goToLocale(outcome.account.profile.preferredLocale)
           return setNotice({ tone: "info", text: t.saved })
         case "invalid-phone":
           return setFieldErrors({ phone: "invalidPhone" })

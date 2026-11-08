@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import type { Role, ShopStatus } from "@chicman/shared";
 
-import { MemoryRateLimiter } from "../../src/lib/rate-limiter.js";
+import { MemoryRateLimiter, type RateLimiter } from "../../src/lib/rate-limiter.js";
 import { createPrismaClient, type PrismaClient } from "../../src/lib/prisma.js";
 import { AddressService, type AddressServiceFaults } from "../../src/modules/addresses/index.js";
 import { AdminShopQueries } from "../../src/modules/admin/index.js";
 import { StockService } from "../../src/modules/inventory/index.js";
-import { ProductImageService, ProductService, type ProductImageServiceFaults } from "../../src/modules/products/index.js";
+import { CatalogService, ProductImageService, ProductService, type ProductImageServiceFaults } from "../../src/modules/products/index.js";
 import {
   LogoService,
   PrismaShopAccessRepository,
@@ -88,6 +88,8 @@ export interface HarnessFaults {
   productImage: ProductImageServiceFaults;
 }
 
+export const CATALOG_INTERNAL_KEY = "k".repeat(32);
+
 export class ShopHarness {
   readonly jwks = new TestJwksServer();
   readonly storage = new FakeObjectStorage();
@@ -97,6 +99,8 @@ export class ShopHarness {
   logos!: LogoService;
   private key!: TestKey;
   private productRateLimiter = new MemoryRateLimiter();
+  /** Replaceable, so a test can exhaust the public catalog limit. */
+  catalogRateLimiter: RateLimiter = new MemoryRateLimiter();
 
   constructor(private readonly databaseUrl: string) {}
 
@@ -146,6 +150,11 @@ export class ShopHarness {
         // Fresh counters per test: every request comes from the same address.
         rateLimiter: { hit: (key, limit, windowMs) => this.productRateLimiter.hit(key, limit, windowMs) },
       },
+      catalog: {
+        catalog: new CatalogService(this.prisma, MEDIA_BASE_URL),
+        rateLimiter: { hit: (key, limit, windowMs) => this.catalogRateLimiter.hit(key, limit, windowMs) },
+        internalKey: CATALOG_INTERNAL_KEY,
+      },
     });
   }
 
@@ -169,6 +178,7 @@ export class ShopHarness {
     this.storage.mediaDeletes.length = 0;
     this.storage.presigned.length = 0;
     this.productRateLimiter = new MemoryRateLimiter();
+    this.catalogRateLimiter = new MemoryRateLimiter();
     await resetDatabase(this.prisma);
   }
 
