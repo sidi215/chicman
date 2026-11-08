@@ -4,6 +4,10 @@ import type { WorkerLock } from "./retention-schedule.js";
 
 /** Lock name; `hashtext` turns it into the advisory-lock key. */
 export const RETENTION_LOCK_NAME = "chicman:phone-change-retention";
+/** Lock of the shop logo cleanup job (spec 06). */
+export const LOGO_CLEANUP_LOCK_NAME = "chicman:logo-cleanup";
+/** Lock of the product image cleanup job (spec 07). */
+export const PRODUCT_IMAGE_CLEANUP_LOCK_NAME = "chicman:product-image-cleanup";
 
 /**
  * A PostgreSQL session advisory lock on a dedicated connection. The lock is
@@ -11,7 +15,7 @@ export const RETENTION_LOCK_NAME = "chicman:phone-change-retention";
  * the process dies. If the connection drops, the lock is lost: `onLost` is
  * called and the process should exit so it restarts and acquires it again.
  */
-export function createAdvisoryLock(databaseUrl: string, onLost: () => void): WorkerLock {
+export function createAdvisoryLock(databaseUrl: string, onLost: () => void, lockName: string = RETENTION_LOCK_NAME): WorkerLock {
   const client = new pg.Client({ connectionString: databaseUrl });
   let connected: Promise<void> | null = null;
   let held = false;
@@ -32,7 +36,7 @@ export function createAdvisoryLock(databaseUrl: string, onLost: () => void): Wor
       await connected;
       const result = await client.query<{ acquired: boolean }>(
         "SELECT pg_try_advisory_lock(hashtext($1)) AS acquired",
-        [RETENTION_LOCK_NAME],
+        [lockName],
       );
       held = result.rows[0]?.acquired === true;
       return held;
@@ -41,7 +45,7 @@ export function createAdvisoryLock(databaseUrl: string, onLost: () => void): Wor
       released = true;
       if (connected === null) return;
       try {
-        if (held) await client.query("SELECT pg_advisory_unlock(hashtext($1))", [RETENTION_LOCK_NAME]);
+        if (held) await client.query("SELECT pg_advisory_unlock(hashtext($1))", [lockName]);
       } finally {
         held = false;
         await client.end().catch(() => undefined);

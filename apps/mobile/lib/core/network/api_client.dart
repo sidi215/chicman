@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -55,6 +56,7 @@ class ApiClient {
   final http.Client _http;
 
   static const _timeout = Duration(seconds: 15);
+  static const _storageUploadTimeout = Duration(minutes: 5);
 
   Future<ApiResult<T>> get<T>(
     String path, {
@@ -86,6 +88,27 @@ class ApiClient {
       return const ApiNetworkError();
     }
     return classify(response, decode);
+  }
+
+  /// Uploads bytes to a presigned object-storage URL (spec 06, shop logo).
+  /// Only `Content-Type` is set (the length comes from the body); the
+  /// access token is never sent to storage. Returns the HTTP status, or
+  /// `null` on a network error.
+  Future<int?> putToStorage(
+    String url,
+    String contentType,
+    Uint8List bytes,
+  ) async {
+    try {
+      final request = http.Request('PUT', Uri.parse(url))
+        ..headers['content-type'] = contentType
+        ..bodyBytes = bytes;
+      final response = await _http.send(request).timeout(_storageUploadTimeout);
+      await response.stream.drain<void>();
+      return response.statusCode;
+    } on Object {
+      return null;
+    }
   }
 
   /// Classifies a response. Exposed for tests.

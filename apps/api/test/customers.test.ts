@@ -14,6 +14,7 @@ import { createTestKeyStore, createTestVerifier, startApp, type RunningApp } fro
 import { FakeEmailConfirmation } from "./helpers/customers.js";
 import { TestJwksServer } from "./helpers/jwks-server.js";
 import { createTestKey, signToken, type TestKey } from "./helpers/keys.js";
+import { resetDatabase } from "./helpers/database.js";
 
 dotenv.config({ quiet: true });
 const databaseUrl = process.env["TEST_DATABASE_URL"];
@@ -58,11 +59,7 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
     delete faults.afterPhoneUpdated;
     emailConfirmation.mode = "ok";
     emailConfirmation.unconfirmed.clear();
-    await prisma.customerPhoneChange.deleteMany();
-    await prisma.customerProfile.deleteMany();
-    await prisma.shop.deleteMany();
-    await prisma.userRole.deleteMany();
-    await prisma.user.deleteMany();
+    await resetDatabase(prisma);
   });
 
   const call = async (method: string, path: string, sub: string, body?: unknown) => {

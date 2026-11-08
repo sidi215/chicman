@@ -45,6 +45,10 @@ dependencies:
   app_links: ^7.2.2
   webview_flutter: ^4.14.1
   flutter_secure_storage: ^11.2.0
+  image_picker: ^1.2.4
+  maplibre_gl: ^0.27.1
+  geolocator: ^14.1.2
+  webview_flutter_android: ^4.14.1
 
 dev_dependencies:
   flutter_test:

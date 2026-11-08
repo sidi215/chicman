@@ -114,6 +114,29 @@ flutter run \
 
 `API_BASE_URL=http://10.0.2.2:4000` reaches the host API from the Android emulator. `SITE_URL` is the email-callback base and the App Links host. `TURNSTILE_SITE_KEY` is optional (empty disables Turnstile). The same values can be kept in `apps/mobile/.env` (git-ignored, public values only) and passed with `flutter run --dart-define-from-file=.env --dart-define=API_BASE_URL=http://10.0.2.2:4000 --dart-define=SITE_URL=http://localhost:3000`. The session is stored in platform secure storage (Android Keystore, iOS Keychain). On iOS, set the `APP_LINK_HOST` build setting for Universal Links.
 
+**`SITE_URL` is required with `TURNSTILE_SITE_KEY`:** without it the app shows a configuration error and sends no login or sign-up request.
+
+#### Running on an Android phone
+
+1. On the phone: Settings → About phone → tap **Build number** 7 times; then Developer options → turn on **USB debugging**.
+2. Connect it by USB and accept the authorization prompt. `adb` is in `<Android SDK>/platform-tools`. `adb devices` must list the phone as `device`.
+3. With the API running on this computer, forward its ports to the phone over USB (repeat after reconnecting):
+
+   ```sh
+   adb reverse tcp:4000 tcp:4000   # Chicman API
+   adb reverse tcp:8333 tcp:8333   # local object storage (shop logos)
+   ```
+
+4. From `apps/mobile`:
+
+   ```sh
+   flutter run --dart-define-from-file=.env \
+     --dart-define=API_BASE_URL=http://localhost:4000 \
+     --dart-define=SITE_URL=http://localhost:3000
+   ```
+
+The phone does not fetch `SITE_URL`: it only gives the Turnstile document its hostname, and `localhost` must be in the Cloudflare widget's hostname list. `10.0.2.2` works only on the emulator.
+
 Without the Supabase values the app still launches and shows that authentication is not configured.
 
 ## Documentation

@@ -42,7 +42,8 @@ class AppConfig {
   /// Universal Links, with the web page as the browser fallback.
   final String siteUrl;
 
-  /// Cloudflare Turnstile public site key; empty disables the widget.
+  /// Cloudflare Turnstile public site key; empty means no challenge is shown
+  /// (development only: a project with CAPTCHA enabled then refuses the request).
   final String turnstileSiteKey;
 
   bool get hasSupabase =>
@@ -53,9 +54,14 @@ class AppConfig {
   /// `<SITE_URL>/auth/callback`, or `null` when the site URL is not set.
   String? get authCallbackUrl => _site.isEmpty ? null : '$_site/auth/callback';
 
+  /// Whether a Turnstile token is required. A site key always means the
+  /// challenge is required: if [turnstileBaseUrl] is missing, the client
+  /// fails closed and sends no authentication request.
+  bool get turnstileRequired => turnstileSiteKey.isNotEmpty;
+
   /// Base URL of the Turnstile WebView document: the site origin, so the
-  /// widget sees the site's hostname. `null` when Turnstile or the site URL
-  /// is not configured (the widget is then disabled).
+  /// widget sees the site's hostname. `null` when the site key or the site
+  /// URL is missing.
   String? get turnstileBaseUrl {
     if (turnstileSiteKey.isEmpty || _site.isEmpty) return null;
     final uri = Uri.tryParse(_site);

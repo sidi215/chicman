@@ -20,6 +20,7 @@ import { createTestKeyStore, createTestVerifier, startApp, type RunningApp } fro
 import { FakeEmailConfirmation } from "./helpers/customers.js";
 import { TestJwksServer } from "./helpers/jwks-server.js";
 import { createTestKey, signToken, type TestKey } from "./helpers/keys.js";
+import { resetDatabase } from "./helpers/database.js";
 
 dotenv.config({ quiet: true });
 const databaseUrl = process.env["TEST_DATABASE_URL"];
@@ -90,11 +91,7 @@ describe("API rate limits against Redis and PostgreSQL (spec 03/04)", { skip }, 
   });
 
   beforeEach(async () => {
-    await prisma.customerPhoneChange.deleteMany();
-    await prisma.customerProfile.deleteMany();
-    await prisma.shop.deleteMany();
-    await prisma.userRole.deleteMany();
-    await prisma.user.deleteMany();
+    await resetDatabase(prisma);
   });
 
   async function startWith(rateLimiter: RateLimiter): Promise<RunningApp> {

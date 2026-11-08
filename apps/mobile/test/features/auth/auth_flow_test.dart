@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
 import 'fakes.dart';
+import '../addresses/fake_map.dart';
 
 const _host = 'chicman.test';
 const _config = AppConfig(
@@ -54,6 +55,7 @@ Future<void> pumpApp(
         authRepositoryProvider.overrideWithValue(repository),
         apiClientProvider.overrideWithValue(api ?? _bootstrappedApi()),
         incomingLinksProvider.overrideWithValue(links),
+        fakeMapOverride,
       ],
       child: const MyApp(),
     ),
@@ -225,6 +227,10 @@ void main() {
       final post = requests.singleWhere((r) => r.method == 'POST');
       expect(jsonDecode(post.body), {'phone': '+22222123456'});
       expect(post.headers['authorization'], 'Bearer access-token');
+      // Spec 05: the delivery address is offered right after setup (skippable).
+      expect(find.text('Où souhaitez-vous être livré ?'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('address-later')));
+      await tester.pumpAndSettle();
       expect(find.text('Session active. Rôles : CUSTOMER'), findsOneWidget);
       expect(find.textContaining('(non vérifié)'), findsOneWidget);
     },

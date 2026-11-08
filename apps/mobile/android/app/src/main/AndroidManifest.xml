@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Supabase Auth and the Chicman API (release builds; debug adds it automatically). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Delivery address GPS (spec 05): requested only when the customer taps "Utiliser ma position". -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <application
         android:label="chicman"
         android:name="${applicationName}"

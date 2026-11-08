@@ -62,6 +62,7 @@ class AuthMessages {
   String get signedInAs => _t['signedInAs']!;
   String get contactPhone => _t['contactPhone']!;
   String get profileSettings => _t['profileSettings']!;
+  String get myShop => _t['myShop']!;
   String get logout => _t['logout']!;
   String get retry => _t['retry']!;
   String get loading => _t['loading']!;
@@ -72,6 +73,9 @@ class AuthMessages {
   String get sessionInvalid => _t['sessionInvalid']!;
   String get captchaLabel => _t['captchaLabel']!;
   String get captchaLoading => _t['captchaLoading']!;
+  String get captchaUnavailable => _t['captchaUnavailable']!;
+  String get captchaExpired => _t['captchaExpired']!;
+  String get captchaNotConfigured => _t['captchaNotConfigured']!;
   String error(AuthFailure failure) => _errors[failure]!;
 
   static const _fr = AuthMessages._(
@@ -135,6 +139,7 @@ class AuthMessages {
       'signedInAs': 'Connecté en tant que',
       'contactPhone': 'Téléphone de contact (non vérifié)',
       'profileSettings': 'Paramètres du profil',
+      'myShop': 'Ma boutique (vendre sur Chicman)',
       'logout': 'Se déconnecter',
       'retry': 'Réessayer',
       'loading': 'Chargement…',
@@ -147,6 +152,11 @@ class AuthMessages {
           'Votre session n\'est plus valide. Veuillez vous reconnecter.',
       'captchaLabel': 'Vérification anti-robot',
       'captchaLoading': 'Chargement de la vérification anti-robot…',
+      'captchaUnavailable':
+          'Impossible de charger la vérification anti-robot. Vérifiez votre connexion et réessayez.',
+      'captchaExpired': 'La vérification anti-robot a expiré. Recommencez-la.',
+      'captchaNotConfigured':
+          "La vérification anti-robot n'est pas configurée dans cette version de l'application.",
     },
     {
       AuthFailure.invalidEmail: 'Adresse e-mail invalide.',
@@ -228,6 +238,7 @@ class AuthMessages {
       'signedInAs': 'متصل باسم',
       'contactPhone': 'هاتف التواصل (غير مُتحقق منه)',
       'profileSettings': 'إعدادات الملف الشخصي',
+      'myShop': 'متجري (البيع على شيكمان)',
       'logout': 'تسجيل الخروج',
       'retry': 'إعادة المحاولة',
       'loading': 'جارٍ التحميل…',
@@ -239,6 +250,11 @@ class AuthMessages {
       'sessionInvalid': 'جلستك لم تعد صالحة. يرجى تسجيل الدخول مجددًا.',
       'captchaLabel': 'التحقق من أنك لست روبوتًا',
       'captchaLoading': 'جارٍ تحميل التحقق من أنك لست روبوتًا…',
+      'captchaUnavailable':
+          'تعذّر تحميل التحقق من أنك لست روبوتًا. تحقق من اتصالك وأعد المحاولة.',
+      'captchaExpired': 'انتهت صلاحية التحقق من أنك لست روبوتًا. أعده من جديد.',
+      'captchaNotConfigured':
+          'التحقق من أنك لست روبوتًا غير مُعدّ في هذه النسخة من التطبيق.',
     },
     {
       AuthFailure.invalidEmail: 'البريد الإلكتروني غير صالح.',

@@ -49,6 +49,7 @@ There is no draft status. An application is submitted in exactly two ways:
 | `SUSPENDED` → `APPROVED` (reinstatement) | Administrator | `REINSTATED`; internal reason required |
 
 - Any other transition is rejected with `409 Conflict`. Transitions are enforced server-side only. The owner can never approve, reject, suspend, or reinstate.
+- **No self-administration.** An administrator cannot perform administrative decisions on a shop they own, even when their account has the ADMIN role. This covers application approval and rejection, suspension, reinstatement, and change-request approval and rejection, and reading the shop's administrative history (internal reasons and notes). The check runs inside the decision transaction, under the shop row lock, before any write; a refused attempt returns `403 SHOP_SELF_ADMINISTRATION_FORBIDDEN` and changes nothing (no status change, decision, audit record, role grant, notification, or change-request outcome). The administrator keeps full rights on shops owned by other users; the review list (no internal data) stays available.
 - Transitions are conditional updates on the expected current status (`UPDATE … WHERE id = $1 AND status = $expected`). Concurrent actions (for example a resubmission or a pending edit racing an admin decision, or two admins deciding at once) therefore cannot both succeed. The losing request gets `409`.
 - **Every status change runs in one transaction** that performs the insert or conditional update, writes the audit record, and (for initial approval only) grants `SELLER` if not already held. If any step fails, nothing is committed.
 - Suspension retains `SELLER`; the status check blocks access. Reinstatement retains the role without a new grant and restores access only when the administrator's `SUSPENDED` → `APPROVED` transition commits.
@@ -162,13 +163,13 @@ Logos are uploaded **directly to object storage** with a presigned URL, through 
 | Constraint | Value |
 |---|---|
 | Formats | JPEG, PNG, WebP. SVG and every other format are rejected. |
-| Maximum file size | 2 MB (2,097,152 bytes) |
-| Maximum dimensions | 1024 × 1024 pixels |
+| Uploaded original | At most 15 MB (15,728,640 bytes) and 64 megapixels |
+| Published logo | At most 2 MB (2,097,152 bytes) and 1024 × 1024 pixels. It is always the server's normalized image, never the uploaded file |
 | Presigned URL lifetime | 5 minutes |
 
 **Storage locations:**
 - **Staging bucket (private)** receives uploads. It is never publicly readable, so unverified content is never served.
-- **Media bucket (public)** holds only verified logos, served from the configured public media origin (`MEDIA_PUBLIC_BASE_URL`).
+- **Media bucket (public)** holds only verified, normalized logos, served from the configured public media origin (`MEDIA_PUBLIC_BASE_URL`).
 - Both are plain S3 buckets selected by configuration, so the flow works the same on SeaweedFS and R2. Presigned **PUT** is used (R2 does not support presigned POST policies). The staging bucket's CORS allows `PUT` from the configured web origins.
 
 **State.** Two records track every object the flow creates:
@@ -195,7 +196,7 @@ Logos are uploaded **directly to object storage** with a presigned URL, through 
   Because the row is committed before the object is written, every public object the server creates can be found and reconciled, even if the API process crashes.
 
 **Flow:**
-1. **Request upload:** `POST /api/v1/sellers/me/shop/logo/uploads` with `{ contentType, contentLength }`. The owner is authorized (rule 9). `contentType` must be `image/jpeg`, `image/png`, or `image/webp`, and `contentLength` at most 2 MB; otherwise `400`. These declared values only restrict the upload; they are never proof of content. Requests are rate-limited per shop (Redis rate-limit counters).
+1. **Request upload:** `POST /api/v1/sellers/me/shop/logo/uploads` with `{ contentType, contentLength }`. The owner is authorized (rule 9). `contentType` must be `image/jpeg`, `image/png`, or `image/webp`, and `contentLength` at most 15 MB; otherwise `400`. These declared values only restrict the upload; they are never proof of content. Requests are rate-limited per shop (Redis rate-limit counters).
 2. **Server prepares the upload:** generates `uploadId` (UUID) and the staging key `shop-logos/{shopId}/{uploadId}` (the client never chooses a key), and stores a `ShopLogoUpload` row (`PENDING`, declared type and size, `expiresAt` = now + 5 minutes, `completeBy` = `expiresAt` + the completion window).
 3. **Server returns** `{ uploadId, uploadUrl, method: "PUT", headers: { "Content-Type", "Content-Length" }, expiresAt }`. The presigned PUT is valid for 300 seconds, for that single staging key, with `Content-Type` and `Content-Length` as signed headers.
 4. **Client uploads** the file directly to the staging bucket with that request.
@@ -206,14 +207,18 @@ Logos are uploaded **directly to object storage** with a presigned URL, through 
       - `PROCESSING` with a live lease → `409` (`LOGO_COMPLETION_IN_PROGRESS`); the client retries later.
       - `REJECTED` → `422` with the recorded `rejectionCode`.
       - `EXPIRED`, or past `completeBy` → `410` (`LOGO_UPLOAD_EXPIRED`); the owner starts a new upload.
-   3. **Verify** the staged object on every attempt (nothing from an earlier attempt is reused):
-      - the actual size (object metadata, and a read capped at 2 MB) is at most 2 MB;
+   3. **Verify and normalize** the staged object on every attempt (nothing from an earlier attempt is reused):
+      - the actual size (object metadata, and a read capped at 15 MB) is at most 15 MB;
       - the actual type is detected from the file signature (magic bytes: JPEG, PNG, or WebP) and matches the declared type; the client's MIME type and file name are never trusted;
-      - the image decodes successfully, and its decoded dimensions are at most 1024 × 1024.
+      - the pixel count, read from the header before any pixel is decoded, is at most 64 megapixels;
+      - the image decodes successfully;
+      - it is turned upright from its EXIF orientation, reduced to at most 1024 × 1024 without enlarging, and re-encoded in the same format. This removes EXIF (GPS coordinates, device information), XMP, IPTC, ICC profiles, and any data appended to the file;
+      - quality steps down only if needed to fit 2 MB; an image that still cannot fit is refused (`LOGO_TOO_LARGE`);
+      - the result is checked again (format, dimensions, no metadata) before it can be published.
 
       A missing staged object (`LOGO_NOT_UPLOADED`) is retryable: the upload returns to `PENDING` and the response is `422`. Any other verification failure is terminal: `REJECTED` with its `rejectionCode` (`LOGO_TOO_LARGE`, `LOGO_UNSUPPORTED_TYPE`, `LOGO_TOO_LARGE_DIMENSIONS`, `LOGO_INVALID_IMAGE`), response `422`, and `logoUrl` is unchanged.
    4. **Record the public object:** commit a `ShopLogoObject` row (`PENDING`) with a new unique key `shop-logos/{shopId}/{uploadId}/{objectId}.{jpg|png|webp}` (`objectId` is a fresh UUID per attempt).
-   5. **Write the public object:** upload the **verified bytes held in memory** (never a server-side copy of the staging key, which the client could have replaced) to the media bucket at that key, with a server-set `Content-Type`. The object is immutable: the key is new, so nothing is overwritten, and it is never written again.
+   5. **Write the public object:** upload the **normalized bytes held in memory** (never a server-side copy of the staging key, which the client could have replaced) to the media bucket at that key, with a server-set `Content-Type`. The object is immutable: the key is new, so nothing is overwritten, and it is never written again.
    6. **Commit, in one database transaction, in this order:**
       1. mark the upload `COMPLETED` with `resultObjectId` (`… WHERE id = $uploadId AND status = 'PROCESSING' AND attempt = $attempt`). The attempt number fences out a request whose lease expired. This runs first, so a fenced-out attempt stops before touching any logo state;
       2. mark the shop's previously `ACTIVE` object, if any, `RELEASED` (`… WHERE shopId = $shopId AND status = 'ACTIVE'`; zero rows is fine when the shop has no logo);
@@ -279,7 +284,7 @@ Logos are uploaded **directly to object storage** with a presigned URL, through 
 | 4 | Manage rejected application (view including the rejection reason, correct all fields) | Authenticated owner **and** `status = REJECTED`. Resubmission is rule 2. | Status unchanged |
 | 5 | View shop status | Authenticated owner, in any status (including `SUSPENDED`). | — |
 | 6 | Normal seller operations (products, inventory, seller orders, delivery) | Role `SELLER` **and** owner of the target shop **and** `Shop.status = APPROVED` (`requireApprovedSeller`). Resources referenced by ID (for example a product) must belong to the owner's shop. | — |
-| 7 | Approve, reject, suspend, reinstate; decide change requests; read the audit history and internal notes | Authorized administrator only (role `ADMIN` from PostgreSQL), through `modules/admin/`. | See lifecycle |
+| 7 | Approve, reject, suspend, reinstate; decide change requests; read the audit history and internal notes | Authorized administrator only (role `ADMIN` from PostgreSQL), through `modules/admin/`, **and not the shop's owner** (`403 SHOP_SELF_ADMINISTRATION_FORBIDDEN`). | See lifecycle |
 | 8 | Edit an approved shop (immediate fields; submit a `shopName`/`city` change request) | Role `SELLER` **and** owner **and** `status = APPROVED` (`requireApprovedSeller`). | Status unchanged |
 | 9 | Upload or remove the shop logo | Authenticated owner **and** `status` is `PENDING`, `REJECTED`, or `APPROVED` (for `APPROVED`, `requireApprovedSeller`). | Status unchanged |
 
@@ -321,78 +326,115 @@ Logos are uploaded **directly to object storage** with a presigned URL, through 
 - Authentication provider configuration.
 - Customer profile fields.
 
+## Implementation Notes
+
+Implemented on 2026-11-07. Automated checks: API `test/shops.test.ts`, `test/shop-logo.test.ts`, `test/shop-logo-s3.test.ts` (PostgreSQL, Redis, SeaweedFS), web `src/features/shop/shop.test.ts`, mobile `test/features/shop/`.
+
+Decisions made during implementation (the spec left them open):
+
+- **Image library:** `sharp` 0.35.5. Normalization (`modules/media/image-normalizer.ts`, shared with product images; `logo/logo-normalizer.ts` holds the logo limits and error codes) reads the header first (dimensions, format), then decodes with `limitInputPixels` = 64 megapixels; `sharp.cache(false)` and `concurrency(1)`. Two originals are processed at once per API process, across logos and product images, to bound memory. The normalized image is published, never the uploaded file. *(This replaces the earlier rule that published the verified original bytes and refused images over 1024 × 1024.)*
+- **S3 client:** `@aws-sdk/client-s3` 3.1153.0 with path-style addressing and `requestChecksumCalculation: "WHEN_REQUIRED"` (no flexible-checksum headers in presigned URLs). The presigned PUT signs `content-length;content-type;host`.
+- **Cloudflare R2 (verified 2026-11-08 against real buckets):** no code change was needed. Required configuration: a private staging bucket and a separate media bucket with public access enabled in the dashboard (`r2.dev` or a custom domain; `MEDIA_PUBLIC_BASE_URL` = that origin, with no bucket in the path); an API token with Object Read & Write on both buckets; endpoint `https://<account-id>.r2.cloudflarestorage.com` (no bucket in the path), region `auto`; a staging-bucket CORS rule allowing `PUT` with the `content-type` header from each web origin (required: the browser PUT is cross-origin); and the web's `NEXT_PUBLIC_STORAGE_UPLOAD_ORIGIN` / `NEXT_PUBLIC_MEDIA_BASE_URL` set to the R2 endpoint and the public origin (the development CSP fallback only covers local SeaweedFS). Never run `storage:setup --public-acl` against R2 (no ACLs).
+- **Bucket setup:** `pnpm --filter @chicman/api storage:setup [-- --public-acl]` creates the buckets and the staging CORS rule. SeaweedFS makes the media bucket public with the `public-read` ACL (it refused the bucket-policy forms tried). R2 has no ACLs: public access is enabled in the R2 dashboard (custom domain or `r2.dev`), and `MEDIA_PUBLIC_BASE_URL` points to it.
+- **Storage configuration:** the `S3_*` settings are all-or-nothing and required in production. Outside production, without them, the logo routes return `503 LOGO_STORAGE_NOT_CONFIGURED` and the worker skips the cleanup job.
+- **Rate limit:** logo upload requests are limited to 10 per shop per 10 minutes (Redis counters, in-memory fallback).
+- **Cleanup interval:** the logo cleanup job runs every 5 minutes in the existing worker, behind its own PostgreSQL advisory lock (`chicman:logo-cleanup`).
+- **Notifications:** no notifications module existed. `modules/notifications/` now records a `Notification` row (recipient, type, allowlisted JSON payload: `shopName`, `shopStatus`, `changeRequestOutcome`, `fields`, `decidedAt`) inside the decision transaction. Delivery channels and a notification read API are not built; they belong to the notifications feature.
+- **Owner view:** responses include the shop fields plus `status`, `latestDecision`, `rejection`, and `changeRequest` (with its `id`), built field by field. Mutations (`POST`, `PATCH`, resubmit, change request) return the same owner view.
+- **Administrators:** no route grants `ADMIN`; operators use `pnpm --filter @chicman/api admin:grant -- --supabase-user-id <uuid>` (idempotent; `--revoke`, `--list`) on an existing, bootstrapped account.
+- **Admin read routes:** `GET /api/v1/admin/shops` (query `status`, `openChangeRequest=true|false` (with or without a pending change request; absent: no filter), `limit` ≤ 100; oldest update first) and `GET /api/v1/admin/shops/:shopId` (shop, status events, field changes, change requests, with internal reasons, notes, and actor IDs).
+- **Decision responses:** shop decisions return `{ shopId, status, decisionType, decidedAt }`; change-request decisions `{ id, shopId, status, decidedAt }`.
+- **Error codes:** `SHOP_ERROR_CODES` in `packages/shared` (`SHOP_ALREADY_EXISTS`, `SHOP_NOT_FOUND`, `SHOP_STATUS_CONFLICT`, `REVIEW_FIELD_NOT_EDITABLE`, `CHANGE_REQUEST_OPEN`, `CHANGE_REQUEST_NOT_FOUND`, `CHANGE_REQUEST_CONFLICT`, `LOGO_*`). Validation failures are `400 BAD_REQUEST`.
+- **Logo removal and creation audit:** `PATCH { logoUrl: null }` releases the `ACTIVE` object in the same transaction and is audited as `OWNER_UPDATE`. Shop creation writes its `ShopStatusEvent` (`null` → `PENDING`) but no field-change events (nothing changed yet).
+- **Shop suspended during a logo completion:** the commit transaction re-checks the status under a row lock; if the shop may no longer change its logo, the attempt's object is released and deleted, the upload returns to `PENDING`, and the response is `403`.
+- **A completion whose new object was reclaimed by the job** (rollback at step 6.3) releases and deletes its object, returns the upload to `PENDING` with `LEASE_EXPIRED` (fenced), and answers with the current state (`409`, retry).
+- **Web CSP** (`apps/web/src/lib/csp.ts`, tested in `csp.test.ts`): the storage endpoint goes in `connect-src` (presigned PUT) and the media origin in `img-src` (logo display), from `NEXT_PUBLIC_STORAGE_UPLOAD_ORIGIN` and `NEXT_PUBLIC_MEDIA_BASE_URL`. In development only, when they are unset, both fall back to the local SeaweedFS origin `http://localhost:8333`. A production build has no fallback and allows only the configured origins.
+- **Mobile:** `image_picker` ^1.2.4 picks the logo (iOS `NSPhotoLibraryUsageDescription` added); the client checks the file signature and the 15 MB upload size before uploading, and the server verifies and normalizes. Presigned uploads have a 5-minute timeout, because a 15 MB photo can be slow on a mobile connection.
+
 ## Verification Checklist
 
 Creation and submission:
-- [ ] A customer without `SELLER` and without a shop can create a shop with valid fields; it is created directly as `PENDING` (`201`), and the initial application appears in the admin review list.
-- [ ] No draft status exists: `ShopStatus` has exactly `PENDING`, `APPROVED`, `REJECTED`, `SUSPENDED`.
-- [ ] Each missing required field, or an invalid value (length, phone format, a `logoUrl` string, control characters) → `400`, nothing is written.
-- [ ] The database rejects a second shop for the same owner, and concurrent creation attempts produce exactly one shop (`409` for the other).
-- [ ] Protected fields (`id`, `ownerUserId`/`ownerId`, `status`, roles, decision metadata, timestamps), alone or mixed with valid fields, on create or update → `400`, nothing is written.
-- [ ] The shop owner is always the authenticated user, even when the body names another user.
-- [ ] Updating the shop contact phone does not change the customer profile phone, and vice versa.
-- [ ] Resubmission from `REJECTED` → `PENDING`. Resubmission from `PENDING`, `APPROVED`, or `SUSPENDED` → `409`, status unchanged.
-- [ ] Only the owner can resubmit: another user (who can only target their own shop) gets `404` and cannot change the rejected shop.
+- [x] A customer without `SELLER` and without a shop can create a shop with valid fields; it is created directly as `PENDING` (`201`), and the initial application appears in the admin review list.
+- [x] No draft status exists: `ShopStatus` has exactly `PENDING`, `APPROVED`, `REJECTED`, `SUSPENDED`.
+- [x] Each missing required field, or an invalid value (length, phone format, a `logoUrl` string, control characters) → `400`, nothing is written.
+- [x] The database rejects a second shop for the same owner, and concurrent creation attempts produce exactly one shop (`409` for the other).
+- [x] Protected fields (`id`, `ownerUserId`/`ownerId`, `status`, roles, decision metadata, timestamps), alone or mixed with valid fields, on create or update → `400`, nothing is written.
+- [x] The shop owner is always the authenticated user, even when the body names another user.
+- [x] Updating the shop contact phone does not change the customer profile phone, and vice versa.
+- [x] Resubmission from `REJECTED` → `PENDING`. Resubmission from `PENDING`, `APPROVED`, or `SUSPENDED` → `409`, status unchanged.
+- [x] Only the owner can resubmit: another user (who can only target their own shop) gets `404` and cannot change the rejected shop.
 
 Decision reasons and visibility:
-- [ ] Rejecting an application (`PENDING` → `REJECTED`) requires exactly one reason, `applicantReason`: without an `applicantReason`, with one under 10 or over 500 characters, or with an `internalReason` → `400`; the shop stays `PENDING`. A valid rejection stores that single reason as both the audit reason and `rejection.applicantReason`.
-- [ ] A rejected owner sees the rejection reason and time on web and mobile, and can correct and resubmit.
-- [ ] After resubmission, the rejection reason remains in the audit history.
-- [ ] Each of the other five decisions without an `internalReason`, or with one under 10 or over 500 characters → `400`, nothing changes; with a valid one, the reason is stored with decision type, actor, and timestamp.
-- [ ] `applicantReason` on any decision other than application rejection → `400`.
-- [ ] `internalReason` and `internalNote` never appear in any owner- or seller-facing response (shop details, status view, change requests, history), for every decision type.
-- [ ] The owner sees each outcome without a reason: `latestDecision.type` is `APPLICATION_APPROVED`, `APPLICATION_REJECTED`, `SUSPENDED`, or `REINSTATED` (a reinstated shop is distinguishable from an initially approved one, both with `status = APPROVED`), and the change request shows `APPROVED` or `REJECTED`.
-- [ ] `rejection` is present only while `status = REJECTED`; owner resubmission does not change `latestDecision`.
-- [ ] Each of the six decisions produces one owner notification with the outcome; no notification contains `internalReason`, `internalNote`, administrator identities, audit metadata, or the application-rejection reason.
+- [x] Rejecting an application (`PENDING` → `REJECTED`) requires exactly one reason, `applicantReason`: without an `applicantReason`, with one under 10 or over 500 characters, or with an `internalReason` → `400`; the shop stays `PENDING`. A valid rejection stores that single reason as both the audit reason and `rejection.applicantReason`.
+- [x] A rejected owner sees the rejection reason and time on web and mobile, and can correct and resubmit. *(Verified manually by the project owner on web, signed in, and Android, 2026-11-07.)*
+- [x] After resubmission, the rejection reason remains in the audit history.
+- [x] Each of the other five decisions without an `internalReason`, or with one under 10 or over 500 characters → `400`, nothing changes; with a valid one, the reason is stored with decision type, actor, and timestamp.
+- [x] `applicantReason` on any decision other than application rejection → `400`.
+- [x] `internalReason` and `internalNote` never appear in any owner- or seller-facing response (shop details, status view, change requests, history), for every decision type.
+- [x] The owner sees each outcome without a reason: `latestDecision.type` is `APPLICATION_APPROVED`, `APPLICATION_REJECTED`, `SUSPENDED`, or `REINSTATED` (a reinstated shop is distinguishable from an initially approved one, both with `status = APPROVED`), and the change request shows `APPROVED` or `REJECTED`.
+- [x] `rejection` is present only while `status = REJECTED`; owner resubmission does not change `latestDecision`.
+- [x] Each of the six decisions produces one owner notification with the outcome; no notification contains `internalReason`, `internalNote`, administrator identities, audit metadata, or the application-rejection reason.
 
 Roles and access:
-- [ ] Creating or resubmitting an application does not grant `SELLER`.
-- [ ] A `PENDING` applicant can view and update the application, but is denied product and seller-order operations (`403`).
-- [ ] A `REJECTED` applicant can correct and resubmit and is denied seller operations (`403`).
-- [ ] Initial approval (including after a resubmission) grants `SELLER` in the same transaction; the user keeps `CUSTOMER` and can still use customer features.
-- [ ] An `APPROVED` seller can perform authorized seller operations.
-- [ ] A `SUSPENDED` seller can view the shop status but is denied all normal seller operations, field edits, change requests, and logo uploads (`403`), although the `SELLER` role remains.
-- [ ] Reinstatement (`SUSPENDED` → `APPROVED`) restores seller operations without writing a `UserRole` row, and is recorded as `REINSTATED`; nothing is restored before it commits.
-- [ ] A user holding `SELLER` whose shop is not `APPROVED` is denied (the status check is enforced, not only the role).
-- [ ] Client-provided roles or statuses (token claims, headers, query, body) never grant seller permissions.
-- [ ] A user cannot read or modify another user's shop or its resources (`404`), including by sending another shop's ID, change-request ID, or upload ID.
-- [ ] A customer is denied seller operations (`403`). Unauthenticated requests are denied (`401`).
+- [x] Creating or resubmitting an application does not grant `SELLER`.
+- [x] A `PENDING` applicant can view and update the application, but is denied product and seller-order operations (`403`).
+- [x] A `REJECTED` applicant can correct and resubmit and is denied seller operations (`403`).
+- [x] Initial approval (including after a resubmission) grants `SELLER` in the same transaction; the user keeps `CUSTOMER` and can still use customer features.
+- [x] An `APPROVED` seller can perform authorized seller operations.
+- [x] A `SUSPENDED` seller can view the shop status but is denied all normal seller operations, field edits, change requests, and logo uploads (`403`), although the `SELLER` role remains.
+- [x] Reinstatement (`SUSPENDED` → `APPROVED`) restores seller operations without writing a `UserRole` row, and is recorded as `REINSTATED`; nothing is restored before it commits.
+- [x] A user holding `SELLER` whose shop is not `APPROVED` is denied (the status check is enforced, not only the role).
+- [x] Client-provided roles or statuses (token claims, headers, query, body) never grant seller permissions.
+- [x] A user cannot read or modify another user's shop or its resources (`404`), including by sending another shop's ID, change-request ID, or upload ID.
+- [x] A customer is denied seller operations (`403`). Unauthenticated requests are denied (`401`).
 
 Approved-shop editing:
-- [ ] On an `APPROVED` shop, `description`, `contactPhone`, `whatsappPhone`, and `address` update immediately with validation, and each change writes a `ShopFieldChangeEvent`.
-- [ ] On an `APPROVED` shop, `shopName` or `city` in a `PATCH` → `400`, nothing is written.
-- [ ] A `shopName`/`city` change request leaves `Shop.shopName`/`Shop.city` and every public response unchanged until an administrator decides.
-- [ ] A second change request while one is open → `409`.
-- [ ] Approving a change request applies the proposed values and audits them; rejecting it keeps the approved values and records the decision.
-- [ ] Submitting or deciding a change request never changes `Shop.status`. Racing decisions cannot both succeed (`409`).
-- [ ] Only administrators can decide change requests (`403` for owners and customers).
+- [x] On an `APPROVED` shop, `description`, `contactPhone`, `whatsappPhone`, and `address` update immediately with validation, and each change writes a `ShopFieldChangeEvent`.
+- [x] On an `APPROVED` shop, `shopName` or `city` in a `PATCH` → `400`, nothing is written.
+- [x] A `shopName`/`city` change request leaves `Shop.shopName`/`Shop.city` and every public response unchanged until an administrator decides.
+- [x] A second change request while one is open → `409`.
+- [x] Approving a change request applies the proposed values and audits them; rejecting it keeps the approved values and records the decision.
+- [x] Submitting or deciding a change request never changes `Shop.status`. Racing decisions cannot both succeed (`409`).
+- [x] Only administrators can decide change requests (`403` for owners and customers).
 
 Logo upload:
-- [ ] Requesting an upload with an unsupported type (including `image/svg+xml`) or a declared size over 2 MB → `400`.
-- [ ] The presigned URL expires after 5 minutes, covers only the generated key, and rejects a body whose length or type differs from the signed headers.
-- [ ] A file whose real content is not JPEG, PNG, or WebP (for example SVG or HTML renamed `.png`, or with a spoofed `Content-Type`) → `422`, `logoUrl` unchanged.
-- [ ] A file over 2 MB, or an image over 1024 × 1024, or an undecodable image → `422`, `logoUrl` unchanged.
-- [ ] Completing before uploading → `422` (`LOGO_NOT_UPLOADED`), and the upload stays retryable; completing another shop's upload → `404`; completing after `completeBy` → `410`.
-- [ ] Repeating completion of a `COMPLETED` upload returns the same `logoUrl` (`200`) and creates no new object, audit event, or state change.
-- [ ] Concurrent completion requests for one upload: exactly one claims it; the others get `409` (or `200` once it is completed); exactly one public object becomes `ACTIVE`.
-- [ ] A request whose lease expired cannot commit (attempt fencing), and the retry writes a new key instead of overwriting.
-- [ ] Failure injection: public write failure → `logoUrl` unchanged, upload retryable, object row `RELEASED`; database failure after the write → object not referenced, compensating delete attempted, object row `DELETED` or `RELEASED`; failed compensating delete → the reconciliation job deletes the orphan later.
-- [ ] Reconciliation never deletes an `ACTIVE` object or any object referenced by `Shop.logoUrl`, and a late completion of a reclaimed object rolls back.
-- [ ] Staging cleanup deletes the staging objects of completed, rejected, and expired uploads, never touches a `PROCESSING` upload with a live lease, and is safe to rerun.
-- [ ] Replacing an existing `ACTIVE` logo commits (the previous object is released before the new one is activated, under the partial unique index); a failure injected after the release rolls back, leaving the previous logo `ACTIVE` and referenced.
-- [ ] Stale attempt: an attempt whose lease expired while a newer attempt completed cannot commit, return the upload to `PENDING`, or change the newer `ACTIVE` object or `Shop.logoUrl`. It releases and deletes only its own object and responds with the current state (`200` with the newer `logoUrl`).
-- [ ] A database error during completion returns the upload to `PENDING` only while the attempt still holds the fence; it never overwrites a newer `COMPLETED` upload.
-- [ ] Abandoned `PROCESSING` upload with an expired lease: before `completeBy` the job moves it to `PENDING` (`LEASE_EXPIRED`) and keeps its staging object; after `completeBy` the job moves it to `EXPIRED` and deletes its staging object.
-- [ ] A stale worker that wakes after the job reclaimed its upload, or after a newer completion, changes nothing but its own object.
-- [ ] A failed staging or object delete is retried on the next run; objects referenced by `Shop.logoUrl` or `ACTIVE` are never deleted.
-- [ ] Replacing or removing a logo releases the previous object, which is then deleted.
-- [ ] A valid logo is copied to the media bucket, `logoUrl` is its public media URL (never a presigned URL or staging key), and the change is audited.
-- [ ] Staging objects are never publicly readable.
-- [ ] The flow passes against both SeaweedFS (local) and an R2-compatible configuration.
+- [x] Requesting an upload with an unsupported type (including `image/svg+xml`) or a declared size over 15 MB → `400`.
+- [x] The presigned URL expires after 5 minutes, covers only the generated key, and rejects a body whose length or type differs from the signed headers. *(Expiry checked as the signed `X-Amz-Expires=300`; not waited out.)*
+- [x] A file whose real content is not JPEG, PNG, or WebP (for example SVG or HTML renamed `.png`, or with a spoofed `Content-Type`) → `422`, `logoUrl` unchanged.
+- [x] A file over 15 MB, or an image over 64 megapixels, or an undecodable image → `422`, `logoUrl` unchanged.
+- [x] An image over 1024 × 1024 is reduced, keeping its proportions and format, and the published logo is at most 2 MB.
+- [x] EXIF orientation is applied, and EXIF (GPS, device), XMP, IPTC, and ICC metadata and appended data are removed, on the server.
+- [x] Only the normalized image becomes public, also after retries and recovery; each retry normalizes again and writes a new key.
+- [x] A logo published before normalization stays served, and can be replaced or removed normally. *(Its object keeps its metadata until then; there is no backfill.)*
+- [ ] A real Android phone photo with EXIF: orientation, removed metadata, dimensions, size, and public object. *(Not done: tests use generated photos, and no device was available.)*
+- [x] Completing before uploading → `422` (`LOGO_NOT_UPLOADED`), and the upload stays retryable; completing another shop's upload → `404`; completing after `completeBy` → `410`.
+- [x] Repeating completion of a `COMPLETED` upload returns the same `logoUrl` (`200`) and creates no new object, audit event, or state change.
+- [x] Concurrent completion requests for one upload: exactly one claims it; the others get `409` (or `200` once it is completed); exactly one public object becomes `ACTIVE`.
+- [x] A request whose lease expired cannot commit (attempt fencing), and the retry writes a new key instead of overwriting.
+- [x] Failure injection: public write failure → `logoUrl` unchanged, upload retryable, object row `RELEASED`; database failure after the write → object not referenced, compensating delete attempted, object row `DELETED` or `RELEASED`; failed compensating delete → the reconciliation job deletes the orphan later.
+- [x] Reconciliation never deletes an `ACTIVE` object or any object referenced by `Shop.logoUrl`, and a late completion of a reclaimed object rolls back.
+- [x] Staging cleanup deletes the staging objects of completed, rejected, and expired uploads, never touches a `PROCESSING` upload with a live lease, and is safe to rerun.
+- [x] Replacing an existing `ACTIVE` logo commits (the previous object is released before the new one is activated, under the partial unique index); a failure injected after the release rolls back, leaving the previous logo `ACTIVE` and referenced.
+- [x] Stale attempt: an attempt whose lease expired while a newer attempt completed cannot commit, return the upload to `PENDING`, or change the newer `ACTIVE` object or `Shop.logoUrl`. It releases and deletes only its own object and responds with the current state (`200` with the newer `logoUrl`).
+- [x] A database error during completion returns the upload to `PENDING` only while the attempt still holds the fence; it never overwrites a newer `COMPLETED` upload.
+- [x] Abandoned `PROCESSING` upload with an expired lease: before `completeBy` the job moves it to `PENDING` (`LEASE_EXPIRED`) and keeps its staging object; after `completeBy` the job moves it to `EXPIRED` and deletes its staging object.
+- [x] A stale worker that wakes after the job reclaimed its upload, or after a newer completion, changes nothing but its own object.
+- [x] A failed staging or object delete is retried on the next run; objects referenced by `Shop.logoUrl` or `ACTIVE` are never deleted.
+- [x] Replacing or removing a logo releases the previous object, which is then deleted.
+- [x] A valid logo is copied to the media bucket, `logoUrl` is its public media URL (never a presigned URL or staging key), and the change is audited.
+- [x] Staging objects are never publicly readable.
+- [x] The flow passes against both SeaweedFS (local) and an R2-compatible configuration. *(SeaweedFS: `test/shop-logo-s3.test.ts`. Cloudflare R2: `test/shop-logo-r2.test.ts` and a real browser upload, 2026-11-08.)*
 
 Administration and audit:
-- [ ] Only administrators can approve, reject, suspend, or reinstate; shop owners, customers, and sellers get `403`, unauthenticated requests `401`.
-- [ ] Invalid transitions return `409`, and racing transitions (including an owner edit racing an admin decision) cannot both succeed.
-- [ ] Suspension and reinstatement without a valid `internalReason` → `400`.
-- [ ] Every status change writes exactly one `ShopStatusEvent` with actor, reasons, internal note, and time, in the same transaction; a failed transition writes none.
-- [ ] Status changes are visible to the shop owner on web and mobile.
+- [x] Only administrators can approve, reject, suspend, or reinstate; shop owners, customers, and sellers get `403`, unauthenticated requests `401`.
+- [x] An administrator cannot approve, reject, suspend, or reinstate a shop they own, or decide its change requests, or read its administrative history (`403 SHOP_SELF_ADMINISTRATION_FORBIDDEN`); nothing changes. Another administrator can.
+- [x] Invalid transitions return `409`, and racing transitions (including an owner edit racing an admin decision) cannot both succeed.
+- [x] Suspension and reinstatement without a valid `internalReason` → `400`.
+- [x] Every status change writes exactly one `ShopStatusEvent` with actor, reasons, internal note, and time, in the same transaction; a failed transition writes none.
+- [x] Status changes are visible to the shop owner on web and mobile. *(Verified manually by the project owner on web, signed in, and Android, 2026-11-07.)*
+
+## Logo Normalization Verification (2026-11-08)
+
+- **Automated:** `test/shop-logo-normalizer.test.ts` covers JPEG, PNG, WebP, orientation, GPS, device, XMP, IPTC, and ICC removal, appended data, invalid signatures, HEIC refusal, oversized files, decompression bombs, output limits, corrupt images, retries, concurrency, storage and database failures, replacement, cleanup, and existing logos. Deliberately breaking the normalizer (publishing the original, skipping orientation, skipping the resize) makes these tests fail.
+- **Cloudflare R2, test buckets only:** `test/shop-logo-r2.test.ts` passed 8/8, including a generated 3000 × 4000 photo with GPS and device data, read back from the public `r2.dev` URL as 1024 × 768 with no metadata. Nothing was checked on a hosted production deployment, which does not exist yet, and no storage setting was changed. One full test run failed all 8 with `fetch failed` before any logo logic ran; it passed alone and in the next full run, and the cause was not determined.
+- **Browser, local SeaweedFS:** an 8.1 MB generated photo with orientation 6 was shown upright at 768 × 1024; the public object was 106 KB with no metadata (test-signed session).

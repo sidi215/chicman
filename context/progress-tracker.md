@@ -10,8 +10,11 @@ Feature 03 (Authentication) is in progress. Feature 04 (Customer Profile) is **i
 - **CAPTCHA (Turnstile) is enabled** on the hosted project, by the project owner, and enforced (a login without a token → `captcha_failed`).
 - **Security verification executed (2026-11-06):** callback link attacks, rate limits with Redis and the in-memory fallback, safe error logging, `503` for database outages, and anti-enumeration (unregistered address).
 - **Still open:** the registered-address anti-enumeration checks, the email-check scaling decision, the database password rotation, and all domain-dependent work (SMTP, branded templates, App Links / Universal Links, iOS).
-- **Feature 04: implementation complete (2026-11-07).** Backend, web, and mobile are done. The profile settings screens were verified live (web signed in, Android) by the project owner on 2026-11-07. The retention worker runs persistently as the Compose `worker` service; its first scheduled 24-hour run (due 2026-11-08T13:49:27Z, after the 2026-11-07 reboot reset the clock) is **pending**; the project owner will verify it manually.
+- **Feature 04: implementation complete (2026-11-07).** Backend, web, and mobile are done. The profile settings screens were verified live (web signed in, Android) by the project owner on 2026-11-07. The retention worker runs persistently as the Compose `worker` service; its first scheduled 24-hour run (now due 2026-11-09T17:20:18Z: restarts on 2026-11-08 at 00:53, 12:40, and 17:20 UTC each reset the clock, and the logs show no run #2 yet) is **pending**; the project owner will verify it manually.
 - Development uses Supabase's default email provider (team addresses only) until a domain exists.
+- **Feature 06: implementation complete (2026-11-08)** on the API, web, and mobile: every checklist item verified, including web and Android by the project owner and Cloudflare R2. Automated tests across the project: API 200, web 84, Flutter 121. `S3_*` values are in `apps/api/.env`. Pending: the web storage origins for non-development builds (development falls back to local SeaweedFS), and a worker restart after the feature 04 24-hour check (see Next Steps).
+
+- **Feature 07: implementation complete (2026-11-08)** on the API and web (the spec lists no mobile work). API 327, web 107. The product decisions are recorded under Decisions.
 
 ### Authentication verification summary
 
@@ -34,9 +37,169 @@ Details: `feature-specs/03-authentication.md` (Verification Status) and `feature
 | — | Design System decisions: shared tokens + theme selection | No spec — scope from Decisions | Completed |
 | 03 | Authentication | `feature-specs/03-authentication.md` | In Progress (web verified end to end; Android manually verified by the project owner; CAPTCHA enabled by the project owner and enforced; security checks executed; remaining manual checks, database password rotation, and domain-dependent work pending) |
 | 04 | Customer Profile | `feature-specs/04-customer-profile.md` | Implementation Complete (first scheduled 24-hour worker run pending manual verification by the project owner) |
-| 06 | Shop Management | `feature-specs/06-shop-management.md` | Not Started (spec decisions resolved, no open questions; nothing implemented) |
+| 05 | Address Management | `feature-specs/05-address-management.md` | Implementation Complete (2026-11-08; built after feature 06 without changing it; checkout selection belongs to the checkout feature; manual web and Android check pending) |
+| 06 | Shop Management | `feature-specs/06-shop-management.md` | Implementation Complete (2026-11-08: every checklist item verified, including web and Android by the project owner and Cloudflare R2; the Compose worker still needs a restart to run the logo cleanup job) |
+| 07 | Product Management | `feature-specs/07-product-management.md` | Implementation Complete (2026-11-08: API and web; every checklist item verified by automated tests and a browser run with a test-signed session; sign-in with a real account, real phone photos, and product images on R2 pending; the Compose worker needs a rebuild to run the image cleanup job) |
 
 ## Completed Work
+
+### 06: shop logo normalization (2026-11-08)
+
+- **Architecture:** the normalizer moved to `modules/media/image-normalizer.ts`, with per-feature limits and one shared processing limit. Thin wrappers keep the error codes: `shops/logo/logo-normalizer.ts` and `products/images/image-normalizer.ts`. `logo-verifier.ts` was removed. Product image behaviour is unchanged.
+- **Logo flow:** only the verify step changed: it now normalizes, and the result is what gets written. Claim, fencing, immutable keys, idempotency, recovery, and cleanup are unchanged. Uploads may be 15 MB and 64 megapixels; published logos are at most 2 MB and 1024 × 1024. Migration `shop_logo_upload_limit` relaxes the staged upload's size check and is applied to the local development and test databases.
+- **Clients:** web and Flutter accept 15 MB and explain the processing (French and Arabic). Flutter's presigned upload timeout went from 60 seconds to 5 minutes for large photos on mobile connections. No client processes images.
+- **Tests (default environment):** API 366/366 (+39), web 107/107, Flutter 121/121, `flutter analyze` clean. **Two API suites were skipped** and are not counted in the summary's `skipped 0`: the retention worker lock (`TEST_DATABASE_URL` is not in the process environment) and S3-compatible storage (`TEST_S3_ENDPOINT` not set). Run separately with those variables: worker tests 7/7, S3 2/2 (local SeaweedFS). Root typecheck, web lint, API and web production builds, and `git diff --check` pass.
+- **Test strength:** publishing the original (25 of 43 fail), skipping orientation (13 of 43 fail), and skipping the resize (4 of 4 relevant tests fail) are each detected; the normalizer was restored after each.
+- **Cloudflare R2, test buckets only:** the logo suite passed 8/8, including a generated photo with GPS and device data read back from the public URL at 1024 × 768 with no metadata. 0 objects left. **One earlier full run failed all 8 with `fetch failed`**, before any logo logic ran; it passed alone and in the next full run, and the cause was not determined. No storage setting was changed. Product images have not been tested on R2.
+- **Browser (Chrome, local SeaweedFS, test database, test-signed session), 8/8, French:** an 8.1 MB generated photo with orientation 6 was shown upright at 768 × 1024; the public object was 106 KB with no metadata. Test objects were removed and the test database reset.
+- **Not verified:** a real Android or iPhone photo (no device attached; fixtures are generated), the Flutter logo screen on a device with a large photo, production, and memory under load.
+- **Known limits:** logos published before this change keep their metadata until replaced or removed (no backfill); HEIC is refused; animated images keep their first frame.
+
+### 07: product image normalization (2026-11-08)
+
+- **Decision:** the server resizes phone photos and removes their metadata. The upload limit rises to 15 MB and 64 megapixels, because the old 2 MB limit kept phone photos from reaching the server; 2 MB and 1024 × 1024 now apply to the published image.
+- **API:** `modules/products/images/image-normalizer.ts`; `lib/concurrency-limiter.ts` (two uploads processed at once per API process). The completion flow writes the normalized bytes; claim, fencing, recovery, and cleanup are otherwise unchanged. Migration `product_image_upload_limit` relaxes the staged upload's size check and is applied to the local development and test databases.
+- **Shop logos:** unchanged. `logo-verifier.ts` is back to its original form, and regression tests pin its verdicts.
+- **Web:** the 15 MB pre-check and updated French and Arabic texts. No image processing in the browser.
+- **Tests (default environment):** API 327/327 (+41), web 107/107 (+1). **Two API suites were skipped** and are not counted in the summary's `skipped 0`: the retention worker lock (`TEST_DATABASE_URL` is not in the process environment) and S3-compatible storage (`TEST_S3_ENDPOINT` not set). Run separately with those variables: worker tests 7/7, S3 2/2 (local SeaweedFS). Root typecheck, web lint, API and web production builds, and `git diff --check` pass.
+- **End to end (Chrome, local SeaweedFS, test database, test-signed session), 9/9:** an 8.1 MB generated 3000 × 4000 JPEG with EXIF, GPS, and orientation 6 went straight to storage; the page showed it upright at 1024 × 768; the public object was 106 KB, with no EXIF, GPS, or device data. French only.
+- **Not verified:** real phone photos (fixtures are generated); Cloudflare R2 for product images; the Arabic page with the new texts in a browser (dictionary tests only); memory and timing under production load.
+
+### 07: approved product decisions implemented (2026-11-08)
+
+- **Restore:** `POST /sellers/me/products/:productId/restore` moves `ARCHIVED` → `DRAFT` under the shop and product locks; data is preserved and nothing is published. The web product page has a Restaurer action, and archive messages now say archiving is reversible.
+- **Availability:** one definition in `modules/inventory/availability.ts`, derived from current stock and separate from `PUBLIC_PRODUCT_WHERE`. Variants now report `available`, and the seller page marks unavailable variants. Replenishing needs no republishing.
+- **Publication messages:** the page states that an image is required and that zero stock does not block publication, and explains the out-of-stock state.
+- **Specs:** 07 and 08 aligned. Specs 09 and 10 already require server-side stock validation and were not changed. Purchasing is not enforced by any route yet, because no cart or checkout exists.
+- **Tests (default environment):** API 286/286 (+15), web 106/106 (+5). **Two API suites were skipped** and are not counted in the summary's `skipped 0`: the retention worker lock (it reads `TEST_DATABASE_URL` from the process environment only, not `.env`) and S3-compatible storage (`TEST_S3_ENDPOINT` not set). Each was then run separately with those variables: worker tests 7/7 and S3 2/2 (local SeaweedFS). The default run also includes the shop logo R2 suite, because `R2_TEST_*` is set; no product image test uses R2.
+- **Checks:** root typecheck, web lint, API and web production builds, and `git diff --check` pass.
+- **Browser (test-signed session, test database, local SeaweedFS), French and Arabic, 11/11 each:** publish blocked without an image, publishing at zero stock, out-of-stock note, replenishing without republishing, archive, restore, publish again, no CSP violation, no horizontal overflow. Test objects were removed and the test database reset.
+
+### 07: product management — API and web (2026-11-08)
+
+- **Shared (`packages/shared/src/products/`):** categories, statuses, limits, error codes, strict schemas, decimal-string price schema, and response types.
+- **Database:** migration `product_management` (additive): `Product`, `ProductVariant`, `ProductImageUpload`, `ProductImage`. Raw SQL: positive price, stock range, status timestamps, variant attribute required, case-insensitive variant uniqueness, verified image metadata. Applied to the local development and test databases.
+- **API:** `modules/products/` (products, variants, image removal and order, `PUBLIC_PRODUCT_WHERE`), `modules/products/images/` (upload flow and cleanup, same rules as logos), `modules/inventory/` (compare-and-set stock). Routes under `/sellers/me/products`, all `requireApprovedSeller`. `verifyImage` was split out of `verifyLogo` (logo behaviour unchanged). The worker gains the product image cleanup job (5 min, own advisory lock).
+- **Web:** `/seller/products` (list, status filter, pagination), `/seller/products/new`, `/seller/products/[productId]` (details, editing, images with order, stock, variants, publish, archive with confirmation; read-only when archived). `formatMru` in `lib/money.ts`. Linked from the account panel (`SELLER`) and the approved shop dashboard. French and Arabic texts. `SectionCard` and `TextAreaField` are now exported from the shop dashboard for reuse.
+- **Tests:** API 271/271 (+71 in `test/products.test.ts`: authorization, isolation, prices, categories, variants, stock, lifecycle, visibility, images, failure recovery, cleanup). Web 101/101 (+17). Root typecheck, web lint, production build, and `git diff --check` pass. Flutter was not run: no mobile file changed. The worker-lock and S3 suites still skip without their test env variables, although the summary prints `skipped 0`.
+- **Browser (Chrome, dev server, real CSP, real API on the test database, local SeaweedFS, test-signed session):** French flow from empty list to archive, with real presigned PUTs without the bearer token; oversized and disguised-SVG images refused by the server; stale stock refused; no CSP violation, no horizontal overflow at 390 px and 1280 px. Arabic with `DEFAULT_LOCALE` temporarily `ar` (restored): 11/11 checks and the phone layout inspected. One French check failed only because it counted the create form that Next keeps hidden for back navigation; the page itself is read-only, as its screenshot shows.
+- **Found and fixed in the browser:** going back to the create page showed the old values and a permanently disabled button, because Next keeps a visited page's state (Cache Components). The form now resets on success; rechecked in the browser. No automated test covers this component behaviour.
+- **Cleanup:** 7 test objects removed from the local media bucket (0 left under `product-images/`), test database reset.
+- **Not verified:** a signed-in session from hosted Supabase; product images on Cloudflare R2; the image cleanup job inside the running worker (covered by tests only).
+- **Environment:** the machine rebooted during this work (about 17:20 UTC), which restarted the Compose worker. It was not rebuilt.
+
+### 03: Android Turnstile fail-closed and diagnosis (2026-11-08)
+
+- **Cause found (reproduced):** `apps/mobile/.env` has the site key but no `SITE_URL`. Built from it alone, `turnstileBaseUrl` was `null`, so the challenge was silently removed and login went out without a token, which Supabase refuses (`captcha_failed`). Whether this is exactly what happened on the project owner's phone is not proven: no phone was attached. Separately, the emulator's `API_BASE_URL=http://10.0.2.2:4000` does not work on a phone (use `adb reverse`, see `README.md`).
+- **Fix (`turnstile_field.dart`, `app_config.dart`, messages):** a site key always requires a token (fail closed, with a visible configuration error); load watchdog (20 s); stale and empty tokens refused; separate load-failure, rejection, and expiry messages in French and Arabic; third-party cookies for this WebView only; the view is an injectable provider. `webview_flutter_android` became a direct dependency. The token wiring to `signUp` and `signInWithPassword` was already correct and is unchanged. Web, hosted Supabase settings, and env files are unchanged.
+- **Results:** Flutter 113/113 (+13), `flutter analyze` clean. Emulator results and what was not executed: spec 03, Android verification status.
+- **Real phone (2026-11-08, Samsung SM-A165F, Android 16, WebView 156):** the project owner solved the real challenge and logged in against hosted Supabase. The reported chromium `"Error"` line is Cloudflare's own `console.debug`/`console.dir` output and also appears in this successful run; it was not a failure. No failure was reproduced this round, so the earlier failure's exact cause on this phone stays unproven.
+- **Debug-only diagnostics added:** `[turnstile]` logcat lines (Turnstile error codes, page and resource events, environment facts; token length only) and WebView remote debugging. Flutter 116/116, analyzer clean.
+- **Pending (project owner):** sign-up on the phone.
+- **Spec 03 checklist:** the onboarding item left open as "spec 06, not implemented yet" is ticked: `test/shops.test.ts` covers each clause, and the shop onboarding routes do not use `requireApprovedSeller`. API 196/196 including R2; two suites were skipped because their test env variables were not set (retention worker lock, S3-compatible storage), though the summary prints `skipped 0`.
+
+### Review fixes across features 03, 05, and 06 (2026-11-08)
+
+- **Logo completion:** bytes are deleted only when this attempt released its own row. Before, a commit that succeeded but reported an error deleted the live logo's object.
+- **Addresses:** an accuracy-only patch no longer stores an accuracy on a `MANUAL` pin.
+- **Admin list:** `openChangeRequest=false` now selects shops without a pending request; absent stays unfiltered.
+- **Owner forms (web, mobile):** the fields form is keyed by status instead of `updatedAt`, so saves and logo changes keep unsaved edits and the saved message. On the web, the save and change-request confirmations live in the dashboard.
+- **Mobile:** presigned uploads have a 60-second timeout; other requests stay at 15 seconds.
+- **Not changed:** status event timestamps. A new test shows decisions and resubmissions that wait for the shop lock are already timestamped after the wait.
+- **Results:** API 199/199 (worker lock and S3 suites skipped: env not set), web 84/84, Flutter 118/118, typecheck, lint, and analyzer clean. The web form changes have unit tests for the merge only and were not run in a browser.
+- **Follow-up fixes:** `decideChangeRequest` takes `decidedAt` after the shop lock; the mobile change-request card is no longer remounted, so its "sent" message stays and the form restarts from current values only when a request opens or is decided. The regression tests for the timestamp and the message failed before the fix. API 200/200 (same two suites skipped), API typecheck clean, Flutter 121/121, analyzer clean. Manual web and Android checks of these form changes are pending (project owner).
+
+### 05: address management — mobile, integration, and verification (2026-11-08)
+
+- **Mobile** (`features/addresses/`): address list (default, edit, delete with confirmation), editor (map + details → confirmation → save; "Plus tard" during onboarding), `maplibre_gl` ^0.27.1 map with the fixed center pin, `geolocator` ^14.1.2 (permission asked only on "Utiliser ma position"; denied, permanently denied, service off, and timeout keep the manual path). Android location permissions and the iOS usage text added. After account setup the onboarding address screen opens; the account screen links to the addresses and prompts while none exists.
+- **Existing tests adjusted for the intended change:** the auth flow test now expects the onboarding address screen after account setup and leaves it with "Plus tard"; widget tests use a fake map view (MapLibre platform views do not render in tests).
+- **Results:** API 199/199 (PostgreSQL, Redis, SeaweedFS, R2; +13 addresses); web 83/83; Flutter 100/100 (+9: domain and screens), `flutter analyze` clean, debug APK builds; root typecheck, web lint, API and web production builds, and `git diff --check` pass.
+- **Feature 06 untouched** apart from the shared test harness and helper (`resetDatabase` also clears addresses; the harness mounts the address routes).
+- **Open:** checkout selection (checkout feature); manual check on web (signed in) and an Android device (real GPS prompt, map gestures); iOS not built here.
+
+### 05: address management — API and web (2026-11-08)
+
+- **Spec decisions** (project owner): every address has a map pin (manual entry = placing the pin), Mauritania-style fields, OpenFreeMap tiles, skippable onboarding prompt. Implementation details recorded in spec 05, Decisions.
+- **API** (`modules/addresses/`, migration `customer_addresses`): `CustomerAddress` with `DECIMAL(9,6)` coordinates, `locationSource`, `locationConfirmedAt`, and DB guards (one default per user, E.164, non-blank text, Mauritania bounding box). Routes under `/customers/me/addresses` (list, create, get, patch, delete, set default); writes lock the user row (10-address limit and single default hold under concurrency); default switches do not change `updatedAt`; rate limit 30/user, 100/IP per 10 min. Shared schemas and types in `packages/shared/src/addresses/`.
+- **Web** (`features/addresses/`): `/account/addresses` (list, default, edit, delete with inline confirmation), `/account/addresses/new` (`?onboarding=1` adds "Plus tard"), `/account/addresses/[addressId]`; MapLibre (`maplibre-gl` 6.15.0) with a fixed center pin, "Utiliser ma position" (browser geolocation), and a confirmation step before saving. The account panel links to the addresses and shows a prompt while none exists (dismissal device-local); after account setup the customer is sent to the skippable address screen.
+- **CSP:** map style origin (`NEXT_PUBLIC_MAP_STYLE_URL`, default `https://tiles.openfreemap.org`) in `connect-src`; `worker-src 'self' blob:`. MapLibre's worker is copied to `public/maplibre/` by `scripts/copy-maplibre-worker.mjs` before `dev`/`build` (git-ignored, lint-ignored). Note: the dev server reloads its config only when `next.config.ts` itself changes, not `src/lib/csp.ts`; restart it (or touch the config) after CSP changes.
+- **Found and fixed in the browser check:** MapLibre's stylesheet (`.maplibregl-map { position: relative }`) overrode the container's absolute positioning, so drags never reached the map; the container is now sized directly. Pin moves are detected without relying on `originalEvent`.
+- **Results:** API addresses 13/13 (PostgreSQL). Web 83/83 (+7 address logic, +1 CSP), typecheck, lint, and production build pass. Browser (Playwright Chrome on the dev server, real CSP and OpenFreeMap tiles, stubbed Supabase session and API): account prompt shown; map loads (16 tiles, worker served, no CSP violation); no pin → error; GPS position; drag → manual pin; confirmation step sends nothing; save sends an allowlisted body with `locationConfirmed: true` and redirects; prompt hidden afterwards; list shows the default address.
+
+### 06: no self-administration of an owned shop (2026-11-08)
+
+- **Rule:** An administrator cannot perform administrative decisions on a shop they own, even when their account has the ADMIN role.
+- **API:** `assertNotOwnShop` (`modules/shops/shop-lifecycle.ts`) runs inside each decision transaction after locking the shop row and before any write: application approval and rejection, suspension, reinstatement, and change-request approval and rejection (the change-request decision now locks the shop row first, the same lock order as the owner's submission). The admin shop detail (internal reasons and notes) applies it too. A refused attempt returns `403 SHOP_SELF_ADMINISTRATION_FORBIDDEN` (new shared code) and writes nothing. Order of checks: invalid body `400`, unknown shop `404`, own shop `403`, wrong status `409`.
+- **Web:** the admin screens show "Vous ne pouvez pas administrer une boutique dont vous êtes propriétaire…" for that code (display only; the API enforces the rule).
+- **Tests:** `test/shops.test.ts` +7 (PostgreSQL): an `ADMIN`+`CUSTOMER` owner cannot approve or reject its own application, suspend or reinstate its own shop, or decide its own change request, and cannot read its shop's admin history; shop, status events, field changes, change requests, notifications, logo objects, and roles are compared before and after and are unchanged; another administrator administers that shop normally and the admin-owner administers other shops; the owner's seller operations are unchanged; `400`/`404` still come first. Web +1.
+- The project owner's account keeps `ADMIN`; no role or account was changed. Their development shop must now be decided by another administrator account.
+
+### 06: Cloudflare R2 verification (2026-11-08)
+
+- **Setup by the project owner:** buckets `chicman-staging-test` (private, CORS `PUT` + `content-type` from `http://localhost:3000`) and `chicman-media-test` (public via `r2.dev`), a bucket-scoped Object Read & Write token, and `R2_TEST_*` values in `apps/api/.env` (never printed).
+- **`test/shop-logo-r2.test.ts`: 7/7 against R2:**
+  1. Presigned PUT: `X-Amz-Expires=300`, signed headers `content-length;content-type;host`, no checksum parameters; wrong type, wrong length, and another key are refused by R2; the correct PUT → `200`.
+  2. Staging CORS preflight from `http://localhost:3000` → allowed for that origin.
+  3. Completion publishes to the media bucket; the public `r2.dev` URL serves the same bytes with `image/png` (96 × 64); an unsigned GET of the staging key is refused; a repeated completion returns the same URL; the staging object is deleted and `stagingDeletedAt` set.
+  4. Verification on R2: SVG declared as PNG → `422 LOGO_UNSUPPORTED_TYPE`, 1100 px wide → `422 LOGO_TOO_LARGE_DIMENSIONS`, not uploaded → `422 LOGO_NOT_UPLOADED`; a 2.2 MB staged object is refused by the capped read; deleting a missing key succeeds.
+  5. Replacement: the worker job (`runLogoCleanup`) deletes the replaced object from R2 and keeps the active one.
+  6. Database failure after the write: the compensating delete removes the new object from R2; the retry publishes under a new key.
+  7. Stale attempt: cannot commit; only its own object is removed from R2.
+  The `after` hook deletes every object under the test-shop prefixes in both buckets, asserts none remain, and resets the test database.
+- **Real browser (Playwright Chromium, page origin `http://localhost:3000`, CSP from the real `buildContentSecurityPolicy`):** with the current dev configuration (no R2 origin) the PUT is blocked by `connect-src`, as designed; with `NEXT_PUBLIC_STORAGE_UPLOAD_ORIGIN`/`NEXT_PUBLIC_MEDIA_BASE_URL` set to R2, the browser PUT → `200` with no violation, completion published it, and the page displayed it from `r2.dev` (200 × 100). The production CSP for R2 contains the R2 origins and not `localhost:8333`. Cleanup: 1 object removed, 0 left; test database reset.
+- **No code change was needed.** SeaweedFS behaviour unchanged: the full API suite passes 179/179 (172 + 7 R2; the R2 tests run whenever `R2_TEST_*` is set).
+- **Not tested:** a custom domain in front of the media bucket (only `r2.dev`), and the hosted production deployment (not set up yet).
+
+### 06: manual verification and R2 suite prepared (2026-11-07)
+
+- **Verified manually by the project owner:** the signed-in web flow and Android both work. Spec 06 checklist: only the R2 item stays open.
+- **R2:** no R2 credentials exist in the project, so nothing ran against R2 yet. The adapter needs no change for R2 (region `auto`, path-style, SigV4 presigned PUT, `Range` reads, 404 detection, public URL = base + key). `test/shop-logo-r2.test.ts` is ready: it uses existing buckets (no bucket creation, no ACLs), isolated test-shop prefixes, real presigned PUTs, publication, public URL fetch, verification failures, replacement and job deletion, failure recovery, stale attempts, staging cleanup, and optionally the staging CORS preflight; it deletes every object it wrote and resets the test database. It skips without `R2_TEST_*` (documented in `apps/api/.env.example`).
+- API 172/172 (SeaweedFS included) unchanged.
+
+### Administrator role script (2026-11-07)
+
+- `pnpm --filter @chicman/api admin:grant -- --list | --supabase-user-id <uuid> [--revoke]` (`apps/api/scripts/grant-admin.ts`): grants (`ON CONFLICT DO NOTHING`) or revokes `ADMIN` for an existing, bootstrapped user, from `DATABASE_URL`. It changes roles only; accounts are still created by sign-up and email confirmation. No API route grants `ADMIN`.
+- **Granted** `ADMIN` to the only development account (Supabase user `3cf112d4-…`, created 2026-11-05; roles now `ADMIN, CUSTOMER`). That account also owns the development shop (`PENDING`), so it could review its own application at the time. *(Superseded 2026-11-08: self-administration is now forbidden; see "no self-administration of an owned shop".)*
+- Checked: a repeated grant changes nothing; an unknown ID is refused (exit 1).
+
+### 06: CSP fix for direct logo uploads (2026-11-07)
+
+- **Cause:** the CSP read the storage origins from `NEXT_PUBLIC_STORAGE_UPLOAD_ORIGIN` / `NEXT_PUBLIC_MEDIA_BASE_URL`, but `apps/web/.env.local` defines neither, so `connect-src` (presigned PUT) and `img-src` (logo display) left storage out and the browser refused the upload.
+- **Fix:** the CSP builder moved from `next.config.ts` to `apps/web/src/lib/csp.ts`. In development it falls back to `http://localhost:8333` when the variables are unset; in production it uses only the configured origins (no fallback). No other directive changed; no wildcard.
+- **Tests:** `src/lib/csp.test.ts` (+6): dev default, dev override, production without the local origin, production with configured R2/media origins (reduced to their origins), invalid or wildcard values ignored, other directives unchanged. Web 74/74; typecheck, lint, and production build pass. The production server header has no `localhost:8333` and no `unsafe-eval`.
+- **Live check (Playwright Chromium, dev server, page on `http://localhost:3000`):** a real presigned PUT (LogoService against the test database and the local SeaweedFS buckets) of a browser-generated 160 × 120 PNG → `200`, with no CSP violation; server completion verified it and published it to `chicman-media`; the public logo URL then rendered in the page (160 × 120). Control requests to `http://localhost:9999` stayed blocked by `connect-src` and `img-src`. The signed-in flow (API token) was not exercised: the Chrome extension was not connected, and signing in needs Turnstile. Probe objects and test rows were removed.
+
+### 06: shop management mobile and wrap-up (2026-11-07)
+
+- **Mobile** (`apps/mobile/lib/features/shop/`), opened from the account screen (**Ma boutique**): application form, status with the latest decision and the rejection reason, resubmission, field editing limited by status, the `shopName`/`city` change request and its outcome, and the logo (picked with `image_picker` ^1.2.4, signature and size checked, presigned PUT without the bearer token, completion retried on `409`). `ApiClient.putToStorage` sends the bytes. iOS `NSPhotoLibraryUsageDescription` added. French and Arabic texts (same wording as the web).
+- **Results:** Flutter 91/91 (+13), `flutter analyze` clean, debug APK builds. API 172/172 and root typecheck pass.
+- **Docs:** spec 06 Implementation Notes (decisions the spec left open) and checklist (59 items checked by automated tests; 3 open), `architecture.md` (notifications module, workers, bucket setup), `code-standards.md` (S3 integration tests).
+- **Local SeaweedFS:** the `object-storage` service was started (it was not running) with `POSTGRES_PORT=5442 REDIS_PORT=6389`; Postgres and Redis were not recreated. `chicman-uploads` (private, CORS PUT from `http://localhost:3000`) and `chicman-media` (`public-read`) were created by the setup script.
+
+### 06: shop management web (2026-11-07)
+
+- **Seller dashboard** `/seller/shop` (`apps/web/src/features/shop/`), linked from the account panel: application form (no shop yet), status badge and help, latest decision (`REINSTATED` shown distinctly), the rejection reason and date (plain text) with **Renvoyer la demande**, field editing limited by status (all fields while `PENDING`/`REJECTED`, immediate fields while `APPROVED`, nothing while `SUSPENDED`), the `shopName`/`city` change request with current and proposed values and the outcome (no reason), and the logo upload (request → presigned PUT straight to storage → completion, retried on `409 LOGO_COMPLETION_IN_PROGRESS`) and removal.
+- **Admin** `/admin/shops` (filters: pending, open change requests, approved, suspended, rejected) and `/admin/shops/[shopId]` (`apps/web/src/features/admin/`): details, the decisions allowed from the status (rejection asks for the applicant-facing reason only, the others for an internal reason, each with an optional internal note), change-request review, and the full history. The account panel links to it for `ADMIN` users (navigation only; the API enforces the role).
+- Forms validate with the shared zod schemas (the web now depends on `zod` 4.6.7) and send only allowlisted, changed fields. French and Arabic texts.
+- **CSP:** `NEXT_PUBLIC_STORAGE_UPLOAD_ORIGIN` is added to `connect-src` and `NEXT_PUBLIC_MEDIA_BASE_URL` to `img-src` (`.env.example` updated; `apps/web/.env.local` was not changed).
+- **Results:** web 68/68 (+13), typecheck, lint, and the production build pass.
+- **Not verified:** the screens in a signed-in browser (signing in needs the hosted Supabase project and Turnstile); the API flows behind them are covered by the API tests.
+
+### 06: shop management backend (2026-11-07)
+
+- **Shared (`packages/shared/src/shops/`):** constants (field bounds, decision types, change-request statuses, logo limits, rejection and error codes), strict zod schemas (create, update, change request, logo upload request, internal decision, application rejection), and the owner and admin response types. `@chicman/shared` now depends on `zod` (same version as the API).
+- **Database:** migration `shop_management`. `Shop` gains the application fields (required, no defaults: the table was empty); new `ShopStatusEvent`, `ShopChangeRequest`, `ShopFieldChangeEvent`, `ShopLogoUpload`, `ShopLogoObject`, and `Notification`. Raw SQL: partial unique indexes (one open change request, one `ACTIVE` logo per shop), E.164 checks, the reason shape of each decision type, change-request decision fields, and completed-upload consistency.
+- **API:**
+  - `modules/shops/`: owner routes (`POST`/`GET`/`PATCH /sellers/me/shop`, `…/resubmit`, `…/change-requests`, `…/logo/uploads`, `…/uploads/:uploadId/complete`), the status policy (rules 3–5, 8, 9), the lifecycle (conditional updates, audit, `SELLER` grant on initial approval only, notification, one transaction), change-request decisions, the logo service (claim, verify, record, write, fenced commit, recovery cases A–D), the verifier (`sharp` 0.35.5: magic bytes, header dimensions, full decode within a 1024 × 1024 pixel limit), the S3 adapter (`@aws-sdk/client-s3` 3.1153.0, presigned PUT with `content-type` and `content-length` signed, no flexible checksums), and the cleanup job.
+  - `modules/admin/`: decisions, change-request decisions, `GET /admin/shops` (filters `status`, `openChangeRequest`) and `GET /admin/shops/:shopId` (full history).
+  - `modules/notifications/`: the allowlisted shop-decision payload, recorded in the decision transaction. There was no notifications module before; only the record exists (no delivery channel or read route yet).
+  - `middleware/shop-onboarding.ts`: `requireOwnedShop` (`404` without a shop) and `requireShopOperation` (`403`); the service re-checks the status under a row lock.
+  - Logo uploads are rate-limited at 10 per shop per 10 minutes (the spec sets no number).
+  - Config: `S3_*`, `MEDIA_PUBLIC_BASE_URL`, `LOGO_COMPLETION_LEASE_MS`, `LOGO_COMPLETION_WINDOW_MS`. Storage is all-or-nothing and required in production; without it, logo routes return `503 LOGO_STORAGE_NOT_CONFIGURED`.
+- **Worker:** the logo cleanup job runs every 5 minutes with its own advisory lock, when storage is configured. The schedule and lock helpers take a job name (defaults unchanged).
+- **Storage setup:** `pnpm --filter @chicman/api storage:setup [-- --public-acl]` creates both buckets, sets the staging CORS rule (PUT from `CORS_ORIGINS`), and on SeaweedFS makes the media bucket `public-read` (SeaweedFS refused the bucket-policy forms tried; R2 public access is a dashboard setting).
+- **Tests:** API 172/172 against PostgreSQL, Redis, and SeaweedFS (+64: 32 shop lifecycle and access, 26 logo flow and cleanup, 2 S3 integration, 4 config). Root typecheck passes.
+- **Not done yet:** web and mobile; the Compose `worker` was **not** restarted (its pending 24-hour retention check would reset), so the running worker does not run the logo job yet; `apps/api/.env` was not changed (add the `S3_*` values from `.env.example`).
 
 ### CodeRabbit review findings resolved (2026-11-07)
 
@@ -459,7 +622,7 @@ Each finding was checked against the code first. Findings that the code already 
 - **Shop application fields:** required `shopName`, `description`, `contactPhone`, `city`, `address`; optional `whatsappPhone`, `logoUrl`. Strict allowlist. Shop contact phones are separate from the customer's profile phone (there is no authentication phone). No identity documents in the initial release.
 - **Suspension and reinstatement:** admin-only (`APPROVED` ↔ `SUSPENDED`), with a required reason. Every status change is audited (actor, reason, time).
 - **Approved-shop editing:** split policy. `shopName`/`city` changes need admin re-review through a change request (approved values stay public until it is decided); other fields update immediately and are audited. Status is unchanged.
-- **Shop logo upload:** presigned PUT (5 min) into a private staging bucket; JPEG/PNG/WebP, ≤ 2 MB, ≤ 1024 × 1024, no SVG; server-side content verification before the public `logoUrl` is saved. Completion is idempotent and safe under concurrency, every attempt writes a new immutable object, and orphaned objects are reconciled without deleting referenced logos.
+- **Shop logo upload:** presigned PUT (5 min) into a private staging bucket; JPEG/PNG/WebP up to 15 MB and 64 megapixels, no SVG or HEIC; the server verifies and normalizes the content (at most 2 MB and 1024 × 1024, upright, no metadata) and publishes only that result before the public `logoUrl` is saved. Completion is idempotent and safe under concurrency, every attempt writes a new immutable object, and orphaned objects are reconciled without deleting referenced logos.
 - **Application rejection reason:** mandatory (10–500 characters), shown to the applicant, kept in the audit history. Internal admin notes are separate and never exposed to sellers.
 - **Decision reasons and visibility (MVP):** each of the six administrative shop decisions requires exactly one reason (10–500). For an initial application rejection, that reason is also shown to the owner (`rejection.applicantReason`); the other five reasons are internal only. Owners see outcomes (`latestDecision`, including `REINSTATED`, and change-request outcomes), never internal reasons or notes.
 - **Shop decision notifications:** one per decision, outcome and non-sensitive status only. They never contain internal reasons, notes, audit metadata, or the rejection reason.
@@ -472,6 +635,12 @@ Each finding was checked against the code first. Findings that the code already 
 - **Storefront and theme selector:** the web home `/` is a temporary branded page (wordmark, links to sign-up and login), and the Flutter app opens on the auth gate; neither is the storefront. The theme selector belongs in the web header and in customer profile settings (device-local preference). It moves there when those features are built.
 - **Theme behavior:** System by default, with a manual System / Light / Dark selector. The choice persists on the device (key `chicman-theme`); System follows the OS.
 - **Flutter fonts are bundled** (no runtime font fetching).
+
+- **Product visibility and availability (feature 07):** published products stay visible at zero stock, marked unavailable, and become purchasable again when replenished, without republishing. Unavailable variants cannot be purchased. Public queries use `PUBLIC_PRODUCT_WHERE`; availability is applied separately.
+- **Archiving is reversible (feature 07):** restoring returns a product to `DRAFT` with its data preserved and never publishes it. Archived products stay out of public listings and purchasing.
+- **Publication (feature 07):** at least one valid image is required; zero stock does not prevent publication.
+- **Product image normalization (feature 07):** the server re-encodes every product image, reduces it to at most 1024 × 1024 and 2 MB, and removes all metadata. Only the result is public. Uploads may be up to 15 MB and 64 megapixels.
+- **Mobile seller management:** not part of feature 07. It is a future feature that reuses the existing seller product API; it has no spec yet.
 
 ## Open Questions
 
@@ -511,6 +680,7 @@ Each finding was checked against the code first. Findings that the code already 
 
 - **Email-confirmation check at scale (technical decision):** `GET /auth/v1/user` shares Supabase's per-IP sign-in bucket (30 per 5 minutes), and every account setup comes from the API's IP. Options: the Admin API with the secret key on the API, or `Sb-Forwarded-For` with the secret key and IP forwarding. Either option would reintroduce a Supabase secret key, in the API environment only (it was removed on 2026-11-06 because nothing used it).
 - A general personal-data retention policy for the platform is not defined; only the phone change history has one.
+- **Notifications delivery (feature 06 follow-up):** shop decision notifications are recorded but not delivered; the channels (in-app list, push, email) and a read API belong to a notifications feature that has no spec yet.
 
 ## Next Steps
 
@@ -522,7 +692,24 @@ Each finding was checked against the code first. Findings that the code already 
 5. Rotate the hosted database password (outstanding; the project owner will do it later).
 
 **Feature 04, pending verification (project owner, manual):**
-1. After 2026-11-08T13:49:27Z (any further restart moves this), run `docker compose logs -t worker | grep "run #"` in `infrastructure/docker`. Look for `run #2 succeeded` with no `Worker started` line just before it, then tick the spec 04 checklist item. A restart before then resets the 24-hour clock (spec 04, Retention Worker Scheduling).
+1. After 2026-11-09T17:20:18Z (any further restart moves this), run `docker compose logs -t worker | grep "run #"` in `infrastructure/docker`. Look for `run #2 succeeded` with no `Worker started` line just before it, then tick the spec 04 checklist item. A restart before then resets the 24-hour clock (spec 04, Retention Worker Scheduling).
+
+**Feature 06, remaining (project owner):**
+1. Add the `S3_*` and `MEDIA_PUBLIC_BASE_URL` values from `apps/api/.env.example` to `apps/api/.env`, and `NEXT_PUBLIC_STORAGE_UPLOAD_ORIGIN` / `NEXT_PUBLIC_MEDIA_BASE_URL` to `apps/web/.env.local`, then restart the API and web dev servers. Without them, logo uploads return `503`.
+2. After the feature 04 24-hour check, rebuild and restart the worker (`POSTGRES_PORT=5442 REDIS_PORT=6389 docker compose -f infrastructure/docker/docker-compose.yml up -d --build worker`) so it runs the logo cleanup job; until then the running worker does only the retention job.
+3. ~~Live check in a signed-in browser and on Android~~ — **done**: verified manually by the project owner on 2026-11-07 (web signed in, Android).
+4. ~~R2 verification~~ — **done** 2026-11-08 (7/7 tests and a real browser upload).
+
+**Feature 07, remaining (project owner):**
+1. Sign in with an approved seller account and run through `/seller/products` on the web, including photos from real iPhone and Android phones (also over a mobile connection).
+3. After the feature 04 24-hour check, rebuild and restart the worker (same command as feature 06, item 2; it resets the 24-hour clock) so the product image cleanup job runs. Until then, removed images stay in storage and abandoned uploads are not expired.
+4. Before production: run a product image upload against Cloudflare R2.
+
+**Features 06 and 07, image verification (project owner):**
+1. Upload a real Android phone photo with EXIF as a shop logo and as a product image. Check the orientation, dimensions, and size, and inspect the public object for metadata (for example with `exiftool`).
+2. Deploy the migrations `product_image_upload_limit` and `shop_logo_upload_limit` with the matching API version.
+
+**Future feature (no spec yet):** mobile seller management in Flutter, reusing `/api/v1/sellers/me/products`.
 
 **Optional, local:** install the Supabase CLI and create `supabase/config.toml` (Inbucket, asymmetric signing key, `[auth.captcha]` with test keys).
 

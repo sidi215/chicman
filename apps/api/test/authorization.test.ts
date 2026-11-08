@@ -14,6 +14,7 @@ import { PrismaUserRepository } from "../src/modules/users/user.repository.js";
 import { createTestKeyStore, createTestVerifier, startApp, type RunningApp } from "./helpers/app.js";
 import { TestJwksServer } from "./helpers/jwks-server.js";
 import { createTestKey, signToken, type TestKey } from "./helpers/keys.js";
+import { resetDatabase, TEST_SHOP_FIELDS } from "./helpers/database.js";
 
 dotenv.config({ quiet: true });
 const databaseUrl = process.env["TEST_DATABASE_URL"];
@@ -80,11 +81,7 @@ describe("role and seller authorization (spec 03, PostgreSQL)", { skip: database
   });
 
   beforeEach(async () => {
-    await prisma.customerPhoneChange.deleteMany();
-    await prisma.customerProfile.deleteMany();
-    await prisma.shop.deleteMany();
-    await prisma.userRole.deleteMany();
-    await prisma.user.deleteMany();
+    await resetDatabase(prisma);
   });
 
   interface Actor {
@@ -101,7 +98,7 @@ describe("role and seller authorization (spec 03, PostgreSQL)", { skip: database
     const shop =
       shopStatus === undefined
         ? undefined
-        : await prisma.shop.create({ data: { ownerUserId: user.id, status: shopStatus } });
+        : await prisma.shop.create({ data: { ownerUserId: user.id, status: shopStatus, ...TEST_SHOP_FIELDS } });
     const token = await signToken(key, { sub, extraClaims });
     return { sub, userId: user.id, token, ...(shop ? { shopId: shop.id } : {}) };
   }
@@ -264,7 +261,7 @@ describe("role and seller authorization (spec 03, PostgreSQL)", { skip: database
     it("rejects a duplicate supabaseUserId and a second shop for the same user", async () => {
       const actor = await createActor(["CUSTOMER"], "PENDING");
       await assert.rejects(prisma.user.create({ data: { supabaseUserId: actor.sub } }), { code: "P2002" });
-      await assert.rejects(prisma.shop.create({ data: { ownerUserId: actor.userId } }), { code: "P2002" });
+      await assert.rejects(prisma.shop.create({ data: { ownerUserId: actor.userId, ...TEST_SHOP_FIELDS } }), { code: "P2002" });
       await assert.rejects(prisma.userRole.create({ data: { userId: actor.userId, role: "CUSTOMER" } }), { code: "P2002" });
     });
   });

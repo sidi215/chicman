@@ -91,7 +91,32 @@ const envSchema = z.object({
   SUPABASE_JWKS_TIMEOUT_MS: optionalPositiveInt(3_000),
   SUPABASE_JWKS_COOLDOWN_MS: optionalPositiveInt(30_000),
   SUPABASE_JWKS_MAX_AGE_MS: optionalPositiveInt(600_000),
+
+  // S3-compatible object storage (spec 06, shop logos): SeaweedFS locally,
+  // Cloudflare R2 in production. All or none outside production.
+  S3_ENDPOINT: z.string().trim().optional(),
+  S3_REGION: z.string().trim().optional(),
+  S3_ACCESS_KEY_ID: z.string().trim().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().trim().optional(),
+  S3_UPLOADS_BUCKET: z.string().trim().optional(),
+  S3_MEDIA_BUCKET: z.string().trim().optional(),
+  MEDIA_PUBLIC_BASE_URL: z.string().trim().optional(),
+  // Logo completion timing (spec 06).
+  LOGO_COMPLETION_LEASE_MS: optionalPositiveInt(60_000),
+  LOGO_COMPLETION_WINDOW_MS: optionalPositiveInt(900_000),
 });
+
+/** Object storage keys; validated as a group (see `parseStorageConfig`). */
+const STORAGE_KEYS = [
+  "S3_ENDPOINT",
+  "S3_ACCESS_KEY_ID",
+  "S3_SECRET_ACCESS_KEY",
+  "S3_UPLOADS_BUCKET",
+  "S3_MEDIA_BUCKET",
+  "MEDIA_PUBLIC_BASE_URL",
+] as const;
+
+const httpUrl = z.url({ protocol: /^https?$/ });
 
 export interface AppConfig {
   nodeEnv: string;
@@ -111,6 +136,60 @@ export interface AppConfig {
     jwksMaxAgeMs: number;
     publishableKey: string;
     authTimeoutMs: number;
+  };
+  /** `undefined`: storage not configured (logo routes → `503`; not allowed in production). */
+  storage: StorageConfig | undefined;
+  logo: LogoTimingConfig;
+}
+
+export interface StorageConfig {
+  endpoint: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  /** Private staging bucket (presigned uploads; never publicly readable). */
+  uploadsBucket: string;
+  /** Public media bucket (verified logos only). */
+  mediaBucket: string;
+  /** Public origin of the media bucket, without a trailing slash. */
+  mediaPublicBaseUrl: string;
+}
+
+export interface LogoTimingConfig {
+  /** Completion lease; must exceed the worst-case verification and write time. */
+  completionLeaseMs: number;
+  /** Completion window, counted after the presigned URL expires. */
+  completionWindowMs: number;
+}
+
+type ParsedEnv = z.output<typeof envSchema>;
+
+/**
+ * Storage settings are all required together. Without any of them, storage
+ * is disabled (development and tests only). Returns error lines.
+ */
+function parseStorageConfig(env: ParsedEnv): { storage: StorageConfig | undefined; errors: string[] } {
+  const present = STORAGE_KEYS.filter((key) => (env[key] ?? "") !== "");
+  if (present.length === 0) {
+    return { storage: undefined, errors: env.NODE_ENV === "production" ? ["  - S3_*: object storage is required in production"] : [] };
+  }
+  const errors = STORAGE_KEYS.filter((key) => (env[key] ?? "") === "").map((key) => `  - ${key}: is required when object storage is configured`);
+  for (const key of ["S3_ENDPOINT", "MEDIA_PUBLIC_BASE_URL"] as const) {
+    const value = env[key];
+    if (value !== undefined && value !== "" && !httpUrl.safeParse(value).success) errors.push(`  - ${key}: must be an http(s) URL`);
+  }
+  if (errors.length > 0) return { storage: undefined, errors };
+  return {
+    errors,
+    storage: {
+      endpoint: env.S3_ENDPOINT ?? "",
+      region: env.S3_REGION === undefined || env.S3_REGION === "" ? "auto" : env.S3_REGION,
+      accessKeyId: env.S3_ACCESS_KEY_ID ?? "",
+      secretAccessKey: env.S3_SECRET_ACCESS_KEY ?? "",
+      uploadsBucket: env.S3_UPLOADS_BUCKET ?? "",
+      mediaBucket: env.S3_MEDIA_BUCKET ?? "",
+      mediaPublicBaseUrl: (env.MEDIA_PUBLIC_BASE_URL ?? "").replace(/\/+$/, ""),
+    },
   };
 }
 
@@ -153,6 +232,8 @@ export function loadConfig(source: NodeJS.ProcessEnv): AppConfig {
   if (env.NODE_ENV === "production" && redisUrl === undefined) {
     throw new Error("Invalid API configuration:\n  - REDIS_URL: is required in production");
   }
+  const { storage, errors: storageErrors } = parseStorageConfig(env);
+  if (storageErrors.length > 0) throw new Error(`Invalid API configuration:\n${storageErrors.join("\n")}`);
   return {
     nodeEnv: env.NODE_ENV,
     port: env.PORT,
@@ -171,6 +252,36 @@ export function loadConfig(source: NodeJS.ProcessEnv): AppConfig {
       publishableKey: env.SUPABASE_PUBLISHABLE_KEY,
       authTimeoutMs: env.SUPABASE_AUTH_TIMEOUT_MS,
     },
+    storage,
+    logo: {
+      completionLeaseMs: env.LOGO_COMPLETION_LEASE_MS,
+      completionWindowMs: env.LOGO_COMPLETION_WINDOW_MS,
+    },
+  };
+}
+
+/** Storage and logo settings for the worker process (no Supabase settings needed). */
+export function loadWorkerStorageConfig(source: NodeJS.ProcessEnv): { storage: StorageConfig | undefined; logo: LogoTimingConfig } {
+  const env = envSchema
+    .pick({
+      NODE_ENV: true,
+      S3_ENDPOINT: true,
+      S3_REGION: true,
+      S3_ACCESS_KEY_ID: true,
+      S3_SECRET_ACCESS_KEY: true,
+      S3_UPLOADS_BUCKET: true,
+      S3_MEDIA_BUCKET: true,
+      MEDIA_PUBLIC_BASE_URL: true,
+      LOGO_COMPLETION_LEASE_MS: true,
+      LOGO_COMPLETION_WINDOW_MS: true,
+    })
+    .safeParse(source);
+  if (!env.success) throw new Error("Invalid worker configuration: storage or logo settings");
+  const { storage, errors } = parseStorageConfig(env.data as ParsedEnv);
+  if (errors.length > 0) throw new Error(`Invalid worker configuration:\n${errors.join("\n")}`);
+  return {
+    storage,
+    logo: { completionLeaseMs: env.data.LOGO_COMPLETION_LEASE_MS, completionWindowMs: env.data.LOGO_COMPLETION_WINDOW_MS },
   };
 }
 
