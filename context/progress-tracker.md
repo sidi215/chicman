@@ -16,6 +16,7 @@ Feature 03 (Authentication) is in progress. Feature 04 (Customer Profile) is **i
 
 - **Feature 07: implementation complete (2026-11-08)** on the API and web (the spec lists no mobile work). API 327, web 107. The product decisions are recorded under Decisions.
 - **Feature 08: implementation complete (2026-11-08)** on the API, web, and mobile. The public storefront is live on `/`, and the mobile app opens on it. Follow-up done the same day: web language switch, visible thousands separator, server-rendered public pages. Language sync, real 404s, and a sitemap followed. The mobile app now follows the profile language too. API 400, web 162, Flutter 165. A check on a real Android device is pending.
+- **Feature 10: implementation complete (2026-11-09)** on the API, web, and mobile: cash-on-delivery checkout of the whole cart into one order with one shop order per shop. By the project owner's choice, only the parts of specs 06, 11, 13, and 15 that checkout calls were built with it (spec 10, Implementation Notes). API 512, web 203, Flutter 222. Not verified in a browser or on a device.
 - **Feature 09: implementation complete (2026-11-08)** on the API, web, and mobile. One cart per customer, grouped by shop, at `/cart` on the web and on a dedicated screen on mobile. Reviewed 2026-11-09: API 470, web 187, Flutter 206. A real sign-in and Android on a device or emulator are not verified.
 
 ### Authentication verification summary
@@ -44,8 +45,22 @@ Details: `feature-specs/03-authentication.md` (Verification Status) and `feature
 | 07 | Product Management | `feature-specs/07-product-management.md` | Implementation Complete (2026-11-08: API and web; every checklist item verified by automated tests and a browser run with a test-signed session; sign-in with a real account, real phone photos, and product images on R2 pending; the Compose worker needs a rebuild to run the image cleanup job) |
 | 08 | Product Discovery | `feature-specs/08-product-discovery.md` | Implementation Complete (2026-11-08: API, web, and mobile; every checklist item verified by automated tests and, on the web, a browser run; Flutter on a real device pending) |
 | 09 | Shopping Cart | `feature-specs/09-shopping-cart.md` | Implementation Complete (2026-11-09 audit against the spec: API, web, and mobile; automated tests pass; browser runs used a test-signed or stubbed session; a real Supabase sign-in and Android on a device or emulator are **not verified**; the code is not committed yet) |
+| 10 | Checkout | `feature-specs/10-checkout.md` | Implementation Complete (2026-11-09: API, web, and mobile, with the prerequisites it calls from specs 06, 11, 13, and 15; automated tests pass; the web page in a browser, a real Supabase sign-in, and Android are **not verified**; not committed) |
 
 ## Completed Work
+
+### 10: checkout — API, web, and mobile (2026-11-09)
+
+- **Scope (project owner, 2026-11-09):** checkout calls functions owned by specs 06, 11, 13, and 15, none of which existed. Chosen option: build only what checkout calls, as those specs define it. Built: `Shop.deliveryFee` (API, audit, web dashboard), the order tables with `createOrder`, `takeOrderStock`, and the customer order view (11), `Payment`/`PaymentEvent` with `createPayment` (13), and `eventKey`/resource columns with `recordNotification` and `SHOP_ORDER_PLACED` (15). Everything else of those specs is still open. Details and decisions: spec 10, Implementation Notes.
+- **Shared:** `checkout/` (strict placement schema with the shown figures as a precondition, `Idempotency-Key`, problems, summary type, `expectedFigures`), `orders/` (statuses, label map, customer view, notification payload), `money.ts` (zero-allowing amounts; `PRODUCT_PRICE_PATTERN` now comes from it). `SHOP_FIELDS` and `OwnerShopResponse` gain `deliveryFee`.
+- **Database:** migration `order_chain_checkout` (additive): `Shop.deliveryFee`, `ShopField.deliveryFee`, notification `eventKey`/`resourceType`/`resourceId`, and `Order`, `ShopOrder`, `OrderItem`, `ShopOrderStatusEvent`, `StockMovement`, `Payment`, `PaymentEvent`, with checks (sums, non-negative amounts, line totals, deadlines, collection consistency). Applied to the local development and test databases; no drift.
+- **API:** `modules/checkout/` (`GET`/`POST /customers/me/checkout`), `modules/orders/`, `modules/payments/`, `modules/inventory/order-stock.ts`, `modules/notifications/notifications.ts`. `cart-lines.ts` holds the cart's line loader, now shared with checkout (no behaviour change). The product image cleanup keeps objects that order items reference (S2-7). New configuration: `ORDER_RESPONSE_TIMEOUT_HOURS`, `CHECKOUT_RATE_LIMIT_*` (`.env.example`).
+- **Web:** `/checkout` in `(storefront)` (not indexed): problems with a link to the cart, address and phone, recipient, shops with fees, cash on delivery, totals, confirmation, then a cart reload. Address list selection mode (`?select=checkout`) and `returnTo=checkout` on the editor. "Passer la commande" on `/cart`. Delivery fee section on `/seller/shop`. `formatDateTime` moved to `lib/date-time.ts`.
+- **Mobile:** `features/checkout/` (screen opened from the cart, controller with the cart's account-change guard, confirmation), `AddressListScreen(selectForCheckout: true)`, "Passer la commande" on the cart screen. `ApiClient.send` accepts extra headers.
+- **Tests:** API 512/512 (+42: 39 checkout, 3 configuration), web 203/203 (+16), Flutter 222/222 (+16), `flutter analyze` clean. Root typecheck, web lint, API and web production builds, and `git diff --check` pass. The S3 suite was skipped as before (`TEST_S3_ENDPOINT` not set; no storage code changed).
+- **Test strength:** five deliberate breaks of the placement were each caught (see spec 10).
+- **Not verified:** the web checkout page in a browser (no session tooling was run this time), a real Supabase sign-in, Android on a device or emulator, and the seller fee section in a browser.
+- **Operational:** existing approved shops have no fee, so their products cannot be checked out until each seller sets one (D2).
 
 ### 09: audit against the spec (2026-11-09)
 
@@ -774,7 +789,7 @@ Each finding was checked against the code first. Findings that the code already 
 - **First web visit:** defaults to French without reading the browser's language.
 - **Email-confirmation check at scale (technical decision):** `GET /auth/v1/user` shares Supabase's per-IP sign-in bucket (30 per 5 minutes), and every account setup comes from the API's IP. Options: the Admin API with the secret key on the API, or `Sb-Forwarded-For` with the secret key and IP forwarding. Either option would reintroduce a Supabase secret key, in the API environment only (it was removed on 2026-11-06 because nothing used it).
 - A general personal-data retention policy for the platform is not defined; only the phone change history has one.
-- **Features 10–18 (2026-11-09):** the earlier Feature 10 questions (unaccepted prices, unbuyable lines, stock, delivery fee, address fields) are **decided**: `business-decisions-features-10-18.md` (D1–D11, O1, O3, approved by the project owner). Still open there: O2 (shop owners buying their own products), O4–O10 (admin scope, retention, notification recipients, search, favorites, categories, reviews). Audit: `specification-overlap-audit.md`.
+- **Features 10–18 (2026-11-09):** the earlier Feature 10 questions (unaccepted prices, unbuyable lines, stock, delivery fee, address fields) are **decided**: `business-decisions-features-10-18.md` (D1–D11, O1, O3, approved by the project owner). O2 (shop owners buying their own products) was confirmed at the Stage 2 review and is enforced by checkout. Still open there: O4–O10 (admin scope, retention, notification recipients, search, favorites, categories, reviews). Audit: `specification-overlap-audit.md`.
 - **Notifications delivery (feature 06 follow-up):** shop decision notifications are recorded but not delivered; the channels (in-app list, push, email) and a read API belong to a notifications feature that has no spec yet.
 
 ## Next Steps
@@ -816,7 +831,13 @@ Each finding was checked against the code first. Findings that the code already 
 3. **Web and Android on one account:** spec 09's cross-platform sequence.
 4. Deploy the migration `shopping_cart` with the matching API version.
 
-**Order chain (specs 10–13, 15):** specifications aligned with the approved decisions on 2026-11-09 and awaiting the project owner's approval (Stage 2 gate). No implementation has started. Planned order after approval: 15 (phase 1), then 10 and 11 together, 11 (rest), 12, 13 (rest), 16, 17; 14 and 18 independently.
+**Feature 10, remaining (project owner):**
+1. **Seller fee:** on `/seller/shop`, set a delivery fee for each approved test shop (none has one, so nothing can be checked out yet).
+2. **Web, real account:** with products from two shops in the cart, open `/checkout`: problems and the link to the cart, choosing and adding an address (and coming back), the recipient, the per-shop fees, placing, the confirmation, and the emptied cart. Check French and Arabic and the console for CSP messages.
+3. **Android, real account:** the same flow from the cart screen, including the address choice and a retry after turning the network off during placement.
+4. Deploy the migration `order_chain_checkout` with the matching API version.
+
+**Order chain (specs 11–13, 15):** checkout and the parts it calls are built (above). Remaining, in the planned order: 15 (phase 1 rest: keys for shop decisions, read API, notification centers), 11 (lifecycle, routes, jobs, stock returns, suspension), 12, 13 (rest), 16, 17; 14 and 18 independently. Until 11 exists, placed orders cannot be confirmed, rejected, cancelled, or expired, and their stock stays taken.
 
 **Future feature (no spec yet):** mobile seller management in Flutter, reusing `/api/v1/sellers/me/products`.
 

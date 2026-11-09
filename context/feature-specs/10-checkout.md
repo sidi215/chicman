@@ -281,29 +281,62 @@ Update `context/progress-tracker.md` after implementation.
 
 ## Verification Checklist
 
-- [ ] Checkout requires authentication.
-- [ ] A customer can select a saved address.
-- [ ] A customer can create an address during checkout.
-- [ ] GPS is optional and requires permission; a manual pin is accepted.
-- [ ] The recipient name is required, pre-filled from the profile, and stored only on the order.
-- [ ] The delivery phone follows the address-then-profile rule and is never shown as verified.
-- [ ] One checkout supports products from multiple shops.
-- [ ] Separate seller orders are created under one checkout.
-- [ ] Each seller order starts as `PENDING` with a response deadline.
-- [ ] Sellers can only access their own orders.
-- [ ] COD is the only payment method, and one `PENDING` payment is created per shop order.
-- [ ] Delivery fees are calculated separately per shop, once per shop order, and a shop without a fee blocks checkout.
-- [ ] The backend calculates all final totals; changed totals or fees are refused with `409` and nothing is written.
-- [ ] Every blocking problem in section 8 blocks the whole checkout, including an unaccepted price change.
-- [ ] A cart with any product from a shop the customer owns is refused by the API, also in a multi-shop checkout and also when a client skips the summary.
-- [ ] The order keeps each item's image reference and the shop contact phones from placement.
-- [ ] The checkout rate limits come from configuration, with the stated defaults.
-- [ ] Stock and prices are revalidated under locks before order creation.
-- [ ] Concurrent checkout requests cannot oversell stock.
-- [ ] Repeated submissions (same key, concurrent or sequential) cannot create duplicate orders.
-- [ ] Database failures do not leave partially created checkouts, taken stock, payment records, or removed cart lines.
-- [ ] Successful checkout returns a clear confirmation.
-- [ ] The ordered cart lines are removed in the same transaction; a failed placement leaves the cart unchanged.
-- [ ] French, Arabic, and RTL are supported.
-- [ ] Web and mobile follow the same business rules.
-- [ ] Relevant tests and project quality checks pass.
+- [x] Checkout requires authentication.
+- [x] A customer can select a saved address.
+- [x] A customer can create an address during checkout.
+- [x] GPS is optional and requires permission; a manual pin is accepted. *(Unchanged spec 05 editor, reused; the API tests place orders from `MANUAL` pins.)*
+- [x] The recipient name is required, pre-filled from the profile, and stored only on the order.
+- [x] The delivery phone follows the address-then-profile rule and is never shown as verified.
+- [x] One checkout supports products from multiple shops.
+- [x] Separate seller orders are created under one checkout.
+- [x] Each seller order starts as `PENDING` with a response deadline.
+- [ ] Sellers can only access their own orders. *(No seller order route exists yet: spec 11. Checkout exposes nothing to sellers except their own `SHOP_ORDER_PLACED` notification record.)*
+- [x] COD is the only payment method, and one `PENDING` payment is created per shop order.
+- [x] Delivery fees are calculated separately per shop, once per shop order, and a shop without a fee blocks checkout.
+- [x] The backend calculates all final totals; changed totals or fees are refused with `409` and nothing is written.
+- [x] Every blocking problem in section 8 blocks the whole checkout, including an unaccepted price change.
+- [x] A cart with any product from a shop the customer owns is refused by the API, also in a multi-shop checkout and also when a client skips the summary.
+- [x] The order keeps each item's image reference and the shop contact phones from placement.
+- [x] The checkout rate limits come from configuration, with the stated defaults.
+- [x] Stock and prices are revalidated under locks before order creation.
+- [x] Concurrent checkout requests cannot oversell stock.
+- [x] Repeated submissions (same key, concurrent or sequential) cannot create duplicate orders.
+- [x] Database failures do not leave partially created checkouts, taken stock, payment records, or removed cart lines.
+- [x] Successful checkout returns a clear confirmation.
+- [x] The ordered cart lines are removed in the same transaction; a failed placement leaves the cart unchanged.
+- [x] French, Arabic, and RTL are supported. *(Dictionary parity tests on web and mobile, a Flutter RTL widget test; the web page was not opened in a browser.)*
+- [x] Web and mobile follow the same business rules. *(Both send the summary's figures, keep the key only while the outcome is unknown, and show the API's problems; neither decides a figure.)*
+- [x] Relevant tests and project quality checks pass.
+
+## Implementation Notes (2026-11-09)
+
+### Scope decision (project owner, 2026-11-09)
+
+Checkout calls functions that belong to other specifications, none of which existed. The project owner chose to build **only what checkout calls**, exactly as those specifications define it, and nothing else of them:
+
+| Built with this feature | Owner spec | Left for that spec |
+|---|---|---|
+| `Shop.deliveryFee`: API (`PATCH /sellers/me/shop`, audited, never cleared, refused while suspended), owner and admin views, web seller dashboard section with the "set your fee" prompt | 06 (D2, S2-1, S2-2) | — |
+| `Order`, `ShopOrder`, `OrderItem`, `ShopOrderStatusEvent`, `StockMovement`; `createOrder`, `loadCustomerOrder` (customer view), `shopOrderLabel` | 11 | Every lifecycle route and transition, expiry and reminder jobs, seller and admin views, stock returns, suspension function, order history pages |
+| `takeOrderStock` in `modules/inventory/order-stock.ts` | 11 (D1) | The return function and its skip reasons |
+| Product image cleanup never deletes an object an order item references (S2-7) | 11 | — |
+| `Payment`, `PaymentEvent`, `createPayment` | 13 | `collect`, `markFailed`, `markCancelled`, notes, summary |
+| `Notification.eventKey`, `resourceType`, `resourceId`; `recordNotification` (insert, nothing on a key conflict); `SHOP_ORDER_PLACED` | 15 | Keys for the six shop decisions, the read API, notification centers, every other event |
+
+### Decisions the spec left open
+
+- **Problem order at placement:** body or key `400` → repeated key `200` → empty cart `409` → address `404` → blocking problem `409` → changed figures `409`.
+- **`Idempotency-Key`:** a missing or non-UUID key → `400 CHECKOUT_IDEMPOTENCY_KEY_INVALID`. Keys are compared in lower case. A repeated key returns the order whatever the new body says. Clients keep a key only while the outcome is unknown (no answer, `503`); any definite answer starts a new attempt.
+- **Locks:** the products are locked `FOR UPDATE`, not `FOR SHARE`, because placement updates their stock (a shared lock upgraded by two placements would deadlock). Order still cart → shop → product. The placement transaction may wait up to 20 s for locks.
+- **Summary:** the cart's own read (`CartService.read`), plus fees and owners; no rate limit, like the cart read. Problems are listed per line and per shop; `CART_EMPTY` when there is nothing. Without an address, `address` is `null`. `defaultRecipientName` is the profile name, or empty.
+- **Order reference:** `CM-` and 10 random Crockford base32 characters (50 bits).
+- **Display order** in the order view: shop orders by shop name, items by product name (the tables keep no position).
+- **`SHOP_ORDER_PLACED` payload:** `itemsCount` counts units.
+- **Address choice:** web `/account/addresses?select=checkout` (each address leads to `/checkout?addressId=…`; adding or editing with `returnTo=checkout` comes back with that address). Mobile: `AddressListScreen(selectForCheckout: true)` returns the chosen ID; after adding or editing, checkout reads the summary again. Only the fixed value `checkout` is accepted as a return target.
+- **Cart:** `/cart` and the mobile cart always offer "Passer la commande"; checkout lists what is left to resolve.
+- **Configuration:** `ORDER_RESPONSE_TIMEOUT_HOURS` (48), `CHECKOUT_RATE_LIMIT_PER_USER` (20), `CHECKOUT_RATE_LIMIT_PER_IP` (60), `CHECKOUT_RATE_LIMIT_WINDOW_MS` (600000), validated at startup.
+
+### Verification status
+
+- **Automated:** API `test/checkout.test.ts` (39 tests, PostgreSQL) and config tests; web `features/checkout/checkout.test.ts` and delivery fee tests; Flutter `test/features/checkout/checkout_test.dart` (16). Deliberate breaks each caught: price change not blocking, own shop not checked, no repeated-key check after the cart lock, total not compared, cart lines not removed.
+- **Not verified:** the web checkout page in a browser, a real Supabase sign-in, and Android on a device or emulator.

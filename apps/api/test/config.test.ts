@@ -32,6 +32,39 @@ describe("API configuration", () => {
     assert.deepEqual(duplicateEnvKeys(file).sort(), ["A", "B"]);
   });
 
+  describe("order chain settings (specs 10 and 11)", () => {
+    const db = { ...base, DATABASE_URL: "postgresql://u:p@localhost:5442/chicman" };
+
+    it("defaults to a 48-hour response deadline and 20 / 60 checkouts per 10 minutes", () => {
+      const config = loadConfig({ ...db });
+      assert.equal(config.orders.responseTimeoutHours, 48);
+      assert.deepEqual(config.checkout.rateLimit, { perUser: 20, perIp: 60, windowMs: 600_000 });
+    });
+
+    it("reads the values from configuration", () => {
+      const config = loadConfig({
+        ...db,
+        ORDER_RESPONSE_TIMEOUT_HOURS: "24",
+        CHECKOUT_RATE_LIMIT_PER_USER: "5",
+        CHECKOUT_RATE_LIMIT_PER_IP: "15",
+        CHECKOUT_RATE_LIMIT_WINDOW_MS: "60000",
+      });
+      assert.equal(config.orders.responseTimeoutHours, 24);
+      assert.deepEqual(config.checkout.rateLimit, { perUser: 5, perIp: 15, windowMs: 60_000 });
+    });
+
+    it("refuses values that are not positive integers at startup", () => {
+      for (const [key, value] of [
+        ["ORDER_RESPONSE_TIMEOUT_HOURS", "0"],
+        ["CHECKOUT_RATE_LIMIT_PER_USER", "-1"],
+        ["CHECKOUT_RATE_LIMIT_PER_IP", "1.5"],
+        ["CHECKOUT_RATE_LIMIT_WINDOW_MS", "soon"],
+      ] as const) {
+        assert.throws(() => loadConfig({ ...db, [key]: value }), new RegExp(`${key}: must be a positive integer`), key);
+      }
+    });
+  });
+
   describe("catalog internal key", () => {
     const db = { ...base, DATABASE_URL: "postgresql://u:p@localhost:5442/chicman" };
 

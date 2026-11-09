@@ -70,18 +70,21 @@ class ApiClient {
     required T Function(Object? json) decode,
   }) => send('GET', path, accessToken: null, decode: decode);
 
-  /// Sends a request with an optional JSON body.
+  /// Sends a request with an optional JSON body. [headers] adds request
+  /// headers such as `Idempotency-Key`; it cannot replace the authorization.
   Future<ApiResult<T>> send<T>(
     String method,
     String path, {
     required String? accessToken,
     required T Function(Object? json) decode,
     Object? body,
+    Map<String, String> headers = const {},
   }) async {
     final http.Response response;
     try {
       final request = http.Request(method, Uri.parse('$_baseUrl/api/v1$path'))
         ..headers.addAll({
+          ...headers,
           if (accessToken != null) 'authorization': 'Bearer $accessToken',
           'accept': 'application/json',
           if (body != null) 'content-type': 'application/json',

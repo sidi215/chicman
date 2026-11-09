@@ -119,6 +119,14 @@ const envSchema = z.object({
   // Logo completion timing (spec 06).
   LOGO_COMPLETION_LEASE_MS: optionalPositiveInt(60_000),
   LOGO_COMPLETION_WINDOW_MS: optionalPositiveInt(900_000),
+
+  // Seller response deadline for new shop orders (D7, spec 11). Read at
+  // placement: changing it never moves existing deadlines.
+  ORDER_RESPONSE_TIMEOUT_HOURS: optionalPositiveInt(48),
+  // Checkout placement limits (S2-6): server configuration, not business rules.
+  CHECKOUT_RATE_LIMIT_PER_USER: optionalPositiveInt(20),
+  CHECKOUT_RATE_LIMIT_PER_IP: optionalPositiveInt(60),
+  CHECKOUT_RATE_LIMIT_WINDOW_MS: optionalPositiveInt(600_000),
 });
 
 /** Object storage keys; validated as a group (see `parseStorageConfig`). */
@@ -157,6 +165,8 @@ export interface AppConfig {
   /** `undefined`: storage not configured (logo routes → `503`; not allowed in production). */
   storage: StorageConfig | undefined;
   logo: LogoTimingConfig;
+  orders: { responseTimeoutHours: number };
+  checkout: { rateLimit: { perUser: number; perIp: number; windowMs: number } };
 }
 
 export interface StorageConfig {
@@ -274,6 +284,14 @@ export function loadConfig(source: NodeJS.ProcessEnv): AppConfig {
     logo: {
       completionLeaseMs: env.LOGO_COMPLETION_LEASE_MS,
       completionWindowMs: env.LOGO_COMPLETION_WINDOW_MS,
+    },
+    orders: { responseTimeoutHours: env.ORDER_RESPONSE_TIMEOUT_HOURS },
+    checkout: {
+      rateLimit: {
+        perUser: env.CHECKOUT_RATE_LIMIT_PER_USER,
+        perIp: env.CHECKOUT_RATE_LIMIT_PER_IP,
+        windowMs: env.CHECKOUT_RATE_LIMIT_WINDOW_MS,
+      },
     },
   };
 }

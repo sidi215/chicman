@@ -11,6 +11,13 @@ export const TEST_SHOP_FIELDS = {
 
 /** Deletes every row of the test database, children before parents. */
 export async function resetDatabase(prisma: PrismaClient): Promise<void> {
+  await prisma.paymentEvent.deleteMany();
+  await prisma.payment.deleteMany();
+  await prisma.stockMovement.deleteMany();
+  await prisma.shopOrderStatusEvent.deleteMany();
+  await prisma.orderItem.deleteMany();
+  await prisma.shopOrder.deleteMany();
+  await prisma.order.deleteMany();
   await prisma.cartItem.deleteMany();
   await prisma.cart.deleteMany();
   await prisma.productImageUpload.updateMany({ data: { resultImageId: null, status: "PENDING" } });

@@ -44,6 +44,8 @@ export interface OwnerShopResponse {
   city: string;
   address: string;
   logoUrl: string | null;
+  /** Decimal string in MRU; `null` until the seller sets it (D2). */
+  deliveryFee: string | null;
   createdAt: string;
   updatedAt: string;
   /** `null` before the first administrative decision. */

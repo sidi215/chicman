@@ -26,6 +26,7 @@ export const ADMIN_MESSAGES = {
       city: "Ville",
       address: "Adresse",
       logoUrl: "Logo",
+      deliveryFee: "Frais de livraison",
     },
     decisionsTitle: "Décision",
     actions: {
@@ -98,6 +99,7 @@ export const ADMIN_MESSAGES = {
       city: "المدينة",
       address: "العنوان",
       logoUrl: "الشعار",
+      deliveryFee: "رسوم التوصيل",
     },
     decisionsTitle: "القرار",
     actions: {

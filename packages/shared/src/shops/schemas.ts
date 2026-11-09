@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { normalizePhoneNumber } from "../auth/phone.js";
+import { moneyAmountSchema } from "../money.js";
 import {
   DECISION_REASON_MAX_LENGTH,
   DECISION_REASON_MIN_LENGTH,
@@ -89,6 +90,11 @@ export const shopUpdateSchema = z
     address: address.optional(),
     whatsappPhone: shopPhoneSchema.nullable().optional(),
     logoUrl: z.null().optional(),
+    /**
+     * The flat delivery fee in MRU (D2): `0.00` is free delivery. Once set it can
+     * be changed but never cleared, so `null` is refused.
+     */
+    deliveryFee: moneyAmountSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: "at least one field is required" });
 export type ShopUpdateInput = z.output<typeof shopUpdateSchema>;

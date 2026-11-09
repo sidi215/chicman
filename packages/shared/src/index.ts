@@ -12,3 +12,6 @@ export * from "./addresses/address.js";
 export * from "./products/product.js";
 export * from "./products/catalog.js";
 export * from "./cart/cart.js";
+export * from "./money.js";
+export * from "./orders/orders.js";
+export * from "./checkout/checkout.js";

@@ -6,6 +6,8 @@ Provide a complete order lifecycle for customers and sellers. Customers can view
 
 Business rules come from `context/business-decisions-features-10-18.md` (D1, D4, D6, D7, D8, D11, O3; approved 2026-11-09).
 
+**Built so far (with spec 10, 2026-11-09):** the five tables, `createOrder`, `takeOrderStock` (taking only), `loadCustomerOrder`, the shared status and label contracts, and the image cleanup guard (S2-7). Everything else here is not built. See spec 10, Implementation Notes.
+
 ## Design & Architecture Decisions
 
 ### 1. Ownership

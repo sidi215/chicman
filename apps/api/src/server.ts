@@ -12,6 +12,7 @@ import { createEmailConfirmationChecker, createTokenVerifier } from "./modules/a
 import { AddressService } from "./modules/addresses/index.js";
 import { AdminShopQueries } from "./modules/admin/index.js";
 import { CartService } from "./modules/cart/index.js";
+import { CheckoutService } from "./modules/checkout/index.js";
 import { PrismaCustomerRepository } from "./modules/customers/index.js";
 import { StockService } from "./modules/inventory/index.js";
 import { CatalogService, ProductImageService, ProductService } from "./modules/products/index.js";
@@ -59,6 +60,8 @@ if (config.nodeEnv === "production" && config.catalogInternalKey === undefined) 
   console.warn("CATALOG_INTERNAL_KEY is not set: all server-rendered storefront pages share the web server's rate limit.");
 }
 
+const cartService = new CartService(prisma, mediaPublicBaseUrl);
+
 const app = createApp({
   corsOrigins: config.corsOrigins,
   trustProxyHops: config.trustProxyHops,
@@ -82,7 +85,12 @@ const app = createApp({
     rateLimiter,
   },
   catalog: { catalog: new CatalogService(prisma, mediaPublicBaseUrl), rateLimiter, internalKey: config.catalogInternalKey },
-  cart: { cart: new CartService(prisma, mediaPublicBaseUrl), rateLimiter },
+  cart: { cart: cartService, rateLimiter },
+  checkout: {
+    checkout: new CheckoutService(prisma, cartService, { mediaPublicBaseUrl, responseTimeoutHours: config.orders.responseTimeoutHours }),
+    rateLimiter,
+    rateLimit: config.checkout.rateLimit,
+  },
 });
 
 const server = app.listen(config.port, () => {

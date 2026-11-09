@@ -49,6 +49,7 @@ model User {
   notifications             Notification[]
   customerAddresses         CustomerAddress[]
   cart                      Cart?
+  orders                    Order[]
 }
 
 // A user holds a set of roles (for example CUSTOMER and SELLER).
@@ -79,6 +80,9 @@ model Shop {
   // Public media URL of the shop's ACTIVE ShopLogoObject; set only by the
   // verified logo upload flow (or cleared by the owner).
   logoUrl        String?                @db.VarChar(2048)
+  // Flat delivery fee in MRU, charged once per shop order (D2). `null` until the
+  // seller sets it; once set it can change but not be cleared. Orders keep a copy.
+  deliveryFee    Decimal?               @db.Decimal(12, 2)
   createdAt      DateTime               @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime               @updatedAt @db.Timestamptz(3)
   owner          User                   @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
@@ -89,6 +93,7 @@ model Shop {
   logoObjects    ShopLogoObject[]
   products       Product[]
   cartItems      CartItem[]
+  shopOrders     ShopOrder[]
 }
 
 // Which administrative decision produced a shop status (feature 06). Not a status.
@@ -157,6 +162,7 @@ enum ShopField {
   address
   whatsappPhone
   logoUrl
+  deliveryFee
 }
 
 enum ShopFieldChangeSource {
@@ -251,17 +257,30 @@ model ShopLogoObject {
 // that commits the event; `payload` is an allowlisted template payload, never
 // a copy of a decision record. Delivery channels belong to that module.
 model Notification {
-  id          String    @id @default(uuid()) @db.Uuid
-  userId      String    @db.Uuid
-  type        String    @db.VarChar(64)
-  payload     Json
-  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
-  deliveredAt DateTime? @db.Timestamptz(3)
-  readAt      DateTime? @db.Timestamptz(3)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  id           String                    @id @default(uuid()) @db.Uuid
+  userId       String                    @db.Uuid
+  type         String                    @db.VarChar(64)
+  payload      Json
+  // `<type>:<id of the record that makes the event unique>:<recipient>` (spec 15).
+  // Recording does nothing on a conflict, so a retry never duplicates. Rows
+  // recorded before spec 15 keep NULL (NULLs never conflict).
+  eventKey     String?                   @unique @db.VarChar(200)
+  // A reference only: opening it goes through the resource's own route.
+  resourceType NotificationResourceType?
+  resourceId   String?                   @db.Uuid
+  createdAt    DateTime                  @default(now()) @db.Timestamptz(3)
+  deliveredAt  DateTime?                 @db.Timestamptz(3)
+  readAt       DateTime?                 @db.Timestamptz(3)
+  user         User                      @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([userId, createdAt])
   @@index([deliveredAt, createdAt])
+  @@index([userId, readAt, createdAt])
+}
+
+enum NotificationResourceType {
+  SHOP
+  SHOP_ORDER
 }
 
 // Supported interface languages (feature 04).
@@ -373,6 +392,7 @@ model Product {
   images      ProductImage[]
   uploads     ProductImageUpload[]
   cartItems   CartItem[]
+  orderItems  OrderItem[]
 
   @@index([shopId, createdAt])
   @@index([status, createdAt])
@@ -381,14 +401,14 @@ model Product {
 // A size and/or color of a product, with its own stock (feature 07). Unique
 // per product, ignoring case (expression index in the migration).
 model ProductVariant {
-  id        String   @id @default(uuid()) @db.Uuid
-  productId String   @db.Uuid
-  size      String?  @db.VarChar(30)
-  color     String?  @db.VarChar(50)
-  stock     Int      @default(0)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  id        String     @id @default(uuid()) @db.Uuid
+  productId String     @db.Uuid
+  size      String?    @db.VarChar(30)
+  color     String?    @db.VarChar(50)
+  stock     Int        @default(0)
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime   @updatedAt @db.Timestamptz(3)
+  product   Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
   cartItems CartItem[]
 
   @@index([productId])
@@ -504,4 +524,214 @@ model CartItem {
   @@index([productId])
   @@index([shopId])
   @@index([variantId])
+}
+
+// ---------------------------------------------------------------------------
+// Order chain (specs 10, 11, 13). Created only by the checkout placement
+// transaction (spec 10) through the orders and payments modules. Amounts are
+// DECIMAL(12, 2) MRU copied at placement and never recalculated.
+// ---------------------------------------------------------------------------
+
+enum ShopOrderStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  CANCELLED
+  EXPIRED
+  DELIVERED
+  FAILED_DELIVERY
+}
+
+enum OrderActorType {
+  CUSTOMER
+  SELLER
+  ADMIN
+  SYSTEM
+}
+
+// One per checkout (spec 11). `reference` is random, never sequential.
+// `(userId, idempotencyKey)` is unique, so a repeated placement finds its order.
+model Order {
+  id               String      @id @default(uuid()) @db.Uuid
+  reference        String      @unique @db.VarChar(20)
+  userId           String      @db.Uuid
+  idempotencyKey   String      @db.Uuid
+  productsSubtotal Decimal     @db.Decimal(12, 2)
+  deliveryFeeTotal Decimal     @db.Decimal(12, 2)
+  total            Decimal     @db.Decimal(12, 2)
+  createdAt        DateTime    @default(now()) @db.Timestamptz(3)
+  user             User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  shopOrders       ShopOrder[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+}
+
+// One per shop in a checkout (spec 11). Holds the shop's decision, the fee and
+// contact snapshots, and the delivery snapshot (D11).
+model ShopOrder {
+  id                String                 @id @default(uuid()) @db.Uuid
+  orderId           String                 @db.Uuid
+  shopId            String                 @db.Uuid
+  shopName          String                 @db.VarChar(100)
+  shopContactPhone  String                 @db.VarChar(16)
+  shopWhatsappPhone String?                @db.VarChar(16)
+  status            ShopOrderStatus        @default(PENDING)
+  respondBy         DateTime               @db.Timestamptz(3)
+  remindAt          DateTime               @db.Timestamptz(3)
+  productsSubtotal  Decimal                @db.Decimal(12, 2)
+  deliveryFee       Decimal                @db.Decimal(12, 2)
+  total             Decimal                @db.Decimal(12, 2)
+  // Delivery snapshot (D11). Never a reference to the saved address.
+  recipientName     String                 @db.VarChar(100)
+  deliveryPhone     String                 @db.VarChar(16)
+  addressLabel      String?                @db.VarChar(50)
+  city              String                 @db.VarChar(100)
+  district          String                 @db.VarChar(100)
+  landmark          String                 @db.VarChar(300)
+  latitude          Decimal                @db.Decimal(9, 6)
+  longitude         Decimal                @db.Decimal(9, 6)
+  locationSource    AddressLocationSource
+  accuracyMeters    Int?
+  // Decision fields, set by the lifecycle (spec 11).
+  decidedAt         DateTime?              @db.Timestamptz(3)
+  reasonCode        String?                @db.VarChar(40)
+  reasonText        String?                @db.VarChar(200)
+  cancelledBy       OrderActorType?
+  internalReason    String?                @db.VarChar(500)
+  internalNote      String?                @db.VarChar(1000)
+  closedAt          DateTime?              @db.Timestamptz(3)
+  createdAt         DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime               @updatedAt @db.Timestamptz(3)
+  order             Order                  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  shop              Shop                   @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  items             OrderItem[]
+  statusEvents      ShopOrderStatusEvent[]
+  payment           Payment?
+
+  @@unique([orderId, shopId])
+  @@index([shopId, status, createdAt])
+  @@index([status, respondBy])
+  @@index([status, remindAt])
+}
+
+// One per cart line (spec 11). Values come from the locked product rows at
+// placement. `variantId` is a plain value: variants are hard-deleted.
+model OrderItem {
+  id             String          @id @default(uuid()) @db.Uuid
+  shopOrderId    String          @db.Uuid
+  productId      String          @db.Uuid
+  variantId      String?         @db.Uuid
+  productName    String          @db.VarChar(150)
+  size           String?         @db.VarChar(30)
+  color          String?         @db.VarChar(50)
+  // The first active image at placement (S2-7). The image cleanup never deletes it.
+  imageObjectKey String?         @db.VarChar(512)
+  unitPrice      Decimal         @db.Decimal(12, 2)
+  quantity       Int
+  lineTotal      Decimal         @db.Decimal(12, 2)
+  shopOrder      ShopOrder       @relation(fields: [shopOrderId], references: [id], onDelete: Restrict)
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  stockMovements StockMovement[]
+
+  @@index([shopOrderId])
+  @@index([productId])
+  @@index([imageObjectKey])
+}
+
+// Append-only shop order history (spec 11), written in the transition's transaction.
+model ShopOrderStatusEvent {
+  id             String           @id @default(uuid()) @db.Uuid
+  shopOrderId    String           @db.Uuid
+  fromStatus     ShopOrderStatus?
+  toStatus       ShopOrderStatus
+  actorType      OrderActorType
+  actorUserId    String?          @db.Uuid
+  reasonCode     String?          @db.VarChar(40)
+  reasonText     String?          @db.VarChar(200)
+  internalReason String?          @db.VarChar(500)
+  internalNote   String?          @db.VarChar(1000)
+  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
+  shopOrder      ShopOrder        @relation(fields: [shopOrderId], references: [id], onDelete: Restrict)
+
+  @@index([shopOrderId, createdAt])
+}
+
+enum StockMovementType {
+  TAKEN
+  RETURNED
+}
+
+enum StockMovementSkipReason {
+  VARIANT_REMOVED
+  VARIANT_STRUCTURE_CHANGED
+  ABOVE_MAXIMUM
+}
+
+// Append-only record of order-caused stock changes (D1). One per item and type,
+// so stock can be taken once and returned once.
+model StockMovement {
+  id          String                   @id @default(uuid()) @db.Uuid
+  orderItemId String                   @db.Uuid
+  productId   String                   @db.Uuid
+  variantId   String?                  @db.Uuid
+  quantity    Int
+  type        StockMovementType
+  applied     Boolean
+  skipReason  StockMovementSkipReason?
+  createdAt   DateTime                 @default(now()) @db.Timestamptz(3)
+  orderItem   OrderItem                @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  @@unique([orderItemId, type])
+  @@index([productId, createdAt])
+}
+
+enum PaymentMethod {
+  CASH_ON_DELIVERY
+}
+
+enum PaymentStatus {
+  PENDING
+  COLLECTED
+  FAILED
+  CANCELLED
+}
+
+enum PaymentEventType {
+  CREATED
+  COLLECTED
+  FAILED
+  CANCELLED
+  ADMIN_NOTE
+}
+
+// One cash-on-delivery payment per shop order (spec 13), created PENDING at placement.
+model Payment {
+  id                String         @id @default(uuid()) @db.Uuid
+  shopOrderId       String         @unique @db.Uuid
+  method            PaymentMethod  @default(CASH_ON_DELIVERY)
+  amountDue         Decimal        @db.Decimal(12, 2)
+  status            PaymentStatus  @default(PENDING)
+  collectedAmount   Decimal?       @db.Decimal(12, 2)
+  collectedAt       DateTime?      @db.Timestamptz(3)
+  collectedByUserId String?        @db.Uuid
+  createdAt         DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @db.Timestamptz(3)
+  shopOrder         ShopOrder      @relation(fields: [shopOrderId], references: [id], onDelete: Restrict)
+  events            PaymentEvent[]
+}
+
+// Append-only payment history (spec 13).
+model PaymentEvent {
+  id          String           @id @default(uuid()) @db.Uuid
+  paymentId   String           @db.Uuid
+  type        PaymentEventType
+  amount      Decimal?         @db.Decimal(12, 2)
+  actorType   OrderActorType
+  actorUserId String?          @db.Uuid
+  reason      String?          @db.VarChar(500)
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+  payment     Payment          @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([paymentId, createdAt])
 }

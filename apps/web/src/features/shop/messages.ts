@@ -52,6 +52,11 @@ export const SHOP_MESSAGES = {
     saving: "Enregistrement…",
     saved: "Modifications enregistrées.",
     noChanges: "Aucune modification à enregistrer.",
+    deliveryFeeTitle: "Frais de livraison",
+    deliveryFeeHint: "Un montant fixe en MRU, facturé une fois par commande, quel que soit le nombre d'articles. Saisissez 0 pour une livraison gratuite. Les commandes déjà passées gardent leurs frais.",
+    deliveryFeeLabel: "Frais de livraison (MRU)",
+    deliveryFeeMissing: "Définissez vos frais de livraison : tant qu'ils ne le sont pas, vos produits ne peuvent pas être commandés.",
+    deliveryFeeErrors: { required: "Saisissez un montant (0 pour une livraison gratuite).", invalid: "Saisissez un montant valide, par exemple 150 ou 150,50." },
     changeRequestTitle: "Nom et ville",
     changeRequestHint: "Un changement de nom ou de ville est vérifié par l'équipe Chicman avant d'être publié.",
     submitChangeRequest: "Demander la modification",
@@ -145,6 +150,11 @@ export const SHOP_MESSAGES = {
     saving: "جارٍ الحفظ…",
     saved: "تم حفظ التعديلات.",
     noChanges: "لا توجد تعديلات للحفظ.",
+    deliveryFeeTitle: "رسوم التوصيل",
+    deliveryFeeHint: "مبلغ ثابت بالأوقية، يُحتسب مرة واحدة لكل طلب مهما كان عدد المنتجات. أدخل 0 للتوصيل المجاني. تحتفظ الطلبات السابقة برسومها.",
+    deliveryFeeLabel: "رسوم التوصيل (أوقية)",
+    deliveryFeeMissing: "حدّد رسوم التوصيل: لا يمكن طلب منتجاتك ما لم تُحدَّد.",
+    deliveryFeeErrors: { required: "أدخل مبلغًا (0 للتوصيل المجاني).", invalid: "أدخل مبلغًا صحيحًا، مثل 150 أو 150.50." },
     changeRequestTitle: "الاسم والمدينة",
     changeRequestHint: "يراجع فريق شيكمان تغيير الاسم أو المدينة قبل نشره.",
     submitChangeRequest: "طلب التعديل",
@@ -202,7 +212,4 @@ export function useShopMessages(): ShopMessages {
   return SHOP_MESSAGES[useLocale()]
 }
 
-/** Date and time in the UI locale. */
-export function formatDateTime(iso: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale === "ar" ? "ar-MR" : "fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso))
-}
+export { formatDateTime } from "@/lib/date-time"

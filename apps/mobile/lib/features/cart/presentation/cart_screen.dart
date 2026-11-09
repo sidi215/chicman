@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../catalog/domain/catalog.dart';
 import '../../catalog/presentation/catalog_widgets.dart';
 import '../../catalog/presentation/product_detail_screen.dart';
+import '../../checkout/presentation/checkout_screen.dart';
 import '../application/cart_providers.dart';
 import '../domain/cart.dart';
 import 'cart_messages.dart';
@@ -564,6 +565,15 @@ class _Summary extends StatelessWidget {
                 ),
               ),
             ],
+            const SizedBox(height: AppSpacing.s3),
+            // Checkout lists anything still to resolve, so it is always offered.
+            FilledButton(
+              key: const Key('cart-checkout'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const CheckoutScreen()),
+              ),
+              child: Text(t.checkout),
+            ),
             const SizedBox(height: AppSpacing.s2),
             Text(
               t.commitmentNote,

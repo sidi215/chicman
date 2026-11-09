@@ -26,9 +26,13 @@ Widget _page(String title, List<Widget> children) => Scaffold(
   ),
 );
 
-/// Saved delivery addresses: default choice, edit, delete (spec 05).
+/// Saved delivery addresses: default choice, edit, delete (spec 05). With
+/// [selectForCheckout] it is also checkout's address choice (spec 10): the same
+/// list, where "Livrer à cette adresse" returns the address ID to checkout.
 class AddressListScreen extends ConsumerStatefulWidget {
-  const AddressListScreen({super.key});
+  const AddressListScreen({super.key, this.selectForCheckout = false});
+
+  final bool selectForCheckout;
 
   @override
   ConsumerState<AddressListScreen> createState() => _AddressListScreenState();
@@ -62,8 +66,12 @@ class _AddressListScreenState extends ConsumerState<AddressListScreen> {
     final addresses = list.value?.data ?? const <CustomerAddress>[];
     final loaded = list.value?.kind == AddressOutcomeKind.ok;
 
-    return _page(t.listTitle, [
-      Text(t.listSubtitle, style: textTheme.bodyMedium),
+    final selecting = widget.selectForCheckout;
+    return _page(selecting ? t.selectTitle : t.listTitle, [
+      Text(
+        selecting ? t.selectSubtitle : t.listSubtitle,
+        style: textTheme.bodyMedium,
+      ),
       const SizedBox(height: AppSpacing.s4),
       if (list.isLoading && list.value == null) AuthMessageText(t.loading),
       if (list.value != null && !loaded) ...[
@@ -131,6 +139,13 @@ class _AddressListScreenState extends ConsumerState<AddressListScreen> {
                   Wrap(
                     spacing: AppSpacing.s2,
                     children: [
+                      if (selecting)
+                        FilledButton(
+                          key: Key('address-select-${address.id}'),
+                          onPressed: () =>
+                              Navigator.of(context).pop(address.id),
+                          child: Text(t.deliverHere),
+                        ),
                       if (!address.isDefault)
                         OutlinedButton(
                           key: Key('address-default-${address.id}'),

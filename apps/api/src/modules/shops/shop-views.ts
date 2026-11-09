@@ -15,6 +15,7 @@ export const ownerShopSelect = {
   city: true,
   address: true,
   logoUrl: true,
+  deliveryFee: true,
   createdAt: true,
   updatedAt: true,
 } as const satisfies Prisma.ShopSelect;
@@ -59,6 +60,7 @@ export async function loadOwnerShopView(db: Db, shopId: string): Promise<OwnerSh
     city: shop.city,
     address: shop.address,
     logoUrl: shop.logoUrl,
+    deliveryFee: shop.deliveryFee === null ? null : shop.deliveryFee.toFixed(2),
     createdAt: shop.createdAt.toISOString(),
     updatedAt: shop.updatedAt.toISOString(),
     latestDecision:

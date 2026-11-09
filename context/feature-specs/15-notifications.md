@@ -4,6 +4,8 @@
 
 Provide a consistent notification system that informs customers, sellers, and administrators about important events in their workflows, with clear separation between notification creation, delivery, and read state.
 
+**Built so far (with spec 10, 2026-11-09):** the `eventKey`, `resourceType`, and `resourceId` columns with the `(userId, readAt, createdAt)` index, the generalized `recordNotification` helper (`modules/notifications/notifications.ts`), and `SHOP_ORDER_PLACED`. Not built: keys for the six shop decisions, the read API, the notification centers, and every other event.
+
 ## Design & Architecture Decisions
 
 ### 1. What already exists (extend it; do not duplicate it)

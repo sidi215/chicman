@@ -30,7 +30,8 @@ export interface ProductImageCleanupResult {
  * 2. Abandoned `PROCESSING` uploads (lease expired) → `PENDING`
  *    (`LEASE_EXPIRED`, staging kept) before `completeBy`, `EXPIRED` after.
  * 3. `ProductImage` rows still `PENDING` after the lease → `RELEASED`.
- * 4. `RELEASED` images are deleted from storage and marked `DELETED`.
+ * 4. `RELEASED` images are deleted from storage and marked `DELETED`, unless an
+ *    order item references the object (S2-7): those stay `RELEASED` and are kept.
  *    `ACTIVE` images are never selected, including those of archived products.
  * 5. Staging objects of terminal uploads are deleted (`stagingDeletedAt`).
  */
@@ -83,8 +84,10 @@ export async function runProductImageCleanup(options: ProductImageCleanupOptions
     WHERE "status" = 'PENDING' AND "createdAt" < now() - make_interval(secs => ${leaseSeconds})`;
 
   const released = await prisma.$queryRaw<{ id: string; objectKey: string }[]>`
-    SELECT "id", "objectKey" FROM "ProductImage"
-    WHERE "status" = 'RELEASED' ORDER BY "releasedAt" NULLS FIRST, "createdAt" LIMIT ${batchSize}`;
+    SELECT "id", "objectKey" FROM "ProductImage" i
+    WHERE "status" = 'RELEASED'
+      AND NOT EXISTS (SELECT 1 FROM "OrderItem" o WHERE o."imageObjectKey" = i."objectKey")
+    ORDER BY "releasedAt" NULLS FIRST, "createdAt" LIMIT ${batchSize}`;
   for (const image of released) {
     try {
       await storage.deleteMedia(image.objectKey);

@@ -15,46 +15,10 @@ import { HttpError, notFound } from "../../lib/http-error.js";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { isQuantityAvailable } from "../inventory/availability.js";
 import { isShopStillApproved } from "../products/product-lock.js";
-import { activeImages, mediaUrlBuilder, type MediaUrl } from "../products/product-views.js";
+import { mediaUrlBuilder, type MediaUrl } from "../products/product-views.js";
 import { productVisibility } from "../products/product-visibility.js";
-import { evaluateCartLine, type CartLineState } from "./cart-rules.js";
-
-const productState = {
-  id: true,
-  name: true,
-  status: true,
-  price: true,
-  stock: true,
-  images: { ...activeImages, take: 1, select: { objectKey: true } },
-  variants: { select: { id: true, size: true, color: true, stock: true } },
-  shop: { select: { id: true, shopName: true, status: true } },
-} satisfies Prisma.ProductSelect;
-
-const lineInclude = { product: { select: productState } } satisfies Prisma.CartItemInclude;
-
-type Line = Prisma.CartItemGetPayload<{ include: typeof lineInclude }>;
-
-/** Oldest first, so lines and shops do not move when a quantity changes. */
-const LINE_ORDER = [{ createdAt: "asc" }, { id: "asc" }] satisfies Prisma.CartItemOrderByWithRelationInput[];
-
-function lineState(line: Line): CartLineState {
-  const { product } = line;
-  return {
-    quantity: line.quantity,
-    priceSnapshot: line.priceSnapshot,
-    variantId: line.variantId,
-    variantSize: line.variantSize,
-    variantColor: line.variantColor,
-    product: {
-      status: product.status,
-      price: product.price,
-      stock: product.stock,
-      hasActiveImage: product.images.length > 0,
-      variants: product.variants,
-    },
-    shopStatus: product.shop.status,
-  };
-}
+import { CART_LINE_ORDER as LINE_ORDER, cartLineInclude as lineInclude, cartLineProduct as productState, cartLineState as lineState, type CartLine as Line } from "./cart-lines.js";
+import { evaluateCartLine } from "./cart-rules.js";
 
 const itemNotFound = (): HttpError => notFound(CART_ERROR_CODES.itemNotFound);
 const insufficientStock = (): HttpError => new HttpError(409, CART_ERROR_CODES.insufficientStock);

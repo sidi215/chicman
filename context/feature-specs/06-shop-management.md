@@ -437,7 +437,7 @@ Administration and audit:
 - [x] Status changes are visible to the shop owner on web and mobile. *(Verified manually by the project owner on web, signed in, and Android, 2026-11-07.)*
 
 Order chain additions (D2, D8, 2026-11-09; not implemented yet):
-- [ ] An approved shop can set and change its delivery fee (≥ 0, not cleared once set); each change writes a `ShopFieldChangeEvent`; a suspended shop cannot change it.
+- [x] An approved shop can set and change its delivery fee (≥ 0, not cleared once set); each change writes a `ShopFieldChangeEvent`; a suspended shop cannot change it. *(Built with spec 10, 2026-11-09: API, owner and admin views, web dashboard; `test/checkout.test.ts`.)*
 - [ ] Suspension cancels the shop's pending and not-yet-dispatched shop orders in the same transaction (stock returned, payments cancelled, customers notified), and a failure there rolls back the suspension.
 - [ ] A suspended owner can finish only deliveries already under way; every other seller operation stays `403`.
 
