@@ -33,6 +33,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     ref.listen(passwordRecoveryProvider, (_, recovering) {
       if (recovering) setState(() => _index = _account);
     });
+    ref.listen(accountTabRequestProvider, (_, _) {
+      setState(() => _index = _account);
+    });
     final t = CatalogMessages.of(context);
     return Scaffold(
       extendBody: true,

@@ -385,28 +385,28 @@ void main() {
     ApiClient detailApi(Map<String, Object?> body) =>
         routedApi({'GET /products/p1': (_) => (200, body)});
 
-    testWidgets('shows the product and its shop, with no purchase action', (
-      tester,
-    ) async {
-      await _pump(
-        tester,
-        const ProductDetailScreen(productId: 'p1'),
-        api: detailApi(_detail()),
-      );
-      expect(find.text('Robe'), findsOneWidget);
-      expect(find.text('1\u00A0500,50\u00A0MRU'), findsOneWidget);
-      expect(find.text('Voile léger.'), findsOneWidget);
-      expect(find.text('Marque : Atelier'), findsOneWidget);
-      expect(find.text('Boutique Sahel'), findsOneWidget);
-      expect(find.text('Ville : Nouakchott'), findsOneWidget);
-      expect(find.text('Tissus de qualité.'), findsOneWidget);
-      expect(find.text('Disponible'), findsOneWidget);
-      expect(find.byType(FilledButton), findsNothing);
-    });
+    testWidgets(
+      'shows the product and its shop; a guest is invited to sign in',
+      (tester) async {
+        await _pump(
+          tester,
+          const ProductDetailScreen(productId: 'p1'),
+          api: detailApi(_detail()),
+        );
+        expect(find.text('Robe'), findsOneWidget);
+        expect(find.text('1\u00A0500,50\u00A0MRU'), findsOneWidget);
+        expect(find.text('Voile léger.'), findsOneWidget);
+        expect(find.text('Marque : Atelier'), findsOneWidget);
+        expect(find.text('Boutique Sahel'), findsOneWidget);
+        expect(find.text('Ville : Nouakchott'), findsOneWidget);
+        expect(find.text('Tissus de qualité.'), findsOneWidget);
+        expect(find.text('Disponible'), findsOneWidget);
+        expect(find.byKey(const Key('add-to-cart-invitation')), findsOneWidget);
+        expect(find.byKey(const Key('add-to-cart')), findsNothing);
+      },
+    );
 
-    testWidgets('an unavailable product says so and offers no action', (
-      tester,
-    ) async {
+    testWidgets('an unavailable product says so', (tester) async {
       await _pump(
         tester,
         const ProductDetailScreen(productId: 'p1'),
@@ -416,8 +416,6 @@ void main() {
         find.text('Ce produit est indisponible pour le moment.'),
         findsOneWidget,
       );
-      expect(find.byType(FilledButton), findsNothing);
-      expect(find.byType(ElevatedButton), findsNothing);
     });
 
     testWidgets('the chosen size and color are identified, with availability', (
@@ -457,7 +455,6 @@ void main() {
       await tester.tap(find.byKey(const Key('variant-size-L')));
       await tester.pumpAndSettle();
       expect(status(), "Cette combinaison n'est pas proposée.");
-      expect(find.byType(FilledButton), findsNothing);
     });
 
     testWidgets('a hidden product reads as not found', (tester) async {

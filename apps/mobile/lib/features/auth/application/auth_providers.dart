@@ -187,6 +187,19 @@ final passwordRecoveryProvider = NotifierProvider<PasswordRecovery, bool>(
   PasswordRecovery.new,
 );
 
+/// A request from a pushed screen to show the account tab, for example to sign
+/// in before adding to the cart. The shell listens; only the change matters.
+class AccountTabRequest extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void request() => state += 1;
+}
+
+final accountTabRequestProvider = NotifierProvider<AccountTabRequest, int>(
+  AccountTabRequest.new,
+);
+
 /// Incoming links (App Links / Universal Links). Overridden in `main()` and
 /// in tests; `null` disables link handling.
 final incomingLinksProvider = Provider<Stream<Uri>?>((ref) => null);

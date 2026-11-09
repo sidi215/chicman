@@ -23,6 +23,14 @@ export function productAvailability(ownStock: number, variants: readonly { stock
   return { stock, available: isStockAvailable(stock) };
 }
 
+/**
+ * Whether a quantity can be bought from the stock at this moment. It reserves
+ * nothing: the cart checks this on every change, and checkout must check again.
+ */
+export function isQuantityAvailable(stock: number, quantity: number): boolean {
+  return isStockAvailable(stock) && quantity <= stock;
+}
+
 /** `isStockAvailable` as a query condition on a variant. */
 export const AVAILABLE_VARIANT_WHERE = { stock: { gt: 0 } } as const satisfies Prisma.ProductVariantWhereInput;
 

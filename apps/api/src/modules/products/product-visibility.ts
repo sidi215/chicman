@@ -16,3 +16,16 @@ export const PUBLIC_PRODUCT_WHERE = {
   shop: { status: "APPROVED" },
   images: { some: { status: "ACTIVE" } },
 } as const satisfies Prisma.ProductWhereInput;
+
+/**
+ * `PUBLIC_PRODUCT_WHERE` for a product already loaded, naming the first condition
+ * it fails. Keep the two together: this is the same rule, not a second one.
+ */
+export type ProductVisibility = "PUBLIC" | "SHOP_NOT_APPROVED" | "ARCHIVED" | "NOT_PUBLISHED";
+
+export function productVisibility(product: { status: string; shopStatus: string; hasActiveImage: boolean }): ProductVisibility {
+  if (product.shopStatus !== PUBLIC_PRODUCT_WHERE.shop.status) return "SHOP_NOT_APPROVED";
+  if (product.status === "ARCHIVED") return "ARCHIVED";
+  if (product.status !== PUBLIC_PRODUCT_WHERE.status || !product.hasActiveImage) return "NOT_PUBLISHED";
+  return "PUBLIC";
+}

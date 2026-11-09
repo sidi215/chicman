@@ -16,6 +16,7 @@ Feature 03 (Authentication) is in progress. Feature 04 (Customer Profile) is **i
 
 - **Feature 07: implementation complete (2026-11-08)** on the API and web (the spec lists no mobile work). API 327, web 107. The product decisions are recorded under Decisions.
 - **Feature 08: implementation complete (2026-11-08)** on the API, web, and mobile. The public storefront is live on `/`, and the mobile app opens on it. Follow-up done the same day: web language switch, visible thousands separator, server-rendered public pages. Language sync, real 404s, and a sitemap followed. The mobile app now follows the profile language too. API 400, web 162, Flutter 165. A check on a real Android device is pending.
+- **Feature 09: implementation complete (2026-11-08)** on the API, web, and mobile. One cart per customer, grouped by shop, at `/cart` on the web and on a dedicated screen on mobile. Reviewed 2026-11-09: API 470, web 187, Flutter 206. A real sign-in and Android on a device or emulator are not verified.
 
 ### Authentication verification summary
 
@@ -42,8 +43,47 @@ Details: `feature-specs/03-authentication.md` (Verification Status) and `feature
 | 06 | Shop Management | `feature-specs/06-shop-management.md` | Implementation Complete (2026-11-08: every checklist item verified, including web and Android by the project owner and Cloudflare R2; the Compose worker still needs a restart to run the logo cleanup job) |
 | 07 | Product Management | `feature-specs/07-product-management.md` | Implementation Complete (2026-11-08: API and web; every checklist item verified by automated tests and a browser run with a test-signed session; sign-in with a real account, real phone photos, and product images on R2 pending; the Compose worker needs a rebuild to run the image cleanup job) |
 | 08 | Product Discovery | `feature-specs/08-product-discovery.md` | Implementation Complete (2026-11-08: API, web, and mobile; every checklist item verified by automated tests and, on the web, a browser run; Flutter on a real device pending) |
+| 09 | Shopping Cart | `feature-specs/09-shopping-cart.md` | Implementation Complete (2026-11-09 audit against the spec: API, web, and mobile; automated tests pass; browser runs used a test-signed or stubbed session; a real Supabase sign-in and Android on a device or emulator are **not verified**; the code is not committed yet) |
 
 ## Completed Work
+
+### 09: audit against the spec (2026-11-09)
+
+- **Reopened at the project owner's request** to implement spec 09. The feature already existed, uncommitted, so it was audited against the spec rather than rebuilt. Everything matched except the defect below.
+- **Defect found and fixed: one account's cart could show to the next account.** A cart change still on its way when the account changed displayed its answer over the next account's cart, until the next read. It needs a sign-out and sign-in during one request, for example from another tab on the web. Mobile dropped late answers to reads only; the web dropped them only for its first read. Both now drop every late answer (`cart_providers.dart`, `cart-provider.tsx`).
+- **Proof:** Flutter +2 (a successful answer and a session answer), both failing before the fix. Web: a browser script (dev server, stubbed session and API, cross-tab sign-out and sign-in through the auth channel) showed the previous account's product before the fix and the empty cart after it. Quantity change, refusal, and header count rechecked in French. **The web fix has no automated test,** because web tests cover logic outside components, and the script was not kept.
+- **Results:** API 470/470 with `.env` loaded (no API code changed afterwards), web 187/187, Flutter 206/206, `flutter analyze` clean, root typecheck, web lint, API and web production builds, `git diff --check`, and `prisma migrate status` on the development database pass.
+- **Still not verified:** a real Supabase account and Android on a device or emulator (none attached): see Next Steps.
+
+### 09: final review and verification (2026-11-09)
+
+- **Decisions approved by the project owner:** conditional stock display and the accept-price route. Rules and safeguards: spec 09, Implementation Notes. No API behaviour needed changing.
+- **Tests added:** API +14 (stock figure limited to the affected line and variant, none on public routes or in errors, client stock refused; stale, repeated, concurrent, and tampered acceptance; totals on every read and write). Web +8. Flutter +4.
+- **Test strength:** deliberate breaks caught: figure on every line (20 tests fail), figure from the product total (1), acceptance surviving a price change (10), no equality check (5). "Store the client's price" fails no test and cannot: the equality check first makes the value identical.
+- **Results:** API 470/470 with `.env` loaded (the S3 suite was skipped: `TEST_S3_ENDPOINT` not set, no storage code changed), web 187/187, Flutter 204/204, `flutter analyze` clean, root typecheck, web lint, API build, and `git diff --check` pass.
+- **Build failure explained:** it was not intermittent. The failing command had sourced `apps/api/.env` into its shell, which sets `NODE_ENV=development`. With that one variable: 3 of 3 builds failed, plus 1 of 1 with the whole file. With the same file minus that variable, or a plain shell: all passed, including clean `.next`, the same command sequence as the failure, and one CPU core. Next's prerender then fails with `useContext` of null, on a page that varies between runs, so it has nothing to do with the cart. Repository configuration does not set this value for the web build (Compose and the API Dockerfile set it for the API and worker only). **No repository change was needed.** Final runs: 5 consecutive plain builds passed; the negative control with `NODE_ENV=development` still fails, so no error was hidden.
+- **Defect found and fixed: a CSP violation on every page.** Checking the whole flow found `eval script-src` from Zod's capability probe, on a production build, on every page including `/login`. It predates the cart and was invisible on the dev server, whose CSP allows `eval`. Fixed for browsers in `src/instrumentation-client.ts`. After the fix: 0 violations.
+- **Web, production build, test-signed session, 46/46:** add, quantity, removal, grouping, refresh, header count, low stock and its correction, a price change, a stale acceptance from the real page, acceptance and total, archived, unpublished, and suspended lines, French and Arabic, 320, 390, and 1280 px, no overflow. Expected console errors only: a `404` from the profile route the test API does not mount, and the provoked `409`. One earlier run timed out waiting for the guest message when reusing a browser page; it did not recur in 15 fresh loads or a clean rerun, so page reuse is the likely cause, not proven.
+- **Cross-platform, partial:** the real browser and the real Dart `CartController` and `ApiClient` (a new Flutter test process per step), one test-signed account: web add → Dart read and quantity change → web shows it → price change → Dart warning and acceptance → web agrees → archive → Dart flag and removal → web agrees → web quantity change → Dart agrees. Totals matched at every step. No device and no Flutter screens were involved.
+- **Migration:** present last in the history; applies to a clean temporary database (since dropped); no difference from the schema on clean, development, and test; indexes and constraints inspected. It is additive, and the API needs it because the cart routes read these tables. Production untouched.
+- **Android: not verified.** No device attached. An emulator (`Pixel_7_Pro`, read-only) booted, then the machine restarted before any app ran. The previous boot's journal ends under memory pressure with containerd stalled, with 11 of 15 GB in use by other work (IDE, other projects' containers). Likely related, not proven. It was not retried, to avoid losing other work on the machine.
+- **Real account: not verified.** Signing in needs the owner's password and a Turnstile challenge, and the Chrome extension had no connected browser with an existing session. The development database holds one cart line (quantity 4, updated 2026-11-09 00:09), which suggests someone has used the cart with the real account; this was not treated as verification and was left unchanged.
+- **Feature 10 review:** see Open Questions.
+
+### 09: shopping cart — API, web, and mobile (2026-11-08)
+
+- **Shared (`packages/shared/src/cart/`):** strict schemas (no client price, shop, or owner), error and issue codes, response types.
+- **Database:** migration `shopping_cart` (additive): `Cart`, `CartItem`. Raw SQL: one line per variant and per variant-less product, positive quantity and price, a selected variant records its values. Applied to the local development and test databases; no drift against the schema.
+- **API (`modules/cart/`):** read, add, update quantity, remove, clear, plus accept-price (added: see spec 09, Implementation Notes). `cart-rules.ts` reports each spec state without changing anything. `isQuantityAvailable` and `productVisibility` sit beside the existing single definitions.
+- **Web (`features/cart/`):** `/cart`, header icon with count, add to cart on the product page, quantity controls, removal, availability and price messages. French and Arabic.
+- **Mobile (`features/cart/`):** the same rules and wording. Cart screen, app bar icon on the storefront screens, add to cart on the product screen. `accountTabRequestProvider` lets a pushed screen open the account tab to sign in.
+- **Existing tests changed for the intended behaviour:** three Flutter product-detail tests asserted "no purchase action" (spec 08), which this feature replaces.
+- **Bug found and fixed:** on a 320 px phone the quantity controls and the remove button overflowed their row (found by a new widget test).
+- **Tests:** API 456/456 (+55 in `test/cart.test.ts`, with `.env` loaded into the shell so the worker lock suite ran), web 179/179 (+17), Flutter 200/200 (+35), `flutter analyze` clean. **One API suite was skipped** and is not counted in the summary's `skipped 0`: S3-compatible storage (`TEST_S3_ENDPOINT` not set); no storage code changed. Root typecheck, web lint, API build, and `git diff --check` pass.
+- **Web production build:** one run failed with `Export encountered an error on /_global-error/page`; the next three passed. *(Explained in the 2026-11-09 review: `NODE_ENV=development` in that command's shell.)*
+- **Test strength:** six deliberate breaks of the cart code were each caught, then restored: stock check off (10 tests fail), renamed variant accepted (2), price from the snapshot (3), no cart row lock (1), removal ignoring the owner (1), any acknowledged price accepted (1).
+- **Browser (Playwright, dev server, real API rules on the test database, test-signed session, placeholder images), 40/40:** guest invitation; sold-out and unavailable variants not addable; grouping by shop; server subtotals; quantity controls and refusal above stock; low stock not changed silently and then corrected; price change shown and acknowledged; archived, unpublished, and suspended-shop lines identified and left out of the subtotal; removal; a new page keeps the cart; French and Arabic at 390 px, Arabic at 1280 px; no horizontal overflow. Console errors: a `404` from the profile route, which the test API did not mount, and the expected `409`. Test data removed and the test database reset.
+- **Not verified at the time:** see the 2026-11-09 review above.
 
 ### Mobile follows the profile language; script warning fixed (2026-11-08)
 
@@ -689,6 +729,10 @@ Each finding was checked against the code first. Findings that the code already 
 - **Publication (feature 07):** at least one valid image is required; zero stock does not prevent publication.
 - **Product image normalization (feature 07):** the server re-encodes every product image, reduces it to at most 1024 × 1024 and 2 MB, and removes all metadata. Only the result is public. Uploads may be up to 15 MB and 64 megapixels.
 - **Public catalog data (feature 08):** availability is exposed as a state, never as a stock quantity. Public shop data is limited to name, description, city, and logo.
+- **Cart ownership (feature 09):** a cart belongs to a signed-in customer. Guest carts and merging are out of this version, which replaces the earlier plan in `project-overview.md`.
+- **Web cart is a page (feature 09):** `/cart`, as spec 09 requires, replacing the drawer in `ui-context.md`.
+- **Price changes need acknowledgement (feature 09, approved 2026-11-09):** a warning stays until the customer accepts the price, removes the line, or the price returns. `POST …/items/:itemId/accept-price` compares the shown price with the current one and stores only the current one. Safeguards: spec 09.
+- **Stock figure in the cart (feature 09, approved 2026-11-09):** shown only on a line already above the stock, only for that line, so it can be corrected. Never automatic, never on public pages. Rules: spec 09.
 - **Mobile seller management:** not part of feature 07. It is a future feature that reuses the existing seller product API; it has no spec yet.
 
 ## Open Questions
@@ -730,6 +774,7 @@ Each finding was checked against the code first. Findings that the code already 
 - **First web visit:** defaults to French without reading the browser's language.
 - **Email-confirmation check at scale (technical decision):** `GET /auth/v1/user` shares Supabase's per-IP sign-in bucket (30 per 5 minutes), and every account setup comes from the API's IP. Options: the Admin API with the secret key on the API, or `Sb-Forwarded-For` with the secret key and IP forwarding. Either option would reintroduce a Supabase secret key, in the API environment only (it was removed on 2026-11-06 because nothing used it).
 - A general personal-data retention policy for the platform is not defined; only the phone change history has one.
+- **Features 10–18 (2026-11-09):** the earlier Feature 10 questions (unaccepted prices, unbuyable lines, stock, delivery fee, address fields) are **decided**: `business-decisions-features-10-18.md` (D1–D11, O1, O3, approved by the project owner). Still open there: O2 (shop owners buying their own products), O4–O10 (admin scope, retention, notification recipients, search, favorites, categories, reviews). Audit: `specification-overlap-audit.md`.
 - **Notifications delivery (feature 06 follow-up):** shop decision notifications are recorded but not delivered; the channels (in-app list, push, email) and a read API belong to a notifications feature that has no spec yet.
 
 ## Next Steps
@@ -764,6 +809,14 @@ Each finding was checked against the code first. Findings that the code already 
 **Feature 08, remaining (project owner):**
 1. Run the storefront on an Android device against an API with published products: home, filters, sorting, details, real images, the Arabic layout, and opening an email link from the storefront.
 2. Open the storefront signed in on the web and check the header's account link.
+
+**Feature 09, remaining (project owner):**
+1. **Web, real account:** start the API and web, sign in, and follow spec 09's flow with products from two shops: quantity, removal, refresh, header count, a changed price, an unavailable item. Watch the browser console for CSP messages.
+2. **Android, real account:** free memory first (for example, stop other projects' containers), then run on a device or one emulator (`adb reverse tcp:4000 tcp:4000`, `adb reverse tcp:8333 tcp:8333`). Check add, quantity, removal, unavailable items, price acceptance, restarting the app, loading, empty, error and retry states, and French and Arabic layouts.
+3. **Web and Android on one account:** spec 09's cross-platform sequence.
+4. Deploy the migration `shopping_cart` with the matching API version.
+
+**Order chain (specs 10–13, 15):** specifications aligned with the approved decisions on 2026-11-09 and awaiting the project owner's approval (Stage 2 gate). No implementation has started. Planned order after approval: 15 (phase 1), then 10 and 11 together, 11 (rest), 12, 13 (rest), 16, 17; 14 and 18 independently.
 
 **Future feature (no spec yet):** mobile seller management in Flutter, reusing `/api/v1/sellers/me/products`.
 

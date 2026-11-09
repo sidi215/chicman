@@ -107,6 +107,15 @@ Archiving must not delete historical order information.
 
 Do not implement checkout stock reservation in this feature.
 
+**Order stock (D1, `business-decisions-features-10-18.md`; rules owned by spec 11, section 7):**
+- **Taking:** an order lowers this feature's stock columns at placement, with a conditional update, inside the checkout transaction.
+- **Returning:** stock is returned exactly once if the order ends without delivery.
+- **Separate function:** both go through a dedicated internal function in `modules/inventory/`, with an append-only stock-movement record. **The seller `StockService` is not used and is not changed.**
+- **Works where seller edits can't:** order stock can be returned to an archived product, or to a product of a suspended shop, without making the product editable.
+- **Returns that can't be applied:** if the variant was removed, the product's variant structure changed, or the stock would pass 1,000,000, the return is skipped and recorded.
+- **Seller edits:** the compare-and-set and the stock limits are unchanged. A seller whose stock changed because of an order gets the normal `409 PRODUCT_STOCK_CONFLICT` and reloads.
+- **Seller-made changes stay unrecorded,** as before.
+
 ### 8. Seller interface
 
 The seller dashboard should provide:
@@ -222,6 +231,7 @@ Implementation decisions.
 - **Variants:** a size, a color, or both; unique per product ignoring case (expression index). Removing a variant deletes its row, so **orders (spec 10) must snapshot variant details**.
 - **Locks:** every write takes the shop row `FOR SHARE` (re-checking `APPROVED`), then the product row `FOR UPDATE`.
 - **Images:** the logo flow's rules (staging bucket, signature checks, lease and fencing, recovery, reconciliation) in `ProductImageService` and `runProductImageCleanup`, with its own tables and error codes. `ProductImage` stores the object key and the metadata of the normalized image, never a URL. Keys are `product-images/<shopId>/<productId>/<uploadId>/<imageId>.<ext>`.
+- **Images referenced by orders (S2-7, specified 2026-11-09, not built):** an order item stores the object key of the image shown at placement (spec 11). `runProductImageCleanup` must never delete a released media object whose key any order item references. Such an object stays for as long as the order exists, even after the seller removes the image or archives the product. The check runs in the cleanup's delete step, like the existing check that never deletes a referenced object. Objects are immutable, so the order always shows exactly what the customer saw. If an object is missing anyway, the order shows a placeholder.
 - **Normalization (`modules/media/image-normalizer.ts`, shared with shop logos; `images/image-normalizer.ts` holds the product limits and error codes):** every image is re-encoded on every attempt, including small ones, with sharp. The signature must match the declared type; the pixel count is read from the header and refused above the limit before decoding. Pixels go through a raw buffer, which removes metadata and any appended data, and the result is checked again before it can be published. Quality starts at JPEG 85 and WebP 82 and steps down, and PNG falls back to a palette, only when needed to fit 2 MB. Colours are converted to sRGB. Only the first frame of an animated image is kept. Two uploads per API process, across product images and logos, are read and normalized at once, which bounds memory. A database check keeps stored images within 2 MB and 1024 × 1024.
 - **Rejection codes:** `PRODUCT_IMAGE_TOO_LARGE` means over 15 MB, or an output that cannot fit 2 MB; `PRODUCT_IMAGE_TOO_LARGE_DIMENSIONS` means over 64 megapixels.
 - **Limits the spec does not set:** 10 images and 100 variants per product; name 150, description 5000, brand 100, size 30, color 50 characters; writes 300 per user and 600 per IP per 10 minutes; upload requests 60 per user and 120 per IP per 10 minutes.

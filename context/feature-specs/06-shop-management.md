@@ -53,6 +53,7 @@ There is no draft status. An application is submitted in exactly two ways:
 - Transitions are conditional updates on the expected current status (`UPDATE … WHERE id = $1 AND status = $expected`). Concurrent actions (for example a resubmission or a pending edit racing an admin decision, or two admins deciding at once) therefore cannot both succeed. The losing request gets `409`.
 - **Every status change runs in one transaction** that performs the insert or conditional update, writes the audit record, and (for initial approval only) grants `SELLER` if not already held. If any step fails, nothing is committed.
 - Suspension retains `SELLER`; the status check blocks access. Reinstatement retains the role without a new grant and restores access only when the administrator's `SUSPENDED` → `APPROVED` transition commits.
+- **Open orders at suspension (D8, `business-decisions-features-10-18.md`).** The suspension transaction also calls spec 11's suspension function, after the shop row is locked and before commit. It cancels every shop order of this shop that is `PENDING`, or `CONFIRMED` with a delivery not yet out for delivery: reason `SHOP_UNAVAILABLE`, stock returned, payment `CANCELLED`, customers notified. If any of it fails, the suspension does not commit. Deliveries already out for delivery, or failed and not closed, are left to finish under spec 12's narrow rules. Reinstatement restores no cancelled order.
 - Editing an approved shop (below) never changes `Shop.status`.
 
 ### Decision reasons and internal notes
@@ -128,6 +129,7 @@ Validated with a **strict** allowlist schema (shared in `packages/shared`). Unkn
 | `address` | Yes | string, trimmed, 1–300 characters | Immediate |
 | `whatsappPhone` | No | phone number normalized to E.164; absent or `null` clears it | Immediate |
 | `logoUrl` | No | **Set only by the verified logo upload flow** (below). Never accepted as a string from the client. `PATCH` accepts only `logoUrl: null`, which removes the logo. | Immediate (via upload) |
+| `deliveryFee` | No (empty until the seller sets it; added with D2, 2026-11-09) | The shop's flat delivery fee in MRU, charged once per shop order (spec 10). Decimal string, 2 decimals, at least `0.00` (free delivery), at most the product price limit. Once set it can be changed but not cleared (`null` → `400`). While empty, the shop's products cannot be checked out (spec 10). Changing it never affects existing orders, which keep their snapshot (spec 11) | Immediate |
 
 - **Sanitizing:** strings are Unicode-normalized (NFC) and trimmed; control characters are rejected (except line breaks in `description`). Values are stored as plain text and always rendered escaped; HTML is never interpreted.
 - **Contact phones are business data.** `contactPhone` and `whatsappPhone` are separate from the customer's personal contact phone (`CustomerProfile.phone`, spec 04), are never copied to or from it, and changing one never affects the other. Neither phone is an authentication identity (authentication is by email; spec 03), and neither is verified in the initial release.
@@ -139,7 +141,7 @@ Validated with a **strict** allowlist schema (shared in `packages/shared`). Unkn
 
 While the shop is `APPROVED`, its fields follow a **split policy**:
 
-**Immediate fields** — `description`, `contactPhone`, `whatsappPhone`, `address`, `logoUrl`:
+**Immediate fields** — `description`, `contactPhone`, `whatsappPhone`, `address`, `logoUrl`, `deliveryFee`:
 - Updated directly through `PATCH /api/v1/sellers/me/shop` (and the logo upload flow), with no admin re-review.
 - Same validation and ownership checks as every other write. Each change is audited (`ShopFieldChangeEvent`, `source = OWNER_UPDATE` or `LOGO_UPLOAD`).
 - On an `APPROVED` shop, `shopName` or `city` in a `PATCH` body → `400` (they go through a change request), and nothing is written.
@@ -289,7 +291,8 @@ Logos are uploaded **directly to object storage** with a presigned URL, through 
 | 9 | Upload or remove the shop logo | Authenticated owner **and** `status` is `PENDING`, `REJECTED`, or `APPROVED` (for `APPROVED`, `requireApprovedSeller`). | Status unchanged |
 
 - A user never reaches another user's shop: there is no owner route with a shop ID, and resource IDs (uploads, change requests, products…) are checked against the owner's shop. Responses for resources the user does not own are `404`, so other shops' resources are not disclosed.
-- A `PENDING` or `REJECTED` applicant, and a `SUSPENDED` shop, get `403` for all normal seller operations. A `SUSPENDED` shop keeps only rule 5: it cannot edit fields, submit change requests, or upload a logo.
+- A `PENDING` or `REJECTED` applicant, and a `SUSPENDED` shop, get `403` for all normal seller operations. A `SUSPENDED` shop keeps only rule 5: it cannot edit fields (the delivery fee included), submit change requests, or upload a logo.
+- **The one exception (D8):** the owner of a `SUSPENDED` shop may finish deliveries that were already out for delivery, or failed and not closed, when the shop was suspended. They may mark delivered with the cash collection, mark failed, or close as undeliverable, and see only those deliveries. This goes through spec 12's narrow guard. `requireApprovedSeller` is not changed, and no other operation is opened.
 - A user without a shop gets `404` from rules 2–5, 8, and 9.
 
 ## Implementation Details
@@ -306,7 +309,7 @@ Logos are uploaded **directly to object storage** with a presigned URL, through 
 - The image decoding library used for verification is chosen at implementation time (a maintained library; its decoding limits must be configured so that oversized or malformed images cannot exhaust memory).
 
 **Database:**
-- `Shop`: `id`, `ownerUserId` (`@unique`, foreign key to `User`), `status` (enum `ShopStatus { PENDING APPROVED REJECTED SUSPENDED }`, default `PENDING`), `shopName`, `description`, `contactPhone`, `city`, `address`, `whatsappPhone?`, `logoUrl?`, `createdAt`, `updatedAt`.
+- `Shop`: `id`, `ownerUserId` (`@unique`, foreign key to `User`), `status` (enum `ShopStatus { PENDING APPROVED REJECTED SUSPENDED }`, default `PENDING`), `shopName`, `description`, `contactPhone`, `city`, `address`, `whatsappPhone?`, `logoUrl?`, `deliveryFee?` (`DECIMAL(12, 2)`, `CHECK (deliveryFee >= 0)`; added by the order-chain migration, D2), `createdAt`, `updatedAt`. The `ShopField` enum gains `deliveryFee`, so fee changes are audited in `ShopFieldChangeEvent`.
 - `ShopStatusEvent`: `id`, `shopId` (foreign key), `fromStatus?`, `toStatus`, `actorUserId` (foreign key to `User`), `decisionType?` (enum `ShopDecisionType { APPLICATION_APPROVED APPLICATION_REJECTED SUSPENDED REINSTATED }`), `internalReason?`, `applicantReason?`, `internalNote?`, `createdAt`; index on `(shopId, createdAt)`.
 - `ShopChangeRequest`: `id`, `shopId` (foreign key), `proposedShopName?`, `proposedCity?` (at least one set), `status` (enum `ShopChangeRequestStatus { PENDING APPROVED REJECTED }`), `submittedByUserId`, `submittedAt`, `decidedByUserId?`, `decidedAt?`, `internalReason?` (required when decided), `internalNote?`. Partial unique index `(shopId) WHERE status = 'PENDING'` (raw SQL in the migration, since Prisma has no partial unique indexes).
 - `ShopFieldChangeEvent`: `id`, `shopId` (foreign key), `field`, `oldValue?`, `newValue?`, `actorUserId`, `source` (enum `OWNER_UPDATE | CHANGE_REQUEST_APPROVED | LOGO_UPLOAD`), `createdAt`; index on `(shopId, createdAt)`.
@@ -319,10 +322,10 @@ Logos are uploaded **directly to object storage** with a presigned URL, through 
 - `apps/web/src/features/admin/`: shop review, decisions (the application rejection form asks for the applicant-facing `applicantReason` only; the other decisions ask for `internalReason`; every decision may add an `internalNote`), suspension and reinstatement, change-request review, history.
 
 **Mobile:**
-- `apps/mobile/lib/features/shop/`: shop application, application status with the rejection reason, approved-shop editing, and logo upload.
+- `apps/mobile/lib/features/shop/`: shop application, application status with the rejection reason, approved-shop editing, and logo upload. Following O1, the delivery fee is edited on the web only and is not shown on this screen in the first release.
 
 **Do not touch:**
-- Product, inventory, order, and delivery features. They only consume `requireApprovedSeller`.
+- Product, inventory, order, and delivery features. They consume `requireApprovedSeller`. The only additions are spec 11's suspension function, called from the suspension transaction, and spec 12's narrow in-progress delivery guard (D8).
 - Authentication provider configuration.
 - Customer profile fields.
 
@@ -432,6 +435,11 @@ Administration and audit:
 - [x] Suspension and reinstatement without a valid `internalReason` → `400`.
 - [x] Every status change writes exactly one `ShopStatusEvent` with actor, reasons, internal note, and time, in the same transaction; a failed transition writes none.
 - [x] Status changes are visible to the shop owner on web and mobile. *(Verified manually by the project owner on web, signed in, and Android, 2026-11-07.)*
+
+Order chain additions (D2, D8, 2026-11-09; not implemented yet):
+- [ ] An approved shop can set and change its delivery fee (≥ 0, not cleared once set); each change writes a `ShopFieldChangeEvent`; a suspended shop cannot change it.
+- [ ] Suspension cancels the shop's pending and not-yet-dispatched shop orders in the same transaction (stock returned, payments cancelled, customers notified), and a failure there rolls back the suspension.
+- [ ] A suspended owner can finish only deliveries already under way; every other seller operation stays `403`.
 
 ## Logo Normalization Verification (2026-11-08)
 
