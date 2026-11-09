@@ -20,8 +20,8 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 1. Customer discovers the marketplace through the web or mobile application.
 2. Customer browses fashion categories and searches for products.
 3. Customer views product details, prices, images, and seller information.
-4. Customer adds products from one or multiple shops to the shopping cart.
-5. Customer signs up with an email address and a password (no phone on the sign-up form), confirms the email address through the confirmation link (on any device), then completes account setup by entering a phone number (contact information).
+4. Customer signs up with an email address and a password (no phone on the sign-up form), confirms the email address through the confirmation link (on any device), then completes account setup by entering a phone number (contact information).
+5. Customer adds products from one or multiple shops to the shopping cart.
 6. Customer provides a delivery location using GPS detection or manual entry and confirms the location.
 7. Customer reviews their cart, selects a delivery address, and places an order.
 8. The marketplace creates separate seller orders under the customer's overall order.
@@ -83,8 +83,8 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 
 - Add, update, and remove cart items.
 - Shopping cart for multiple sellers.
-- Guest browsing and cart functionality.
-- Merge guest cart with registered customer cart upon signup.
+- Guest browsing; the cart belongs to a signed-in customer (spec 09).
+- Guest carts and merging them on signup are not in the current version.
 - Customer authentication required before placing orders.
 - Delivery address selection.
 - Delivery fee calculation.
@@ -113,7 +113,7 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 - Independent seller order processing.
 - Order acceptance and rejection.
 - Customer order tracking through status updates.
-- Customer cancellation before shipment.
+- Customer cancellation before the seller confirms; after that, the seller (or an administrator) can cancel until the order leaves for delivery (D6).
 - Order status notifications.
 - Delivery status management.
 - Failed delivery management.

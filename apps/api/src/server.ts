@@ -11,6 +11,7 @@ import {
 import { createEmailConfirmationChecker, createTokenVerifier } from "./modules/auth/index.js";
 import { AddressService } from "./modules/addresses/index.js";
 import { AdminShopQueries } from "./modules/admin/index.js";
+import { CartService } from "./modules/cart/index.js";
 import { PrismaCustomerRepository } from "./modules/customers/index.js";
 import { StockService } from "./modules/inventory/index.js";
 import { CatalogService, ProductImageService, ProductService } from "./modules/products/index.js";
@@ -81,6 +82,7 @@ const app = createApp({
     rateLimiter,
   },
   catalog: { catalog: new CatalogService(prisma, mediaPublicBaseUrl), rateLimiter, internalKey: config.catalogInternalKey },
+  cart: { cart: new CartService(prisma, mediaPublicBaseUrl), rateLimiter },
 });
 
 const server = app.listen(config.port, () => {

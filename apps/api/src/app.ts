@@ -7,6 +7,7 @@ import { createAuthGuards, createAuthRouter, type AuthDependencies } from "./mod
 import type { AuthGuards } from "./modules/auth/index.js";
 import { createAddressRouter, type AddressDependencies } from "./modules/addresses/index.js";
 import { createAdminRouter, type AdminDependencies } from "./modules/admin/index.js";
+import { createCartRouter, type CartDependencies } from "./modules/cart/index.js";
 import { createCustomerRouter, type CustomerDependencies } from "./modules/customers/index.js";
 import { createCatalogRouter, createProductRouter, type CatalogDependencies, type ProductDependencies } from "./modules/products/index.js";
 import { createShopRouter, type ShopDependencies } from "./modules/shops/index.js";
@@ -26,13 +27,15 @@ export interface AppOptions {
   products?: ProductDependencies;
   /** Public product discovery (spec 08). */
   catalog?: CatalogDependencies;
+  /** Customer shopping cart (spec 09). */
+  cart?: CartDependencies;
   /** Express `trust proxy` hops, so `req.ip` is the client address. */
   trustProxyHops?: number;
   /** Extra routers mounted under `/api/v1` (feature modules, test fixtures). */
   routers?: (guards: AuthGuards) => Router[];
 }
 
-export function createApp({ corsOrigins, auth, customers, addresses, shops, admin, products, catalog, trustProxyHops, routers }: AppOptions): Express {
+export function createApp({ corsOrigins, auth, customers, addresses, shops, admin, products, catalog, cart, trustProxyHops, routers }: AppOptions): Express {
   const app = express();
   const guards = createAuthGuards(auth);
 
@@ -53,6 +56,7 @@ export function createApp({ corsOrigins, auth, customers, addresses, shops, admi
   if (admin !== undefined) app.use("/api/v1", createAdminRouter(guards, admin));
   if (products !== undefined) app.use("/api/v1", createProductRouter(guards, products));
   if (catalog !== undefined) app.use("/api/v1", createCatalogRouter(catalog));
+  if (cart !== undefined) app.use("/api/v1", createCartRouter(guards, cart));
   for (const router of routers?.(guards) ?? []) app.use("/api/v1", router);
 
   app.use(notFoundHandler);

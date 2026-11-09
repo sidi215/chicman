@@ -108,3 +108,11 @@ describe("content security policy", () => {
     assert.deepEqual(policy({ ...base, NODE_ENV: "production" }, false).get("frame-src"), ["'none'"])
   })
 })
+
+describe("browser validation and the CSP", () => {
+  it("stops Zod probing for eval, which the CSP would report on every page", async () => {
+    await import("../instrumentation-client")
+    const { z } = await import("zod")
+    assert.equal(z.config().jitless, true)
+  })
+})

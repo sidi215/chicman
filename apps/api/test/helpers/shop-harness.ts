@@ -6,6 +6,7 @@ import { MemoryRateLimiter, type RateLimiter } from "../../src/lib/rate-limiter.
 import { createPrismaClient, type PrismaClient } from "../../src/lib/prisma.js";
 import { AddressService, type AddressServiceFaults } from "../../src/modules/addresses/index.js";
 import { AdminShopQueries } from "../../src/modules/admin/index.js";
+import { CartService, type CartServiceFaults } from "../../src/modules/cart/index.js";
 import { StockService } from "../../src/modules/inventory/index.js";
 import { CatalogService, ProductImageService, ProductService, type ProductImageServiceFaults } from "../../src/modules/products/index.js";
 import {
@@ -86,6 +87,7 @@ export interface HarnessFaults {
   logo: LogoServiceFaults;
   address: AddressServiceFaults;
   productImage: ProductImageServiceFaults;
+  cart: CartServiceFaults;
 }
 
 export const CATALOG_INTERNAL_KEY = "k".repeat(32);
@@ -93,7 +95,7 @@ export const CATALOG_INTERNAL_KEY = "k".repeat(32);
 export class ShopHarness {
   readonly jwks = new TestJwksServer();
   readonly storage = new FakeObjectStorage();
-  readonly faults: HarnessFaults = { shop: {}, lifecycle: {}, logo: {}, address: {}, productImage: {} };
+  readonly faults: HarnessFaults = { shop: {}, lifecycle: {}, logo: {}, address: {}, productImage: {}, cart: {} };
   prisma!: PrismaClient;
   app!: RunningApp;
   logos!: LogoService;
@@ -101,6 +103,8 @@ export class ShopHarness {
   private productRateLimiter = new MemoryRateLimiter();
   /** Replaceable, so a test can exhaust the public catalog limit. */
   catalogRateLimiter: RateLimiter = new MemoryRateLimiter();
+  /** Replaceable, so a test can exhaust the cart write limit. */
+  cartRateLimiter: RateLimiter = new MemoryRateLimiter();
 
   constructor(private readonly databaseUrl: string) {}
 
@@ -155,6 +159,10 @@ export class ShopHarness {
         rateLimiter: { hit: (key, limit, windowMs) => this.catalogRateLimiter.hit(key, limit, windowMs) },
         internalKey: CATALOG_INTERNAL_KEY,
       },
+      cart: {
+        cart: new CartService(this.prisma, MEDIA_BASE_URL, this.faults.cart),
+        rateLimiter: { hit: (key, limit, windowMs) => this.cartRateLimiter.hit(key, limit, windowMs) },
+      },
     });
   }
 
@@ -179,6 +187,7 @@ export class ShopHarness {
     this.storage.presigned.length = 0;
     this.productRateLimiter = new MemoryRateLimiter();
     this.catalogRateLimiter = new MemoryRateLimiter();
+    this.cartRateLimiter = new MemoryRateLimiter();
     await resetDatabase(this.prisma);
   }
 
@@ -193,6 +202,11 @@ export class ShopHarness {
       },
     });
     return { sub, userId: user.id, token: await signToken(this.key, { sub, extraClaims }) };
+  }
+
+  /** The same user signing in again: a new token for the same identity. */
+  async newSession(actor: Actor): Promise<Actor> {
+    return { ...actor, token: await signToken(this.key, { sub: actor.sub, extraClaims: { session_id: randomUUID() } }) };
   }
 
   /** A shop inserted directly in a given status (with SELLER when approved or suspended). */

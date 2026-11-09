@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../cart/presentation/cart_widgets.dart';
 import '../application/catalog_providers.dart';
 import '../domain/catalog.dart';
 import 'catalog_messages.dart';
@@ -68,6 +69,7 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(category == null ? t.allProducts : t.category(category)),
+        actions: const [CartAction()],
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.s2),

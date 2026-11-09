@@ -10,6 +10,7 @@ import { BrandLogo } from "@/components/brand/brand-logo"
 import { ThemeSelector } from "@/components/theme/theme-selector"
 import { buttonVariants } from "@/components/ui/button"
 import { useAuth } from "@/features/auth/auth-provider"
+import { CartLink } from "@/features/cart/components/cart-link"
 import { localizedPath, withoutLocale } from "@/lib/locale"
 import { useLocale } from "@/lib/locale-provider"
 import { cn } from "@/lib/utils"
@@ -98,6 +99,7 @@ export function StorefrontHeader() {
           </div>
           <div className="flex items-center gap-2">
             <LanguageSwitch />
+            <CartLink />
             <AccountAction />
           </div>
         </div>

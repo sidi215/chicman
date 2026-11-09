@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Chip } from "@/components/ui/chip"
 import { TextLink } from "@/features/auth/components/text-link"
+import { AddToCart } from "@/features/cart/components/add-to-cart"
 import { localizedPath } from "@/lib/locale"
 import { useLocale } from "@/lib/locale-provider"
 import { formatMru } from "@/lib/money"
@@ -96,8 +97,8 @@ function OptionGroup({
 
 /**
  * Size and color choice. Unavailable values remain visible and selectable, so
- * customers can see what exists; the page offers no purchase action here. The
- * cart and checkout (specs 09 and 10) enforce availability on the server.
+ * customers can see what exists; only an available choice can be added to the
+ * cart, and the API checks it again.
  */
 function VariantPicker({ product, t }: { product: PublicProductDetail; t: StorefrontMessages }) {
   const [choice, setChoice] = useState<VariantChoice>(NO_CHOICE)
@@ -113,6 +114,11 @@ function VariantPicker({ product, t }: { product: PublicProductDetail; t: Storef
         {selection.state === "selected" && selection.variant.available ? <span className="text-success-text">{t.variantAvailable}</span> : null}
         {selection.state === "selected" && !selection.variant.available ? <span className="text-error-text">{t.variantUnavailable}</span> : null}
       </p>
+      <AddToCart
+        productId={product.id}
+        variantId={selection.state === "selected" ? selection.variant.id : undefined}
+        purchasable={selection.state === "selected" && selection.variant.available}
+      />
     </div>
   )
 }
@@ -168,7 +174,7 @@ function ProductContent({ product, t }: { product: PublicProductDetail; t: Store
           </div>
           {product.available ? null : <p className="type-body-medium text-error-text">{t.productUnavailable}</p>}
         </div>
-        {product.variants.length > 0 ? <VariantPicker product={product} t={t} /> : null}
+        {product.variants.length > 0 ? <VariantPicker product={product} t={t} /> : <AddToCart productId={product.id} variantId={undefined} purchasable={product.available} />}
         <section className="flex flex-col gap-2">
           <h2 className="type-title-medium">{t.description}</h2>
           {/* Shown in the language the seller wrote it in. */}

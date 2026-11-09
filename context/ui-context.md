@@ -192,7 +192,7 @@ Web and mobile must share the same visual language but use platform-native compo
 
 ## Layout Patterns
 
-- **Navigation (Web):** Top header with a profile entry (avatar images are out of scope for the initial release), localized greeting, notification icon, theme selector (System / Light / Dark), and shopping bag drawer trigger. Built so far (spec 08): wordmark, theme selector, account or login entry, and category links; sticky from the `md` breakpoint up. The others arrive with their features.
+- **Navigation (Web):** Top header with a profile entry (avatar images are out of scope for the initial release), localized greeting, notification icon, theme selector (System / Light / Dark), and shopping bag drawer trigger. Built so far (specs 08 and 09): wordmark, theme selector, cart icon, account or login entry, and category links; sticky from the `md` breakpoint up. The others arrive with their features.
 
 - **Navigation (Mobile):** Compact top app bar with profile, notifications, and shopping bag actions.
 
@@ -208,11 +208,11 @@ Web and mobile must share the same visual language but use platform-native compo
 
 - **Product Grid (Mobile):** Two-column product layout with optimized spacing and touch-friendly interactions.
 
-- **Product Cards:** 3:4 portrait product images, floating black pill action buttons (Shop), heart icon favorite overlays, store/vendor name, price in Ouguiya (MRU), and star rating indicator. Built so far (spec 08, web `ProductCard`, Flutter `ProductCard`): image, name, price, shop, and an unavailable badge; the Shop button, heart, and rating arrive with the cart, favorites, and reviews.
+- **Product Cards:** 3:4 portrait product images, floating black pill action buttons (Shop), heart icon favorite overlays, store/vendor name, price in Ouguiya (MRU), and star rating indicator. Built so far (spec 08, web `ProductCard`, Flutter `ProductCard`): image, name, price, shop, and an unavailable badge. The whole card opens the product page, where add to cart lives, because variants are chosen there (spec 09). The heart and rating arrive with favorites and reviews.
 
 - **Product Details:** Dedicated product detail experience with large product imagery, product variants, seller information, pricing, and prominent add-to-cart action.
 
-- **Shopping Cart:** Shopping bag drawer on web and a dedicated cart screen on mobile. Support products from multiple sellers.
+- **Shopping Cart:** A dedicated cart page on web (`/cart`, spec 09) and a dedicated cart screen on mobile, both opened from a shopping bag icon showing the item count. One cart, grouped by shop. Warnings use `state-warning` tints with `state-warning-text`.
 
 - **Checkout:** Clear, simplified checkout experience optimized for mobile, including delivery location selection and order confirmation.
 

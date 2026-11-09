@@ -38,21 +38,28 @@
 
 - `apps/api/src/modules/shops/` — Shop registration, shop profiles, business information, the `Shop.status` lifecycle, and the shop authorization rules (onboarding exceptions and `requireApprovedSeller`). Administrator decisions are exposed through `modules/admin/`.
 
-- `apps/api/src/modules/products/` — Product catalog, categories, product variants, images, prices, and product availability. Seller routes live under `/api/v1/sellers/me/products` (`requireApprovedSeller`). `PUBLIC_PRODUCT_WHERE` is the single definition of a publicly visible product (`feature-specs/07-product-management.md`). Archiving is reversible: restoring returns a product to `DRAFT` and never publishes it. Public discovery routes (`/api/v1/products`, `/products/facets`, `/products/:productId`) live in `catalog.routes.ts` and `catalog.service.ts`, need no authentication, and expose no stock quantities or private shop data (`feature-specs/08-product-discovery.md`).
+- `apps/api/src/modules/products/` — Product catalog, categories, product variants, images, prices, and product availability. Seller routes live under `/api/v1/sellers/me/products` (`requireApprovedSeller`). `PUBLIC_PRODUCT_WHERE` is the single definition of a publicly visible product (`feature-specs/07-product-management.md`), with `productVisibility` beside it for a product already loaded, which the cart uses. Archiving is reversible: restoring returns a product to `DRAFT` and never publishes it. Public discovery routes (`/api/v1/products`, `/products/facets`, `/products/:productId`) live in `catalog.routes.ts` and `catalog.service.ts`, need no authentication, and expose no stock quantities or private shop data (`feature-specs/08-product-discovery.md`).
 
 - `apps/api/src/modules/media/` — Server-side image normalization shared by shop logos and product images: signature check, header pixel limit, orientation, resizing, re-encoding without metadata, and one process-wide processing limit. Each feature supplies its own limits and error codes.
 
-- `apps/api/src/modules/inventory/` — Stock management, inventory updates, and product availability validation. Seller stock updates are compare-and-set under the product row lock (spec 07). Availability has one definition here (including its query form for the public availability filter), derived from current stock and separate from publication visibility. Checkout reservation is not built yet.
+- `apps/api/src/modules/inventory/` — Stock management, inventory updates, and product availability validation. Seller stock updates are compare-and-set under the product row lock (spec 07). Availability has one definition here (including its query form for the public availability filter and `isQuantityAvailable` for the cart), derived from current stock and separate from publication visibility. Carts reserve nothing. **Order stock (specified, not built; spec 11, D1):** a separate internal function, not the seller `StockService`, takes stock at placement with a conditional update and returns it once if the order ends without delivery. Every such change is recorded in an append-only `StockMovement`.
 
-- `apps/api/src/modules/cart/` — Shopping cart operations, cart items, and guest-to-authenticated cart merging.
+- `apps/api/src/modules/cart/` — The customer's shopping cart (`/api/v1/customers/me/cart`): one per application user, with lines from any number of shops. Prices, availability, and totals are worked out from PostgreSQL on every read and write (`cart-rules.ts`). It reports problems and never changes a quantity or a variant on its own. It reserves no stock, so checkout must validate stock and prices again (`feature-specs/09-shopping-cart.md`). Guest carts and merging are not part of this version.
 
 - `apps/api/src/modules/addresses/` — Customer delivery addresses, GPS coordinates, location confirmation, and address management. Addresses belong to the authenticated user, always have a confirmed map location inside Mauritania, and are limited to 10 per customer with one default (`feature-specs/05-address-management.md`). Orders must store a snapshot of the delivery address.
 
-- `apps/api/src/modules/orders/` — Customer orders, seller-specific orders, order lifecycle, acceptance, rejection, and cancellation.
+- `apps/api/src/modules/checkout/` — *(Specified, not built; spec 10.)* The customer's checkout summary and the placement request: validation, idempotency key, and the single placement transaction (order, stock, payment, notifications, removal of the ordered cart lines).
 
-- `apps/api/src/modules/delivery/` — Seller-managed delivery operations, delivery fees, delivery status, and failed delivery handling.
+- `apps/api/src/modules/orders/` — *(Specified, not built; spec 11.)* Orders, shop orders, items, snapshots, and the shop order lifecycle (confirmation, rejection, cancellation, expiry, and the outcome set by delivery). Order stock rules and the function called by a shop suspension also live here.
 
-- `apps/api/src/modules/notifications/` — Notification creation, delivery, and notification history. Today it records `Notification` rows (allowlisted payloads) inside the transaction of the event that triggers them (shop decisions, spec 06); delivery channels and a read API are not built yet.
+- `apps/api/src/modules/delivery/` — *(Specified, not built; spec 12.)* Seller-managed delivery records, attempts, statuses, failure and closure, the "delivered, cash received" action, and the narrow access for suspended shops' in-progress deliveries. Delivery fees are a shop setting (spec 06) and an order snapshot (spec 11), not managed here.
+
+- `apps/api/src/modules/payments/` — *(Specified, not built; spec 13.)* Cash-on-delivery payment records, statuses, the collection and closing functions, append-only payment events, administrator correction notes, and the seller's collection summary. No ledger, settlement, or payouts.
+
+- `apps/api/src/modules/notifications/` — Notification creation, delivery, and notification history.
+  - **Today:** it records `Notification` rows (allowlisted payloads) inside the transaction of the event that triggers them (shop decisions, spec 06).
+  - **Spec 15 (not built yet):** keeps that approach, with no outbox, and adds a unique `eventKey` for idempotency, resource references, and the read API.
+  - **Delivery channels:** none are built. Transactional recording guarantees in-app persistence only; email, push, or other external delivery is not implemented and needs its own specification.
 
 - `apps/api/src/modules/reviews/` — Product reviews and ratings.
 
@@ -60,7 +67,7 @@
 
 - `apps/api/src/modules/admin/` — Administrative operations, seller approvals, marketplace monitoring, and platform management.
 
-- `apps/api/src/workers/` — Background processing for notifications, search indexing, and asynchronous tasks. Current jobs: phone-change history retention (every 24 h), shop logo cleanup and reconciliation (every 5 min), and product image cleanup and reconciliation (every 5 min), each behind its own PostgreSQL advisory lock.
+- `apps/api/src/workers/` — Background processing for notifications, search indexing, and asynchronous tasks. Current jobs: phone-change history retention (every 24 h), shop logo cleanup and reconciliation (every 5 min), and product image cleanup and reconciliation (every 5 min), each behind its own PostgreSQL advisory lock. Specified for the order chain, not built: shop order expiry and seller response reminders (spec 11), and the automatic closure of failed deliveries (spec 12). Each runs every 5 minutes, behind its own lock, and is idempotent.
 
 - `packages/shared/` — Shared API contracts, validation schemas, enums, and common business definitions where compatible with both web and backend TypeScript applications. Application code only: no visual design tokens.
 
@@ -172,7 +179,7 @@ The app follows the profile's `preferredLocale` (`core/locale/app_locale_control
 
 4. **Seller isolation is mandatory.** A seller must never access or modify another seller's private resources without explicit administrative authorization.
 
-5. **Shop approval is mandatory.** Only shops with `Shop.status = APPROVED` can publish products or process marketplace orders. `PENDING`, `REJECTED`, and `SUSPENDED` shops cannot. A user owns at most one shop (database-enforced). Only an administrator's initial approval grants `SELLER`; seller access always requires both the role and the approved status.
+5. **Shop approval is mandatory.** Only shops with `Shop.status = APPROVED` can publish products or process marketplace orders. `PENDING`, `REJECTED`, and `SUSPENDED` shops cannot. The one exception: a suspended shop's owner may finish deliveries already under way at suspension (deliver with collection, fail, close), and nothing else. Its other open orders are cancelled by the suspension itself (D8, specs 06, 11, 12). A user owns at most one shop (database-enforced). Only an administrator's initial approval grants `SELLER`; seller access always requires both the role and the approved status.
 
 6. **Stock must be validated server-side.** A product cannot be ordered beyond its available stock.
 

@@ -3,13 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../cart/presentation/cart_widgets.dart';
 import '../application/catalog_providers.dart';
 import '../domain/catalog.dart';
 import 'catalog_messages.dart';
 import 'catalog_widgets.dart';
 
-/// Public product details. It offers no purchase action: the cart and checkout
-/// (specs 09 and 10) add it and enforce availability on the server.
+/// Public product details. The cart and checkout (specs 09 and 10) enforce
+/// availability on the server, whatever this screen offers.
 class ProductDetailScreen extends ConsumerWidget {
   const ProductDetailScreen({super.key, required this.productId});
 
@@ -21,7 +22,7 @@ class ProductDetailScreen extends ConsumerWidget {
     final result = ref.watch(catalogDetailProvider(productId));
     void retry() => ref.invalidate(catalogDetailProvider(productId));
     return Scaffold(
-      appBar: AppBar(),
+      appBar: AppBar(actions: const [CartAction()]),
       body: switch (result) {
         AsyncData(:final value) when value.kind == CatalogOutcomeKind.ok =>
           _Content(product: value.data!),
@@ -106,10 +107,15 @@ class _Content extends StatelessWidget {
                 : colors.stateErrorText,
           ),
         ),
-        if (product.variants.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.s4),
-          _VariantPicker(variants: product.variants),
-        ],
+        const SizedBox(height: AppSpacing.s4),
+        if (product.variants.isNotEmpty)
+          _VariantPicker(productId: product.id, variants: product.variants)
+        else
+          AddToCartSection(
+            productId: product.id,
+            variantId: null,
+            purchasable: product.available,
+          ),
         const SizedBox(height: AppSpacing.s4),
         Text(t.description, style: theme.textTheme.titleMedium),
         const SizedBox(height: AppSpacing.s2),
@@ -153,10 +159,12 @@ class _Gallery extends StatelessWidget {
 }
 
 /// Size and color choice. Unavailable values remain visible and selectable,
-/// so customers can see what exists.
+/// so customers can see what exists; only an available choice can be added to
+/// the cart, and the API checks it again.
 class _VariantPicker extends StatefulWidget {
-  const _VariantPicker({required this.variants});
+  const _VariantPicker({required this.productId, required this.variants});
 
+  final String productId;
   final List<PublicVariant> variants;
 
   @override
@@ -210,6 +218,18 @@ class _VariantPickerState extends State<_VariantPicker> {
             key: const Key('variant-status'),
             style: textTheme.bodyMedium?.copyWith(color: color),
           ),
+        ),
+        const SizedBox(height: AppSpacing.s3),
+        AddToCartSection(
+          productId: widget.productId,
+          variantId: switch (selection) {
+            SelectionMade(:final variant) => variant.id,
+            _ => null,
+          },
+          purchasable: switch (selection) {
+            SelectionMade(:final variant) => variant.available,
+            _ => false,
+          },
         ),
       ],
     );
