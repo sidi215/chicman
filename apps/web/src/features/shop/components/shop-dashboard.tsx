@@ -14,6 +14,7 @@ import { TextLink } from "@/features/auth/components/text-link"
 import { apiRequest } from "@/lib/api-client"
 import { cn } from "@/lib/utils"
 
+import { buildDeliveryFeeUpdate, canEditDeliveryFee, type DeliveryFeeError } from "../delivery-fee"
 import { uploadShopLogo } from "../logo-upload"
 import { useLocale } from "@/lib/locale-provider"
 
@@ -82,7 +83,7 @@ export function ShopDashboard() {
   const { status, getAccessToken, signOut } = useAuth()
   const [view, setView] = useState<View>({ state: "loading" })
   // Kept here: a successful change request remounts its keyed section.
-  const [confirmation, setConfirmation] = useState<"fields" | "change-request" | null>(null)
+  const [confirmation, setConfirmation] = useState<"fields" | "change-request" | "delivery-fee" | null>(null)
 
   useEffect(() => {
     if (status === "signed-out" || status === "not-configured") router.replace("/login")
@@ -141,7 +142,7 @@ export function ShopDashboard() {
 
   /** A mutation whose success is confirmed in the given section. */
   const submitConfirmed = useCallback(
-    async (section: "fields" | "change-request", path: string, method: string, body: unknown): Promise<ShopOutcome> => {
+    async (section: "fields" | "change-request" | "delivery-fee", path: string, method: string, body: unknown): Promise<ShopOutcome> => {
       setConfirmation(null)
       const outcome = await mutate(path, method, body)
       if (outcome.state === "ok") setConfirmation(section)
@@ -193,6 +194,14 @@ export function ShopDashboard() {
               />
             </>
           )}
+          {canEditDeliveryFee(view.shop.status) ? (
+            <DeliveryFeeSection
+              t={t}
+              shop={view.shop}
+              confirmed={confirmation === "delivery-fee"}
+              onSubmit={(body) => submitConfirmed("delivery-fee", "/sellers/me/shop", "PATCH", body)}
+            />
+          ) : null}
           {view.shop.status === "APPROVED" ? (
             <ChangeRequestSection
               key={`cr-${view.shop.changeRequest?.id ?? "none"}-${view.shop.changeRequest?.status ?? ""}`}
@@ -443,6 +452,67 @@ function FieldsForm({
     <SectionCard title={t.editTitle} description={shop.status === "APPROVED" ? t.editApprovedHint : undefined}>
       <form className="flex flex-col gap-4" onSubmit={submit} noValidate aria-label={t.editTitle}>
         <ShopFields t={t} fields={fields} values={values} errors={errors} onChange={(patch) => setValues((c) => ({ ...c, ...patch }))} />
+        {notice ? <FormMessage tone={notice.tone}>{notice.text}</FormMessage> : confirmed ? <FormMessage tone="info">{t.saved}</FormMessage> : null}
+        <Button type="submit" disabled={pending}>
+          {pending ? t.saving : t.save}
+        </Button>
+      </form>
+    </SectionCard>
+  )
+}
+
+/** The flat delivery fee (D2). Web only in this release (S2-2). */
+function DeliveryFeeSection({
+  t,
+  shop,
+  confirmed,
+  onSubmit,
+}: {
+  t: ShopMessages
+  shop: OwnerShopResponse
+  confirmed: boolean
+  onSubmit: (body: unknown) => Promise<ShopOutcome>
+}) {
+  const [value, setValue] = useState(shop.deliveryFee ?? "")
+  const [error, setError] = useState<DeliveryFeeError | null>(null)
+  const [notice, setNotice] = useState<Notice>(null)
+  const [pending, setPending] = useState(false)
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (pending) return
+    setNotice(null)
+    const result = buildDeliveryFeeUpdate(value, shop.deliveryFee)
+    if (!result.ok) return setError(result.error)
+    setError(null)
+    if (result.body === null) return setNotice({ tone: "info", text: t.noChanges })
+    setPending(true)
+    try {
+      const outcome = await onSubmit(result.body)
+      if (outcome.state === "ok") setValue(outcome.shop.deliveryFee ?? "")
+      else setNotice(outcomeNotice(outcome, t))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <SectionCard title={t.deliveryFeeTitle} description={t.deliveryFeeHint}>
+      <form className="flex flex-col gap-4" onSubmit={submit} noValidate aria-label={t.deliveryFeeTitle}>
+        {shop.deliveryFee === null ? (
+          <p role="status" className="rounded-2xl bg-warning/15 p-3 type-body-small text-warning-text">
+            {t.deliveryFeeMissing}
+          </p>
+        ) : null}
+        <FormField
+          label={t.deliveryFeeLabel}
+          inputMode="decimal"
+          dir="ltr"
+          maxLength={20}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          error={error === null ? undefined : t.deliveryFeeErrors[error]}
+        />
         {notice ? <FormMessage tone={notice.tone}>{notice.text}</FormMessage> : confirmed ? <FormMessage tone="info">{t.saved}</FormMessage> : null}
         <Button type="submit" disabled={pending}>
           {pending ? t.saving : t.save}

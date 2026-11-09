@@ -8,6 +8,7 @@ import {
   LOGO_MAX_UPLOAD_BYTES,
   LOGO_UPLOAD_URL_TTL_SECONDS,
 } from "../shops/constants.js";
+import { MONEY_PATTERN, moneyAmountSchema } from "../money.js";
 import { plainText } from "../shops/schemas.js";
 
 /** Product management (spec 07). */
@@ -103,21 +104,13 @@ export const PRODUCT_ERROR_CODES = {
 } as const;
 
 /** Up to 10 integer digits and 2 decimals, the range of `DECIMAL(12, 2)`. */
-export const PRODUCT_PRICE_PATTERN = /^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/;
+export const PRODUCT_PRICE_PATTERN = MONEY_PATTERN;
 
 /**
  * A price in MRU, as a decimal string ("1500" → "1500.00"). JSON numbers are
  * refused, so a price never passes through floating point. Must be above zero.
  */
-export const productPriceSchema = z
-  .string()
-  .max(13)
-  .regex(PRODUCT_PRICE_PATTERN)
-  .transform((value) => {
-    const [whole = "0", fraction = ""] = value.split(".");
-    return `${whole}.${fraction.padEnd(2, "0")}`;
-  })
-  .refine((value) => /[1-9]/.test(value), { message: "price must be above zero" });
+export const productPriceSchema = moneyAmountSchema.refine((value) => /[1-9]/.test(value), { message: "price must be above zero" });
 
 const stockSchema = z.number().int().min(0).max(PRODUCT_MAX_STOCK);
 

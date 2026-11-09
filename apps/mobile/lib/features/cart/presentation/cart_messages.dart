@@ -40,6 +40,7 @@ class CartMessages {
   String get cartSubtotal => _('cartSubtotal');
   String get excludedNote => _('excludedNote');
   String get commitmentNote => _('commitmentNote');
+  String get checkout => _('checkout');
   String correctQuantity(int count) =>
       _('correctQuantity').replaceAll('{count}', '$count');
   String get acceptPrice => _('acceptPrice');
@@ -95,6 +96,7 @@ class CartMessages {
     'cartSubtotal': 'Sous-total du panier',
     'excludedNote':
         'Les articles indisponibles ne sont pas comptés dans le sous-total.',
+    'checkout': 'Passer la commande',
     'commitmentNote':
         'Les prix et la disponibilité peuvent changer et seront vérifiés à nouveau lors de la commande. Le panier ne réserve aucun article.',
     'correctQuantity': 'Ramener la quantité à {count}',
@@ -156,6 +158,7 @@ class CartMessages {
     'removeItem': 'إزالة {name} من السلة',
     'cartSubtotal': 'المجموع الفرعي للسلة',
     'excludedNote': 'المنتجات غير المتاحة غير محسوبة في المجموع الفرعي.',
+    'checkout': 'إتمام الطلب',
     'commitmentNote':
         'قد تتغير الأسعار والتوفر، وسيُعاد التحقق منهما عند الطلب. لا تحجز السلة أي منتج.',
     'correctQuantity': 'تعديل الكمية إلى {count}',

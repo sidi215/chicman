@@ -6,6 +6,8 @@ Implement cash on delivery as Chicman's initial and only supported payment metho
 
 Business rules come from `context/business-decisions-features-10-18.md` (D2, D5–D10; approved 2026-11-09).
 
+**Built so far (with spec 10, 2026-11-09):** `Payment`, `PaymentEvent`, and `createPayment` (`modules/payments/`). Everything else here is not built.
+
 ## Design & Architecture Decisions
 
 ### 1. Ownership

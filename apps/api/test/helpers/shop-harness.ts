@@ -7,6 +7,7 @@ import { createPrismaClient, type PrismaClient } from "../../src/lib/prisma.js";
 import { AddressService, type AddressServiceFaults } from "../../src/modules/addresses/index.js";
 import { AdminShopQueries } from "../../src/modules/admin/index.js";
 import { CartService, type CartServiceFaults } from "../../src/modules/cart/index.js";
+import { CheckoutService, type CheckoutServiceFaults } from "../../src/modules/checkout/index.js";
 import { StockService } from "../../src/modules/inventory/index.js";
 import { CatalogService, ProductImageService, ProductService, type ProductImageServiceFaults } from "../../src/modules/products/index.js";
 import {
@@ -88,14 +89,18 @@ export interface HarnessFaults {
   address: AddressServiceFaults;
   productImage: ProductImageServiceFaults;
   cart: CartServiceFaults;
+  checkout: CheckoutServiceFaults;
 }
 
 export const CATALOG_INTERNAL_KEY = "k".repeat(32);
+/** The configuration defaults (`config/env.ts`). */
+export const CHECKOUT_RESPONSE_TIMEOUT_HOURS = 48;
+export const CHECKOUT_RATE_LIMIT = { perUser: 20, perIp: 60, windowMs: 600_000 };
 
 export class ShopHarness {
   readonly jwks = new TestJwksServer();
   readonly storage = new FakeObjectStorage();
-  readonly faults: HarnessFaults = { shop: {}, lifecycle: {}, logo: {}, address: {}, productImage: {}, cart: {} };
+  readonly faults: HarnessFaults = { shop: {}, lifecycle: {}, logo: {}, address: {}, productImage: {}, cart: {}, checkout: {} };
   prisma!: PrismaClient;
   app!: RunningApp;
   logos!: LogoService;
@@ -105,6 +110,8 @@ export class ShopHarness {
   catalogRateLimiter: RateLimiter = new MemoryRateLimiter();
   /** Replaceable, so a test can exhaust the cart write limit. */
   cartRateLimiter: RateLimiter = new MemoryRateLimiter();
+  /** Replaceable, so a test can count or exhaust the checkout placement limit. */
+  checkoutRateLimiter: RateLimiter = new MemoryRateLimiter();
 
   constructor(private readonly databaseUrl: string) {}
 
@@ -163,6 +170,15 @@ export class ShopHarness {
         cart: new CartService(this.prisma, MEDIA_BASE_URL, this.faults.cart),
         rateLimiter: { hit: (key, limit, windowMs) => this.cartRateLimiter.hit(key, limit, windowMs) },
       },
+      checkout: {
+        checkout: new CheckoutService(this.prisma, new CartService(this.prisma, MEDIA_BASE_URL), {
+          mediaPublicBaseUrl: MEDIA_BASE_URL,
+          responseTimeoutHours: CHECKOUT_RESPONSE_TIMEOUT_HOURS,
+          faults: this.faults.checkout,
+        }),
+        rateLimiter: { hit: (key, limit, windowMs) => this.checkoutRateLimiter.hit(key, limit, windowMs) },
+        rateLimit: CHECKOUT_RATE_LIMIT,
+      },
     });
   }
 
@@ -188,6 +204,7 @@ export class ShopHarness {
     this.productRateLimiter = new MemoryRateLimiter();
     this.catalogRateLimiter = new MemoryRateLimiter();
     this.cartRateLimiter = new MemoryRateLimiter();
+    this.checkoutRateLimiter = new MemoryRateLimiter();
     await resetDatabase(this.prisma);
   }
 

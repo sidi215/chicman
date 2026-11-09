@@ -180,6 +180,10 @@ function Summary({ cart, t }: { cart: Cart; t: CartMessages }) {
         <span className="type-title-large">{formatMru(cart.subtotal, locale)}</span>
       </p>
       {hasExcludedItems(cart) ? <p className="type-body-small text-warning-text">{t.excludedNote}</p> : null}
+      {/* Checkout lists anything still to resolve, so the link is always offered. */}
+      <Link href="/checkout" className={buttonVariants({ size: "lg" })}>
+        {t.checkout}
+      </Link>
       <p className="type-body-small text-muted-foreground">{t.commitmentNote}</p>
     </aside>
   )

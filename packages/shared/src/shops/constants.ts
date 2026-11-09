@@ -23,6 +23,7 @@ export const SHOP_FIELDS = [
   "address",
   "whatsappPhone",
   "logoUrl",
+  "deliveryFee",
 ] as const;
 export type ShopField = (typeof SHOP_FIELDS)[number];
 

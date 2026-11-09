@@ -1,6 +1,7 @@
 "use client"
 
 import type { CustomerAddress, CustomerAddressListResponse } from "@chicman/shared"
+import type { AddressReturn } from "../address-return"
 import { MAX_ADDRESSES_PER_CUSTOMER } from "@chicman/shared"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -13,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useAuth } from "@/features/auth/auth-provider"
 import { FormField, FormMessage } from "@/features/auth/components/form-field"
 import { TextLink } from "@/features/auth/components/text-link"
+import { checkoutPathFor, NEW_ADDRESS_FOR_CHECKOUT_PATH } from "@/features/checkout/checkout-logic"
 import { apiRequest } from "@/lib/api-client"
 
 import {
@@ -82,8 +84,12 @@ function Shell({ t, children }: { t: AddressMessages; children: React.ReactNode 
   )
 }
 
-/** `/account/addresses`: saved addresses, default choice, edit and delete (spec 05). */
-export function AddressList() {
+/**
+ * `/account/addresses`: saved addresses, default choice, edit and delete (spec 05).
+ * With `selectFor="checkout"` it is also checkout's address choice (spec 10):
+ * the same list, where each address leads back to the order.
+ */
+export function AddressList({ selectFor = null }: { selectFor?: AddressReturn | null }) {
   const t = useAddressMessages()
   const { status, call } = useAddressApi()
   const [outcome, setOutcome] = useState<AddressOutcome<CustomerAddressListResponse> | null>(null)
@@ -125,8 +131,8 @@ export function AddressList() {
     <Shell t={t}>
       <Card className="w-full max-w-xl rounded-3xl p-6">
         <CardHeader>
-          <CardTitle className="type-headline-small">{t.listTitle}</CardTitle>
-          <CardDescription>{t.listSubtitle}</CardDescription>
+          <CardTitle className="type-headline-small">{selectFor === null ? t.listTitle : t.selectTitle}</CardTitle>
+          <CardDescription>{selectFor === null ? t.listSubtitle : t.selectSubtitle}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {outcome === null ? <FormMessage tone="info">{t.loading}</FormMessage> : null}
@@ -170,6 +176,14 @@ export function AddressList() {
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
+                    {selectFor === "checkout" ? (
+                      <Link
+                        href={checkoutPathFor(address.id)}
+                        className="inline-flex h-control items-center rounded-full bg-primary px-5 type-label-large text-primary-foreground hover:bg-primary/85"
+                      >
+                        {t.deliverHere}
+                      </Link>
+                    ) : null}
                     {address.isDefault ? null : (
                       <Button
                         variant="outline"
@@ -180,7 +194,7 @@ export function AddressList() {
                       </Button>
                     )}
                     <Link
-                      href={`/account/addresses/${address.id}`}
+                      href={`/account/addresses/${address.id}${selectFor === null ? "" : `?returnTo=${selectFor}`}`}
                       className="inline-flex h-control items-center rounded-full border border-border px-5 type-label-large hover:bg-muted"
                     >
                       {t.edit}
@@ -198,14 +212,14 @@ export function AddressList() {
               <FormMessage tone="info">{t.limitReached}</FormMessage>
             ) : (
               <Link
-                href="/account/addresses/new"
+                href={selectFor === "checkout" ? NEW_ADDRESS_FOR_CHECKOUT_PATH : "/account/addresses/new"}
                 className="inline-flex h-control items-center justify-center rounded-full bg-primary px-5 type-label-large text-primary-foreground hover:bg-primary/85"
               >
                 {t.add}
               </Link>
             )
           ) : null}
-          <TextLink href="/account">{t.backToAccount}</TextLink>
+          {selectFor === "checkout" ? <TextLink href="/checkout">{t.backToCheckout}</TextLink> : <TextLink href="/account">{t.backToAccount}</TextLink>}
         </CardContent>
       </Card>
     </Shell>
@@ -215,9 +229,10 @@ export function AddressList() {
 /**
  * Create (no `addressId`) or edit an address. Two steps: the map and
  * details, then a confirmation of the pin and details before saving
- * (`locationConfirmed: true`). `onboarding` adds "Plus tard".
+ * (`locationConfirmed: true`). `onboarding` adds "Plus tard". With
+ * `returnTo="checkout"`, saving goes back to checkout with this address chosen.
  */
-export function AddressEditor({ addressId, onboarding = false }: { addressId?: string; onboarding?: boolean }) {
+export function AddressEditor({ addressId, onboarding = false, returnTo = null }: { addressId?: string; onboarding?: boolean; returnTo?: AddressReturn | null }) {
   const t = useAddressMessages()
   const router = useRouter()
   const { status, call } = useAddressApi()
@@ -275,7 +290,8 @@ export function AddressEditor({ addressId, onboarding = false }: { addressId?: s
             body: JSON.stringify(body),
           })
       if (result.state === "ok") {
-        router.push(onboarding ? "/account" : "/account/addresses")
+        if (returnTo === "checkout") router.push(checkoutPathFor(result.data.id))
+        else router.push(onboarding ? "/account" : "/account/addresses")
         return
       }
       setStep("edit")
@@ -358,7 +374,11 @@ export function AddressEditor({ addressId, onboarding = false }: { addressId?: s
               </Button>
             </section>
           )}
-          <TextLink href={onboarding ? "/account" : "/account/addresses"}>{onboarding ? t.backToAccount : t.backToList}</TextLink>
+          {returnTo === "checkout" ? (
+            <TextLink href="/checkout">{t.backToCheckout}</TextLink>
+          ) : (
+            <TextLink href={onboarding ? "/account" : "/account/addresses"}>{onboarding ? t.backToAccount : t.backToList}</TextLink>
+          )}
         </CardContent>
       </Card>
     </Shell>

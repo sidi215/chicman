@@ -27,6 +27,8 @@ export interface LockedShopRow {
   address: string;
   whatsappPhone: string | null;
   logoUrl: string | null;
+  /** Decimal text ("150.00"), so it compares with the normalized input. */
+  deliveryFee: string | null;
 }
 
 /** Test-only fault injection points, used to prove rollback. */
@@ -45,7 +47,7 @@ export function isUniqueViolation(error: unknown): boolean {
 export async function lockShopByOwner(tx: Prisma.TransactionClient, ownerUserId: string): Promise<LockedShopRow | null> {
   const rows = await tx.$queryRaw<LockedShopRow[]>`
     SELECT "id", "ownerUserId", "status"::text AS "status", "shopName", "description", "contactPhone",
-           "city", "address", "whatsappPhone", "logoUrl"
+           "city", "address", "whatsappPhone", "logoUrl", "deliveryFee"::text AS "deliveryFee"
     FROM "Shop" WHERE "ownerUserId" = ${ownerUserId}::uuid FOR UPDATE`;
   return rows[0] ?? null;
 }
@@ -54,7 +56,7 @@ export async function lockShopByOwner(tx: Prisma.TransactionClient, ownerUserId:
 export async function lockShopById(tx: Prisma.TransactionClient, shopId: string): Promise<LockedShopRow | null> {
   const rows = await tx.$queryRaw<LockedShopRow[]>`
     SELECT "id", "ownerUserId", "status"::text AS "status", "shopName", "description", "contactPhone",
-           "city", "address", "whatsappPhone", "logoUrl"
+           "city", "address", "whatsappPhone", "logoUrl", "deliveryFee"::text AS "deliveryFee"
     FROM "Shop" WHERE "id" = ${shopId}::uuid FOR UPDATE`;
   return rows[0] ?? null;
 }
@@ -145,12 +147,13 @@ export class ShopService {
         address: input.address,
         whatsappPhone: input.whatsappPhone,
         logoUrl: input.logoUrl,
+        deliveryFee: input.deliveryFee,
       });
 
       if (changes.length > 0) {
         const data: Prisma.ShopUpdateManyMutationInput = {};
         for (const { field, newValue } of changes) {
-          // Required fields are never null here (the schema refuses null).
+          // Required fields and the delivery fee are never null here (the schema refuses null).
           (data as Record<string, string | null>)[field] = newValue;
         }
         // Conditional on the status read under the lock.

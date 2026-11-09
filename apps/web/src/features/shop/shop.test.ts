@@ -18,6 +18,7 @@ import {
   mergeShopFormValues,
   shopFormValues,
 } from "./shop-form"
+import { buildDeliveryFeeUpdate, canEditDeliveryFee } from "./delivery-fee"
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
@@ -32,6 +33,7 @@ const shop: OwnerShopResponse = {
   city: "Nouakchott",
   address: "Ksar",
   logoUrl: null,
+  deliveryFee: null,
   createdAt: "2026-11-07T10:00:00.000Z",
   updatedAt: "2026-11-07T10:00:00.000Z",
   latestDecision: { type: "APPLICATION_APPROVED", decidedAt: "2026-11-07T11:00:00.000Z" },
@@ -208,5 +210,29 @@ describe("admin shop decisions (spec 06)", () => {
       errors: { reason: "reasonLength", internalNote: "noteLength" },
     })
     assert.deepEqual(buildDecision("reject", "Motif avec\u0007bip", ""), { ok: false, errors: { reason: "reasonInvalid" } })
+  })
+})
+
+describe("delivery fee (spec 06, D2)", () => {
+  it("normalizes the typed amount, accepts free delivery, and accepts a decimal comma and spaces", () => {
+    assert.deepEqual(buildDeliveryFeeUpdate("150", null), { ok: true, body: { deliveryFee: "150.00" } })
+    assert.deepEqual(buildDeliveryFeeUpdate(" 1 500,5 ", null), { ok: true, body: { deliveryFee: "1500.50" } })
+    assert.deepEqual(buildDeliveryFeeUpdate("0", "100.00"), { ok: true, body: { deliveryFee: "0.00" } })
+  })
+
+  it("sends nothing when the fee is unchanged", () => {
+    assert.deepEqual(buildDeliveryFeeUpdate("100", "100.00"), { ok: true, body: null })
+  })
+
+  it("never clears a fee, and refuses negative or malformed amounts", () => {
+    assert.deepEqual(buildDeliveryFeeUpdate("  ", "100.00"), { ok: false, error: "required" })
+    for (const typed of ["-5", "1.234", "abc", "12345678901"]) assert.deepEqual(buildDeliveryFeeUpdate(typed, null), { ok: false, error: "invalid" }, typed)
+  })
+
+  it("is editable while the shop can be edited, never while suspended", () => {
+    assert.deepEqual(
+      (["PENDING", "APPROVED", "REJECTED", "SUSPENDED"] as const).map(canEditDeliveryFee),
+      [true, true, true, false],
+    )
   })
 })

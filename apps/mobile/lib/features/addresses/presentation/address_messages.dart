@@ -16,6 +16,9 @@ class AddressMessages {
   String _(String key) => _t[key]!;
   String get listTitle => _('listTitle');
   String get listSubtitle => _('listSubtitle');
+  String get selectTitle => _('selectTitle');
+  String get selectSubtitle => _('selectSubtitle');
+  String get deliverHere => _('deliverHere');
   String get empty => _('empty');
   String get add => _('add');
   String get limitReached => _('limitReached');
@@ -64,6 +67,10 @@ class AddressMessages {
 
   static const _fr = AddressMessages._({
     'listTitle': 'Mes adresses de livraison',
+    'selectTitle': 'Adresse de livraison de la commande',
+    'selectSubtitle':
+        'Choisissez où livrer cette commande. Votre adresse par défaut ne change pas.',
+    'deliverHere': 'Livrer à cette adresse',
     'listSubtitle':
         "Choisissez l'adresse utilisée par défaut pour vos commandes.",
     'empty': "Vous n'avez pas encore d'adresse de livraison.",
@@ -147,6 +154,9 @@ class AddressMessages {
 
   static const _ar = AddressMessages._({
     'listTitle': 'عناوين التوصيل',
+    'selectTitle': 'عنوان توصيل الطلب',
+    'selectSubtitle': 'اختر مكان توصيل هذا الطلب. لا يتغير عنوانك الافتراضي.',
+    'deliverHere': 'التوصيل إلى هذا العنوان',
     'listSubtitle': 'اختر العنوان المستخدم افتراضيًا لطلباتك.',
     'empty': 'ليس لديك عنوان توصيل بعد.',
     'add': 'إضافة عنوان',
