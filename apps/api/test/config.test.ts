@@ -32,13 +32,21 @@ describe("API configuration", () => {
     assert.deepEqual(duplicateEnvKeys(file).sort(), ["A", "B"]);
   });
 
-  describe("order chain settings (specs 10 and 11)", () => {
+  describe("order chain settings (specs 10, 11, and 12)", () => {
     const db = { ...base, DATABASE_URL: "postgresql://u:p@localhost:5442/chicman" };
 
     it("defaults to a 48-hour response deadline and 20 / 60 checkouts per 10 minutes", () => {
       const config = loadConfig({ ...db });
       assert.equal(config.orders.responseTimeoutHours, 48);
       assert.deepEqual(config.checkout.rateLimit, { perUser: 20, perIp: 60, windowMs: 600_000 });
+      assert.equal(config.delivery.failedAutoCloseDays, 7);
+    });
+
+    it("reads the failed-delivery closure period (spec 12) and refuses non-positive values", () => {
+      assert.equal(loadConfig({ ...db, DELIVERY_FAILED_AUTO_CLOSE_DAYS: "3" }).delivery.failedAutoCloseDays, 3);
+      for (const value of ["0", "-2", "1.5", "week"]) {
+        assert.throws(() => loadConfig({ ...db, DELIVERY_FAILED_AUTO_CLOSE_DAYS: value }), /DELIVERY_FAILED_AUTO_CLOSE_DAYS: must be a positive integer/, value);
+      }
     });
 
     it("reads the values from configuration", () => {

@@ -14,4 +14,7 @@ export * from "./products/catalog.js";
 export * from "./cart/cart.js";
 export * from "./money.js";
 export * from "./orders/orders.js";
+export * from "./orders/lifecycle.js";
+export * from "./delivery/delivery.js";
+export * from "./payments/payments.js";
 export * from "./checkout/checkout.js";

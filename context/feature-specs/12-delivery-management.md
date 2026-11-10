@@ -6,6 +6,8 @@ Allow sellers to manage delivery for their confirmed shop orders, update deliver
 
 Business rules come from `context/business-decisions-features-10-18.md` (D2, D4, D5, D8, D9, D11, O1; approved 2026-11-09).
 
+**Built (2026-11-10):** the whole feature on the API, web (seller), and mobile (customer). `Delivery`, `DeliveryStatusEvent`, `createDelivery`, and `cancelDelivery` came with spec 11. See Implementation Notes below.
+
 ## Design & Architecture Decisions
 
 ### 1. Ownership
@@ -169,20 +171,48 @@ Base path `/api/v1/sellers/me/orders/:shopOrderId/delivery`.
 
 ## Verification Checklist
 
-- [ ] A delivery is created only by confirming a shop order, never for a rejected, cancelled, or expired one.
-- [ ] A seller cannot access or update another seller's delivery (`404`).
-- [ ] Delivery status transitions are validated; repeats change nothing; invalid ones return `409`.
-- [ ] `ASSIGNED` is optional: dispatch works from `PENDING` and from `ASSIGNED`.
-- [ ] "Delivered, cash received" sets delivery and shop order `DELIVERED` and payment `COLLECTED` in one transaction, and fails as a whole on any error.
-- [ ] A failed attempt requires a reason from the list; the customer sees it translated.
-- [ ] Retries open new attempts with no limit; the attempt history is never overwritten.
-- [ ] Closing a failure (seller or job) sets the shop order `FAILED_DELIVERY`, returns stock once, and sets the payment `FAILED`.
-- [ ] The automatic closure job closes failures after the configured period, is idempotent, and does not run twice concurrently.
-- [ ] A cancelled shop order cancels a delivery that is not out; a delivery that is out cannot be cancelled.
-- [ ] A suspended shop's owner can finish only deliveries already out or failed, cannot retry, and is `403` for everything else.
-- [ ] Customer delivery status reflects the correct shop order, without seller-only data.
-- [ ] Delivery address and contact snapshots are read from the shop order and never change.
-- [ ] Delivery fees come from the snapshot and cannot be changed after placement.
-- [ ] Multi-shop orders keep independent delivery records.
-- [ ] Unauthorized and invalid operations are rejected.
-- [ ] API, web (seller), and mobile (customer) tests cover the supported workflows.
+- [x] A delivery is created only by confirming a shop order, never for a rejected, cancelled, or expired one.
+- [x] A seller cannot access or update another seller's delivery (`404`).
+- [x] Delivery status transitions are validated; repeats change nothing; invalid ones return `409`.
+- [x] `ASSIGNED` is optional: dispatch works from `PENDING` and from `ASSIGNED`.
+- [x] "Delivered, cash received" sets delivery and shop order `DELIVERED` and payment `COLLECTED` in one transaction, and fails as a whole on any error.
+- [x] A failed attempt requires a reason from the list; the customer sees it translated.
+- [x] Retries open new attempts with no limit; the attempt history is never overwritten.
+- [x] Closing a failure (seller or job) sets the shop order `FAILED_DELIVERY`, returns stock once, and sets the payment `FAILED`.
+- [x] The automatic closure job closes failures after the configured period, is idempotent, and does not run twice concurrently.
+- [x] A cancelled shop order cancels a delivery that is not out; a delivery that is out cannot be cancelled.
+- [x] A suspended shop's owner can finish only deliveries already out or failed, cannot retry, and is `403` for everything else.
+- [x] Customer delivery status reflects the correct shop order, without seller-only data.
+- [x] Delivery address and contact snapshots are read from the shop order and never change.
+- [x] Delivery fees come from the snapshot and cannot be changed after placement.
+- [x] Multi-shop orders keep independent delivery records.
+- [x] Unauthorized and invalid operations are rejected.
+- [x] API, web (seller), and mobile (customer) tests cover the supported workflows.
+
+Verified by automated tests (API `test/delivery.test.ts`, web `features/orders/orders.test.ts`, Flutter `test/features/orders/orders_test.dart`), 2026-11-10. **Not verified:** the web pages in a browser, Android on a device, and the closure job in the Compose worker.
+
+## Implementation Notes (2026-11-10)
+
+### Scope
+
+As with specs 10 and 11, what this feature calls from other specifications was built with it, as those specifications define it:
+
+| Built with this feature | Owner spec | Left for that spec |
+|---|---|---|
+| `collectPayment` (`collect`: exact amount, shown amount a precondition only, `409 PAYMENT_AMOUNT_MISMATCH`, `COLLECTED` event) | 13 | Admin notes, the seller collection summary |
+| `DELIVERY_DISPATCHED`, `DELIVERY_ATTEMPT_FAILED`, `DELIVERY_COMPLETED`, `DELIVERY_CLOSED_UNDELIVERABLE`, recorded through `recordNotification` in the change's transaction | 15 | Read API, notification centers |
+
+### Decisions the spec left open
+
+- **Migration** `delivery_attempts` (additive): `DeliveryAttempt` with the enums `DeliveryAttemptOutcome` and `DeliveryFailureReason`; unique `(deliveryId, number)`; one open attempt per delivery (partial unique index); checks: number ≥ 1, failure reason exactly when `FAILED`, outcome time and actor exactly when there is an outcome, `autoCloseAt` only on `FAILED`. Actor user IDs are plain values, like the other history tables.
+- **Configuration:** `DELIVERY_FAILED_AUTO_CLOSE_DAYS` (default 7, positive integer) in the API configuration. `autoCloseAt` = failure time + that many days; a retry clears it; a closure keeps it as it was.
+- **Order of checks:** guard (`403`) → body `400` → another shop's or unknown shop order `404 SHOP_ORDER_NOT_FOUND` → shop status, or a suspended shop's delivery not under way, `403` → status `409 DELIVERY_STATUS_CONFLICT` (also for a shop order that has no delivery yet) → for the delivered action, `409 PAYMENT_AMOUNT_MISMATCH`.
+- **Repeats:** `ready` on `ASSIGNED`, `dispatch` on `OUT_FOR_DELIVERY`, `delivered` on `DELIVERED`, `close` on a closed failure, and `fail` on an open failure whose last attempt has the same reason return the current state and write nothing. `fail` with a different reason is `409`. For a suspended shop the narrow guard applies first, so a repeat on a finished delivery is `403`.
+- **Closure history:** a closure writes a `FAILED` → `FAILED` status event (seller or `SYSTEM`); `closedAt` marks it.
+- **Responses:** every write returns the seller's delivery view (`SellerDelivery`: reference, statuses, label, amounts, amount due, full snapshot, items, record with attempts and allowed actions). The same view is used by `GET /sellers/me/deliveries/in-progress`, ordered oldest order first, not paginated (only deliveries under way).
+- **Allowed actions** are computed by the API (`record.actions`) from the delivery and shop status; a suspended shop gets only delivered/fail/close on a delivery under way.
+- **Views:** the customer's shop order gains `deliveryProgress` (attempts count, current dispatch time, failures with reason and time, delivered time; no actors or deadlines). The seller detail gains `deliveryRecord` (attempts, `autoCloseAt`, `closedAt`, actions). The admin detail's `deliveryRecord` gains the attempts with actor IDs, and `autoCloseAt`.
+- **Notifications:** customer only, as spec 15's table says (D5 rule 6 also mentions the seller; spec 15 is followed). Keys: the attempt ID for a dispatch or a failure, the delivery status event ID for the delivered action and the closure.
+- **Job:** `closeDueDeliveries`, batches of 100, one transaction per delivery under the shop → shop order → delivery → products lock order; a failing delivery is counted and retried next run. Lock `chicman:delivery-auto-close`. It closes failures of suspended shops too.
+- **Rate limit:** delivery writes share spec 11's order write limit.
+- **Clients:** web `/seller/orders/[shopOrderId]` gains a delivery panel (ready, dispatch or new attempt, "delivered, cash received" with a confirmation showing the amount, failure with a reason, closure with a confirmation); `/seller/deliveries` lists the deliveries under way and is linked from `/seller/orders` and from the shop dashboard for approved and suspended shops. The web and mobile customer order details show the delivery progress, with the failure reasons translated and "call the shop for a new attempt" while a failure is open.

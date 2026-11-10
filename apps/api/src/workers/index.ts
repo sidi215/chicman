@@ -2,7 +2,10 @@
 // Runs scheduled maintenance jobs outside the API request path:
 // - phone-change history retention (spec 04), every 24 hours;
 // - shop logo (spec 06) and product image (spec 07) cleanup and
-//   reconciliation, each every 5 minutes, when object storage is configured.
+//   reconciliation, each every 5 minutes, when object storage is configured;
+// - shop order expiry and seller response reminders (spec 11, D7), each every
+//   5 minutes;
+// - automatic closure of failed deliveries (spec 12, D5), every 5 minutes.
 // In development it runs as the `worker` service of
 // infrastructure/docker/docker-compose.yml (restart: unless-stopped).
 import dotenv from "dotenv";
@@ -10,9 +13,18 @@ import dotenv from "dotenv";
 import { loadWorkerStorageConfig } from "../config/env.js";
 import { createPrismaClient } from "../lib/prisma.js";
 import { describeError } from "../lib/describe-error.js";
+import { closeDueDeliveries } from "../modules/delivery/index.js";
+import { ShopOrderLifecycle, type JobResult } from "../modules/orders/index.js";
 import { runProductImageCleanup, type ProductImageCleanupResult } from "../modules/products/index.js";
 import { runLogoCleanup, S3ObjectStorage, type LogoCleanupResult } from "../modules/shops/index.js";
-import { createAdvisoryLock, LOGO_CLEANUP_LOCK_NAME, PRODUCT_IMAGE_CLEANUP_LOCK_NAME } from "./advisory-lock.js";
+import {
+  createAdvisoryLock,
+  DELIVERY_AUTO_CLOSE_LOCK_NAME,
+  LOGO_CLEANUP_LOCK_NAME,
+  ORDER_EXPIRY_LOCK_NAME,
+  ORDER_REMINDER_LOCK_NAME,
+  PRODUCT_IMAGE_CLEANUP_LOCK_NAME,
+} from "./advisory-lock.js";
 import { purgeExpiredPhoneChanges } from "./phone-change-retention.js";
 import { createRetentionSchedule, type RetentionSchedule } from "./retention-schedule.js";
 
@@ -20,6 +32,10 @@ import { createRetentionSchedule, type RetentionSchedule } from "./retention-sch
 const LOGO_CLEANUP_INTERVAL_MS = 5 * 60_000;
 /** Product image cleanup interval (spec 07), the same as the logo job. */
 const PRODUCT_IMAGE_CLEANUP_INTERVAL_MS = 5 * 60_000;
+/** Shop order expiry and reminder interval (spec 11, section 8). */
+const ORDER_JOBS_INTERVAL_MS = 5 * 60_000;
+/** Automatic closure of failed deliveries (spec 12, section 6). */
+const DELIVERY_AUTO_CLOSE_INTERVAL_MS = 5 * 60_000;
 
 dotenv.config({ quiet: true });
 const databaseUrl = process.env["DATABASE_URL"];
@@ -103,9 +119,45 @@ if (storage === undefined) {
   });
 }
 
+// Shop order expiry and reminders (spec 11, D7): bounded batches, one
+// transaction per shop order, each job behind its own advisory lock.
+const lifecycle = new ShopOrderLifecycle(prisma);
+function orderJobSchedule(name: string, lockName: string, run: () => Promise<JobResult>, summarize: (r: JobResult) => string, intervalMs: number): RetentionSchedule {
+  const jobLock = createAdvisoryLock(
+    databaseUrl as string,
+    () => {
+      console.error(`Worker ${name} lock connection lost; exiting so the worker restarts and reacquires the lock`);
+      process.exit(1);
+    },
+    lockName,
+  );
+  return createRetentionSchedule<JobResult>({
+    name,
+    lockName: name.replaceAll(" ", "-"),
+    intervalMs,
+    purge: run,
+    summarize,
+    lock: jobLock,
+    log: (line) => console.log(line),
+    logError: (line, error) => console.error(`${line}: ${describeError(error)}`),
+  });
+}
+const shopOrders = (verb: string) => (r: JobResult) => `shop orders ${verb} ${r.done} (failed ${r.failed})`;
+const expirySchedule = orderJobSchedule("shop order expiry", ORDER_EXPIRY_LOCK_NAME, () => lifecycle.expireDue(), shopOrders("expired"), ORDER_JOBS_INTERVAL_MS);
+const reminderSchedule = orderJobSchedule("shop order reminder", ORDER_REMINDER_LOCK_NAME, () => lifecycle.remindDue(), shopOrders("reminded"), ORDER_JOBS_INTERVAL_MS);
+// Failed deliveries left without a new attempt past their deadline (D5).
+const deliveryAutoCloseSchedule = orderJobSchedule(
+  "delivery auto close",
+  DELIVERY_AUTO_CLOSE_LOCK_NAME,
+  () => closeDueDeliveries(prisma),
+  (r) => `deliveries closed ${r.done} (failed ${r.failed})`,
+  DELIVERY_AUTO_CLOSE_INTERVAL_MS,
+);
+
 console.log(
   `Worker started (pid ${process.pid}); database ${describeDatabase(databaseUrl)}; retention every 24 h` +
-    (logoSchedule === null ? "" : "; logo and product image cleanup every 5 min"),
+    (logoSchedule === null ? "" : "; logo and product image cleanup every 5 min") +
+    "; shop order expiry and reminders every 5 min; delivery auto close every 5 min",
 );
 
 let stopping = false;
@@ -114,7 +166,7 @@ async function shutdown(signal: string): Promise<void> {
   stopping = true;
   console.log(`Worker received ${signal}; finishing the current run before exiting`);
   try {
-    await Promise.all([schedule.stop(), logoSchedule?.stop(), productImageSchedule?.stop()]);
+    await Promise.all([schedule.stop(), logoSchedule?.stop(), productImageSchedule?.stop(), expirySchedule.stop(), reminderSchedule.stop(), deliveryAutoCloseSchedule.stop()]);
     await prisma.$disconnect();
     console.log("Worker stopped cleanly");
     process.exit(0);
@@ -126,4 +178,4 @@ async function shutdown(signal: string): Promise<void> {
 process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
-await Promise.all([schedule.start(), logoSchedule?.start(), productImageSchedule?.start()]);
+await Promise.all([schedule.start(), logoSchedule?.start(), productImageSchedule?.start(), expirySchedule.start(), reminderSchedule.start(), deliveryAutoCloseSchedule.start()]);

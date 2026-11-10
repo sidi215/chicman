@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 
+import { DEFAULT_DELIVERY_FAILED_AUTO_CLOSE_DAYS } from "@chicman/shared";
 import dotenv from "dotenv";
 import { z } from "zod";
 
@@ -123,6 +124,10 @@ const envSchema = z.object({
   // Seller response deadline for new shop orders (D7, spec 11). Read at
   // placement: changing it never moves existing deadlines.
   ORDER_RESPONSE_TIMEOUT_HOURS: optionalPositiveInt(48),
+  // Days after a failed delivery attempt before the delivery is closed as
+  // undeliverable automatically (D5, spec 12). Read when the failure is
+  // recorded: changing it never moves existing deadlines.
+  DELIVERY_FAILED_AUTO_CLOSE_DAYS: optionalPositiveInt(DEFAULT_DELIVERY_FAILED_AUTO_CLOSE_DAYS),
   // Checkout placement limits (S2-6): server configuration, not business rules.
   CHECKOUT_RATE_LIMIT_PER_USER: optionalPositiveInt(20),
   CHECKOUT_RATE_LIMIT_PER_IP: optionalPositiveInt(60),
@@ -166,6 +171,7 @@ export interface AppConfig {
   storage: StorageConfig | undefined;
   logo: LogoTimingConfig;
   orders: { responseTimeoutHours: number };
+  delivery: { failedAutoCloseDays: number };
   checkout: { rateLimit: { perUser: number; perIp: number; windowMs: number } };
 }
 
@@ -286,6 +292,7 @@ export function loadConfig(source: NodeJS.ProcessEnv): AppConfig {
       completionWindowMs: env.LOGO_COMPLETION_WINDOW_MS,
     },
     orders: { responseTimeoutHours: env.ORDER_RESPONSE_TIMEOUT_HOURS },
+    delivery: { failedAutoCloseDays: env.DELIVERY_FAILED_AUTO_CLOSE_DAYS },
     checkout: {
       rateLimit: {
         perUser: env.CHECKOUT_RATE_LIMIT_PER_USER,

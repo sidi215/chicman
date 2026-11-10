@@ -1,7 +1,9 @@
-import type { CheckoutProblem, CheckoutSummary, ShopOrderLabel } from "@chicman/shared"
+import type { CheckoutProblem, CheckoutSummary } from "@chicman/shared"
 
 import type { Locale } from "@/lib/locale"
 import { useLocale } from "@/lib/locale-provider"
+
+import { SHOP_ORDER_LABEL_TEXT } from "../orders/messages"
 
 import type { CheckoutFailure, RecipientError } from "./checkout-logic"
 
@@ -81,18 +83,8 @@ export const CHECKOUT_MESSAGES = {
     amountDue: "À payer en espèces à la livraison",
     deliverTo: "Livraison à",
     continueShopping: "Continuer mes achats",
-    labels: {
-      AWAITING_SHOP: "En attente de la boutique",
-      PREPARING: "En préparation",
-      READY_FOR_DELIVERY: "Prête pour la livraison",
-      OUT_FOR_DELIVERY: "En cours de livraison",
-      DELIVERY_FAILED_RETRY: "Livraison échouée, à reprogrammer",
-      DELIVERED: "Livrée",
-      UNDELIVERABLE: "Livraison impossible",
-      REJECTED: "Refusée par la boutique",
-      CANCELLED: "Annulée",
-      EXPIRED: "Expirée (sans réponse de la boutique)",
-    } satisfies Record<ShopOrderLabel, string>,
+    viewOrder: "Suivre ma commande",
+    labels: SHOP_ORDER_LABEL_TEXT.fr,
   },
   ar: {
     title: "الطلب",
@@ -168,18 +160,8 @@ export const CHECKOUT_MESSAGES = {
     amountDue: "المبلغ المستحق نقدًا عند الاستلام",
     deliverTo: "التوصيل إلى",
     continueShopping: "متابعة التسوق",
-    labels: {
-      AWAITING_SHOP: "في انتظار المتجر",
-      PREPARING: "قيد التحضير",
-      READY_FOR_DELIVERY: "جاهز للتوصيل",
-      OUT_FOR_DELIVERY: "قيد التوصيل",
-      DELIVERY_FAILED_RETRY: "فشل التوصيل، يُعاد جدولته",
-      DELIVERED: "تم التوصيل",
-      UNDELIVERABLE: "تعذّر التوصيل",
-      REJECTED: "رفضه المتجر",
-      CANCELLED: "ملغى",
-      EXPIRED: "منتهي (دون رد من المتجر)",
-    } satisfies Record<ShopOrderLabel, string>,
+    viewOrder: "متابعة طلبي",
+    labels: SHOP_ORDER_LABEL_TEXT.ar,
   },
 } as const
 

@@ -378,6 +378,8 @@ function StatusCard({ t, shop, onResubmit }: { t: ShopMessages; shop: OwnerShopR
       </div>
       <p className="type-body-medium text-muted-foreground">{t.statusHelp[shop.status]}</p>
       {shop.status === "APPROVED" ? <TextLink href="/seller/products">{t.myProducts}</TextLink> : null}
+      {shop.status === "APPROVED" ? <TextLink href="/seller/orders">{t.myOrders}</TextLink> : null}
+      {shop.status === "APPROVED" || shop.status === "SUSPENDED" ? <TextLink href="/seller/deliveries">{t.inProgressDeliveries}</TextLink> : null}
       {shop.latestDecision ? (
         <p className="type-body-small text-muted-foreground">
           {`${t.latestDecision} : ${t.decision[shop.latestDecision.type]} · ${formatDateTime(shop.latestDecision.decidedAt, locale)}`}

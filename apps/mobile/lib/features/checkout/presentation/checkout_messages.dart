@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/format/money.dart';
+import '../../orders/presentation/order_messages.dart';
 import '../domain/checkout.dart';
 
 /// Checkout texts (French default, Arabic RTL). Same wording as the web
@@ -77,7 +78,13 @@ class CheckoutMessages {
   String get amountDue => _('amountDue');
   String get deliverTo => _('deliverTo');
   String get continueShopping => _('continueShopping');
-  String label(ShopOrderLabel label) => _('label.${label.apiValue}');
+  String get viewOrder => _('viewOrder');
+
+  /// One copy of the labels: the order messages'.
+  String label(ShopOrderLabel label) =>
+      (_languageCode == 'ar' ? OrderMessages.ar : OrderMessages.fr).label(
+        label,
+      );
 
   /// Local date and time, like the web's `formatDateTime`.
   String formatDateTime(DateTime date) {
@@ -193,16 +200,7 @@ class CheckoutMessages {
     'amountDue': 'À payer en espèces à la livraison',
     'deliverTo': 'Livraison à',
     'continueShopping': 'Continuer mes achats',
-    'label.AWAITING_SHOP': 'En attente de la boutique',
-    'label.PREPARING': 'En préparation',
-    'label.READY_FOR_DELIVERY': 'Prête pour la livraison',
-    'label.OUT_FOR_DELIVERY': 'En cours de livraison',
-    'label.DELIVERY_FAILED_RETRY': 'Livraison échouée, à reprogrammer',
-    'label.DELIVERED': 'Livrée',
-    'label.UNDELIVERABLE': 'Livraison impossible',
-    'label.REJECTED': 'Refusée par la boutique',
-    'label.CANCELLED': 'Annulée',
-    'label.EXPIRED': 'Expirée (sans réponse de la boutique)',
+    'viewOrder': 'Suivre ma commande',
   }, 'fr');
 
   static const ar = CheckoutMessages._({
@@ -276,15 +274,6 @@ class CheckoutMessages {
     'amountDue': 'المبلغ المستحق نقدًا عند الاستلام',
     'deliverTo': 'التوصيل إلى',
     'continueShopping': 'متابعة التسوق',
-    'label.AWAITING_SHOP': 'في انتظار المتجر',
-    'label.PREPARING': 'قيد التحضير',
-    'label.READY_FOR_DELIVERY': 'جاهز للتوصيل',
-    'label.OUT_FOR_DELIVERY': 'قيد التوصيل',
-    'label.DELIVERY_FAILED_RETRY': 'فشل التوصيل، يُعاد جدولته',
-    'label.DELIVERED': 'تم التوصيل',
-    'label.UNDELIVERABLE': 'تعذّر التوصيل',
-    'label.REJECTED': 'رفضه المتجر',
-    'label.CANCELLED': 'ملغى',
-    'label.EXPIRED': 'منتهي (دون رد من المتجر)',
+    'viewOrder': 'متابعة طلبي',
   }, 'ar');
 }

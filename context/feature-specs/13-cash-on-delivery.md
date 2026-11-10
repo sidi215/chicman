@@ -6,7 +6,7 @@ Implement cash on delivery as Chicman's initial and only supported payment metho
 
 Business rules come from `context/business-decisions-features-10-18.md` (D2, D5–D10; approved 2026-11-09).
 
-**Built so far (with spec 10, 2026-11-09):** `Payment`, `PaymentEvent`, and `createPayment` (`modules/payments/`). Everything else here is not built.
+**Built:** `Payment`, `PaymentEvent`, and `createPayment` (with spec 10, 2026-11-09); `markPaymentCancelled` and `markPaymentFailed` (with spec 11, 2026-11-10); `collectPayment` (`collect`, with spec 12, 2026-11-10); the rest — administrator correction notes, the seller collection summary, the seller's collection details, and the screens — on 2026-11-10 (Implementation Notes).
 
 ## Design & Architecture Decisions
 
@@ -159,16 +159,31 @@ Customers and administrators read payments through spec 11's order routes.
 
 ## Verification Checklist
 
-- [ ] Checkout creates one `PENDING` COD payment per shop order, with its `CREATED` event.
-- [ ] Multi-shop checkout creates independent COD obligations for each shop order.
-- [ ] The amount due equals the shop order's products subtotal plus its delivery fee snapshot, and never changes with catalog prices.
-- [ ] Collection happens only through the delivered action on an open attempt of the seller's own shop order.
-- [ ] A seller cannot collect payment for another seller's order (`404`).
-- [ ] Duplicate collection requests cannot collect twice.
-- [ ] A displayed amount different from the amount due is refused (`409`), and the stored amount always comes from the server.
-- [ ] Failed delivery (final) sets the payment `FAILED`; rejection, cancellation, expiry, and suspension set it `CANCELLED`; an open failed attempt leaves it `PENDING`.
-- [ ] A final payment never changes; administrator correction notes are appended without changing status or amount, and are refused on the administrator's own shop.
-- [ ] Payment events retain actor and timestamp information and cannot be edited.
-- [ ] The seller collection summary matches persisted payments.
-- [ ] Customer responses show method, amount due, and status only.
-- [ ] API, web, and mobile tests cover the supported workflows.
+- [x] Checkout creates one `PENDING` COD payment per shop order, with its `CREATED` event.
+- [x] Multi-shop checkout creates independent COD obligations for each shop order.
+- [x] The amount due equals the shop order's products subtotal plus its delivery fee snapshot, and never changes with catalog prices.
+- [x] Collection happens only through the delivered action on an open attempt of the seller's own shop order.
+- [x] A seller cannot collect payment for another seller's order (`404`).
+- [x] Duplicate collection requests cannot collect twice.
+- [x] A displayed amount different from the amount due is refused (`409`), and the stored amount always comes from the server.
+- [x] Failed delivery (final) sets the payment `FAILED`; rejection, cancellation, expiry, and suspension set it `CANCELLED`; an open failed attempt leaves it `PENDING`.
+- [x] A final payment never changes; administrator correction notes are appended without changing status or amount, and are refused on the administrator's own shop.
+- [x] Payment events retain actor and timestamp information and cannot be edited.
+- [x] The seller collection summary matches persisted payments.
+- [x] Customer responses show method, amount due, and status only.
+- [x] API, web, and mobile tests cover the supported workflows.
+
+## Implementation Notes (2026-11-10)
+
+### Scope
+
+The payment record, its events, creation, the closing functions, and `collect` were built with specs 10–12, with their database checks (`amountDue ≥ 0`, collected amount exactly when `COLLECTED`). This step added the rest: correction notes, the collection summary, the seller's collection details, and the screens. No migration was needed.
+
+### Decisions the spec left open
+
+- **Module:** `payment-views.ts` (one view per viewer: `customerPaymentView`, `sellerPaymentView`, `adminPaymentEventView`, used by spec 11's and 12's views), `payment-service.ts` (`PaymentService`: `addAdminNote`, `sellerSummary`), `payments.routes.ts`. Shared contracts: `packages/shared/src/payments/payments.ts`.
+- **Seller view (section 10):** `SellerPayment` = the customer's view plus `collectedAmount` and `collectedAt` (`null` until collected), in the seller shop order detail and in every `SellerDelivery` (delivery action results and the in-progress list). The customer view is unchanged: method, amount due, status.
+- **Correction note:** `POST /admin/orders/:shopOrderId/payment/notes`, body `{ reason }` only (plain text, trimmed, 10–500, as shop decision reasons). Order of checks: role guard `403` → body `400` → unknown shop order `404 SHOP_ORDER_NOT_FOUND` → own shop `403 SHOP_SELF_ADMINISTRATION_FORBIDDEN`. It appends an `ADMIN_NOTE` event (no amount, actor `ADMIN`) and touches nothing else, on any payment status, final ones included. Each call appends a new note (no idempotency key). Response `201` with the new event (`AdminPaymentEvent`). Notes appear only in the admin shop order detail's `payment.events`. The admin screen for adding notes belongs to spec 17 (admin order screens); this spec lists no admin screen.
+- **Summary period (section 9):** `from` and `to` are both required UTC days, both included, `from ≤ to`, at most 366 days (`400 BAD_REQUEST` otherwise). The period selects the shop orders **placed** in it (`ShopOrder.createdAt`, as the admin order list filter), so "still `PENDING`" is meaningful and the four counts partition those payments. Response: `{ from, to, collected: { count, total }, pending: { count, total }, failed: { count }, cancelled: { count } }`; `collected.total` sums the collected amounts, `pending.total` the amounts due. Guard `approvedSeller`: a suspended shop's owner gets `403`.
+- **Clients:** web `/seller/orders/[shopOrderId]` shows "Encaissé : {montant} le {date}" once collected; new page `/seller/payments` (period form defaulting to the current UTC month up to today, checked with the API's schema before asking), linked from `/seller/orders`. Customer payment display (web and mobile) was already built with spec 11; a mobile widget test now covers method, amount due, and each status. No Flutter seller screens (O1).
+- **Tests:** API +12 (`test/payments.test.ts`: contracts, views, notes, refusals, summary and its reconciliation against the records, period boundaries), web +4, Flutter +1. Removing the summary's shop filter and removing the self-administration check were each caught.

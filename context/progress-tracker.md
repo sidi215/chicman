@@ -17,6 +17,9 @@ Feature 03 (Authentication) is in progress. Feature 04 (Customer Profile) is **i
 - **Feature 07: implementation complete (2026-11-08)** on the API and web (the spec lists no mobile work). API 327, web 107. The product decisions are recorded under Decisions.
 - **Feature 08: implementation complete (2026-11-08)** on the API, web, and mobile. The public storefront is live on `/`, and the mobile app opens on it. Follow-up done the same day: web language switch, visible thousands separator, server-rendered public pages. Language sync, real 404s, and a sitemap followed. The mobile app now follows the profile language too. API 400, web 162, Flutter 165. A check on a real Android device is pending.
 - **Feature 10: implementation complete (2026-11-09)** on the API, web, and mobile: cash-on-delivery checkout of the whole cart into one order with one shop order per shop. By the project owner's choice, only the parts of specs 06, 11, 13, and 15 that checkout calls were built with it (spec 10, Implementation Notes). API 512, web 203, Flutter 222. Not verified in a browser or on a device.
+- **Feature 11: implementation complete (2026-11-10)** on the API, web, and mobile: the shop order lifecycle (confirm, reject, customer, seller, and administrator cancellation, expiry, reminders), stock returns, the suspension function, and the order screens. The parts of specs 12, 13, and 15 it calls were built with it (spec 11, Implementation Notes). API 555, web 213, Flutter 233. Not verified in a browser or on a device.
+- **Feature 12: implementation complete (2026-11-10)** on the API, web (seller), and mobile (customer): dispatch, attempts, "delivered, cash received", failure, closure, the automatic closure job, and the narrow access of suspended shops. Spec 13's `collect` and spec 15's four delivery notifications were built with it (spec 12, Implementation Notes). API 579, web 217, Flutter 237. Not verified in a browser or on a device.
+- **Feature 13: implementation complete (2026-11-10)** on the API, web (seller), and mobile (customer): administrator correction notes, the seller collection summary (`/seller/payments`), and the seller's collection time and amount. The rest was built with specs 10–12. API 591, web 221, Flutter 238. Not verified in a browser or on a device.
 - **Feature 09: implementation complete (2026-11-08)** on the API, web, and mobile. One cart per customer, grouped by shop, at `/cart` on the web and on a dedicated screen on mobile. Reviewed 2026-11-09: API 470, web 187, Flutter 206. A real sign-in and Android on a device or emulator are not verified.
 
 ### Authentication verification summary
@@ -46,8 +49,42 @@ Details: `feature-specs/03-authentication.md` (Verification Status) and `feature
 | 08 | Product Discovery | `feature-specs/08-product-discovery.md` | Implementation Complete (2026-11-08: API, web, and mobile; every checklist item verified by automated tests and, on the web, a browser run; Flutter on a real device pending) |
 | 09 | Shopping Cart | `feature-specs/09-shopping-cart.md` | Implementation Complete (2026-11-09 audit against the spec: API, web, and mobile; automated tests pass; browser runs used a test-signed or stubbed session; a real Supabase sign-in and Android on a device or emulator are **not verified**; the code is not committed yet) |
 | 10 | Checkout | `feature-specs/10-checkout.md` | Implementation Complete (2026-11-09: API, web, and mobile, with the prerequisites it calls from specs 06, 11, 13, and 15; automated tests pass; the web page in a browser, a real Supabase sign-in, and Android are **not verified**; not committed) |
+| 11 | Order Management | `feature-specs/11-order-management.md` | Implementation Complete (2026-11-10: API, web, and mobile, with the parts of specs 12, 13, and 15 it calls; automated tests pass; the web pages in a browser, a real Supabase sign-in, Android, and the jobs in the Compose worker are **not verified**; not committed) |
+| 12 | Delivery Management | `feature-specs/12-delivery-management.md` | Implementation Complete (2026-11-10: API, web seller pages, and mobile customer view, with spec 13's `collect` and spec 15's delivery notifications; automated tests pass; the web pages in a browser, a real Supabase sign-in, Android, and the closure job in the Compose worker are **not verified**; not committed) |
+| 13 | Cash on Delivery | `feature-specs/13-cash-on-delivery.md` | Implementation Complete (2026-11-10: API, web seller pages, and mobile customer view; with specs 10–12 for creation, closing, and collection; automated tests pass; the web pages in a browser, a real Supabase sign-in, and Android are **not verified**; not committed) |
 
 ## Completed Work
+
+### 13: cash on delivery — API, web, and mobile (2026-11-10)
+
+- **Scope:** the rest of the spec; the record, creation, closing, and collection were built with specs 10–12. No migration. Details and the decisions the spec left open: spec 13, Implementation Notes.
+- **Shared:** `payments/payments.ts` (`SellerPayment`, `paymentNoteSchema`, `sellerPaymentSummaryQuerySchema`, `SellerPaymentSummary`). The seller shop order detail and `SellerDelivery` now carry `SellerPayment`.
+- **API:** `payment-views.ts`, `PaymentService` (`addAdminNote`, `sellerSummary`), `payments.routes.ts` (`GET /sellers/me/payments/summary`, `POST /admin/orders/:shopOrderId/payment/notes`), wired in `app.ts`, `server.ts`, and the test harness.
+- **Web:** collected amount and time on `/seller/orders/[shopOrderId]`; new `/seller/payments` summary page, linked from `/seller/orders`.
+- **Mobile:** no change to screens (customer method, amount, status already shown); a widget test now covers them.
+- **Tests:** API 591/591 (+12), web 221/221 (+4), Flutter 238/238 (+1); API and web typecheck, web lint, and `flutter analyze` pass. Two deliberate breaks (summary shop filter, self-administration check) were each caught.
+
+### 12: delivery management — API, web, and mobile (2026-11-10)
+
+- **Scope:** the whole spec. As for specs 10 and 11, what it calls from other specs was built with it: `collectPayment` (spec 13 `collect`) and the four customer delivery notifications (spec 15). Details and the decisions the spec left open: spec 12, Implementation Notes.
+- **Shared:** `delivery/delivery.ts` (failure reasons, request schemas, customer progress, seller delivery and record views with allowed actions, admin attempts, error codes `DELIVERY_STATUS_CONFLICT` and `PAYMENT_AMOUNT_MISMATCH`, notification payloads). The customer shop order gains `deliveryProgress`; the seller detail gains `deliveryRecord`; the admin `deliveryRecord` gains attempts and `autoCloseAt`.
+- **Database:** migration `delivery_attempts` (additive): `DeliveryAttempt`, its enums, the one-open-attempt partial unique index, and checks. Applied to the local development and test databases; no drift.
+- **API:** `modules/delivery/` (`DeliveryLifecycle`, `closeDueDeliveries`, `requireDeliverySeller`, views, `DeliveryQueries`, routes), `collectPayment` in `modules/payments/`, `delivery-notifications.ts`, `DELIVERY_FAILED_AUTO_CLOSE_DAYS` (default 7), worker job every 5 minutes with lock `chicman:delivery-auto-close`. `requireApprovedSeller` is unchanged.
+- **Web:** delivery panel on `/seller/orders/[shopOrderId]`; new `/seller/deliveries` (deliveries under way; the only orders a suspended shop's owner sees), linked from `/seller/orders` and the shop dashboard (approved and suspended shops); delivery progress on `/account/orders/[orderId]`. French and Arabic.
+- **Mobile:** delivery progress on the order detail (attempts, current dispatch, translated failure reasons, delivered time, "call the shop" while a failure is open). No seller screens (O1).
+- **Tests:** API 579/579 (+24 delivery, +1 configuration), web 217/217 (+4), Flutter 237/237 (+4), `flutter analyze` clean. Root typecheck, web lint, API and web production builds, and `git diff --check` pass.
+- **Not verified:** the web pages in a browser with real accounts, Android on a device, and the closure job in the Compose worker (needs a rebuild).
+
+### 11: order management — API, web, and mobile (2026-11-10)
+
+- **Scope:** as for spec 10, only what spec 11 calls from other specs was built: the `Delivery` record and its history (created at confirmation, cancelled before dispatch; spec 12), `markPaymentCancelled`/`markPaymentFailed` (spec 13), and the five lifecycle notifications (spec 15). Details and the decisions the spec left open: spec 11, Implementation Notes.
+- **Shared:** `orders/lifecycle.ts` (reason codes, request schemas, list queries, seller and admin views, notification payloads); the customer view gains `deliveryStatus`, `closedAt`, `decision`, `canCancel`; new error codes `SHOP_ORDER_NOT_FOUND`, `SHOP_ORDER_STATUS_CONFLICT`, `SHOP_ORDER_EXPIRED`.
+- **Database:** migration `order_lifecycle` (additive): `Delivery`, `DeliveryStatusEvent`, and checks on shop order decision fields. Applied to the local development and test databases. An earlier draft of its checks let NULLs pass; it was fixed and re-applied before anything else used it.
+- **API:** `modules/orders/` (`ShopOrderLifecycle`, views, `OrderQueries`, routes), `modules/delivery/`, `returnOrderStock` in `modules/inventory/order-stock.ts`, suspension hook in `ShopLifecycle`, worker jobs (expiry and reminders, every 5 min, own advisory locks).
+- **Web:** `/account/orders`, `/account/orders/[orderId]` (cancellation while pending), `/seller/orders`, `/seller/orders/[shopOrderId]` (confirm, reject, cancel, staged delivery details). Links from the account panel, the shop dashboard, and the checkout confirmation. The checkout labels now come from the order messages.
+- **Mobile:** `features/orders/` (list with paging, detail, cancellation sheet), from the account screen and the checkout confirmation. The order models moved from the checkout domain (re-exported, no behaviour change).
+- **Tests:** API 555/555 (+43), web 213/213 (+10), Flutter 233/233 (+11), `flutter analyze` clean. Root typecheck, web lint, API and web production builds, and `git diff --check` pass. Three deliberate breaks of the lifecycle were each caught.
+- **Not verified:** the web pages in a browser, a real Supabase sign-in, Android on a device or emulator, and the jobs in the running Compose worker.
 
 ### 10: checkout — API, web, and mobile (2026-11-09)
 
@@ -837,7 +874,24 @@ Each finding was checked against the code first. Findings that the code already 
 3. **Android, real account:** the same flow from the cart screen, including the address choice and a retry after turning the network off during placement.
 4. Deploy the migration `order_chain_checkout` with the matching API version.
 
-**Order chain (specs 11–13, 15):** checkout and the parts it calls are built (above). Remaining, in the planned order: 15 (phase 1 rest: keys for shop decisions, read API, notification centers), 11 (lifecycle, routes, jobs, stock returns, suspension), 12, 13 (rest), 16, 17; 14 and 18 independently. Until 11 exists, placed orders cannot be confirmed, rejected, cancelled, or expired, and their stock stays taken.
+**Feature 11, remaining (project owner):**
+1. **Web, real accounts:** place an order across two shops; as each seller, open `/seller/orders`, confirm one and reject the other; as the customer, check `/account/orders` (labels, reason, contact phones), and cancel a pending one with `OTHER`. Check French, Arabic, and the console for CSP messages.
+2. **Android:** the order list, details, and cancellation from the account screen.
+3. **Worker:** rebuild and restart it (same command as feature 06, item 2) so the expiry and reminder jobs run; check the logs for `shop order expiry run #`.
+4. Deploy the migration `order_lifecycle` with the matching API version.
+
+**Feature 12, remaining (project owner):**
+1. **Web, real accounts:** with a confirmed order, on `/seller/orders/[shopOrderId]`: mark ready, dispatch, record a failure with a reason, retry, then "delivered, cash received" (check the amount shown); on another order, fail and close. As the customer, check `/account/orders/[orderId]` (progress, translated reasons, labels). Suspend a shop with a delivery out and a failed one, then check `/seller/deliveries` and that everything else is `403`. French, Arabic, and the console for CSP messages.
+2. **Android:** the delivery progress on the order details, in French and Arabic.
+3. **Worker:** rebuild and restart it (same command as feature 06, item 2); check the logs for `delivery auto close run #`.
+4. Deploy the migration `delivery_attempts` with the matching API version; set `DELIVERY_FAILED_AUTO_CLOSE_DAYS` if not 7.
+
+**Feature 13, remaining (project owner):**
+1. **Web, real accounts:** as a seller, deliver an order with "delivered, cash received" and check the collected line on `/seller/orders/[shopOrderId]`; open `/seller/payments` and compare the figures with your orders (try a period with no orders, and one over 366 days). French, Arabic, and the console for CSP messages.
+2. **Admin note:** `POST /api/v1/admin/orders/:shopOrderId/payment/notes` with a reason (no admin screen until spec 17); check it shows in `GET /admin/orders/:shopOrderId` and nowhere else.
+3. **Android:** the payment status on the order details, in French and Arabic.
+
+**Order chain (specs 15, 16, 17):** checkout (10), the lifecycle (11), delivery (12), and cash on delivery (13) are built. Remaining, in the planned order: 15 (phase 1 rest: keys for shop decisions, read API, notification centers), 16, 17 (admin order screens over the existing `/admin/orders` API); 14 and 18 independently.
 
 **Future feature (no spec yet):** mobile seller management in Flutter, reusing `/api/v1/sellers/me/products`.
 

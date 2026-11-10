@@ -4,7 +4,7 @@
 
 Provide a consistent notification system that informs customers, sellers, and administrators about important events in their workflows, with clear separation between notification creation, delivery, and read state.
 
-**Built so far (with spec 10, 2026-11-09):** the `eventKey`, `resourceType`, and `resourceId` columns with the `(userId, readAt, createdAt)` index, the generalized `recordNotification` helper (`modules/notifications/notifications.ts`), and `SHOP_ORDER_PLACED`. Not built: keys for the six shop decisions, the read API, the notification centers, and every other event.
+**Built so far (with spec 10, 2026-11-09):** the `eventKey`, `resourceType`, and `resourceId` columns with the `(userId, readAt, createdAt)` index, the generalized `recordNotification` helper (`modules/notifications/notifications.ts`), and `SHOP_ORDER_PLACED`. With spec 11 (2026-11-10): `SHOP_ORDER_CONFIRMED`, `SHOP_ORDER_REJECTED`, `SHOP_ORDER_CANCELLED`, `SHOP_ORDER_EXPIRED`, `SHOP_ORDER_RESPONSE_REMINDER`. With spec 12 (2026-11-10): `DELIVERY_DISPATCHED`, `DELIVERY_ATTEMPT_FAILED` (keyed by the attempt), `DELIVERY_COMPLETED`, `DELIVERY_CLOSED_UNDELIVERABLE` (keyed by the delivery status event), customer only. Not built: keys for the six shop decisions, the read API, and the notification centers.
 
 ## Design & Architecture Decisions
 
