@@ -1,3 +1,5 @@
+import { PRODUCT_MAX_STOCK } from "@chicman/shared";
+
 import type { Prisma } from "../../generated/prisma/client.js";
 
 /** One order item's claim on stock. */
@@ -54,4 +56,92 @@ export async function takeOrderStock(tx: Prisma.TransactionClient, lines: readon
       applied: true,
     })),
   });
+}
+
+/** Why a return could not be applied (D1, spec 11 section 7). */
+export type StockReturnSkipReason = "VARIANT_REMOVED" | "VARIANT_STRUCTURE_CHANGED" | "ABOVE_MAXIMUM";
+
+export interface StockReturnResult {
+  returned: number;
+  skipped: number;
+}
+
+/** Locks products by ID, in ascending order: the lock order of carts, checkout, and seller writes. */
+export async function lockProductsForStock(tx: Prisma.TransactionClient, productIds: readonly string[]): Promise<void> {
+  for (const productId of [...new Set(productIds)].sort()) {
+    await tx.$queryRaw`SELECT 1 FROM "Product" WHERE "id" = ${productId}::uuid FOR UPDATE`;
+  }
+}
+
+/**
+ * Returns a shop order's stock when it ends without delivery (`REJECTED`,
+ * `CANCELLED`, `EXPIRED`, `FAILED_DELIVERY`; D1). Runs in the transaction of
+ * that transition, after the shop order lock. Separate from the seller
+ * `StockService`: it needs neither an editable product nor an approved seller,
+ * so archived products and suspended shops get their stock back too.
+ *
+ * Each item writes one `RETURNED` movement. The unique (order item, type) key
+ * means a second return of the same item inserts nothing and changes no
+ * stock. A return that cannot be applied is recorded as skipped, with the
+ * quantity and the reason, and the caller's operation still succeeds:
+ * - the item's variant no longer exists → `VARIANT_REMOVED`;
+ * - the item had no variant and the product now has variants → `VARIANT_STRUCTURE_CHANGED`;
+ * - the stock would pass 1,000,000 → `ABOVE_MAXIMUM` (nothing is returned).
+ */
+export async function returnOrderStock(tx: Prisma.TransactionClient, shopOrderId: string, at: Date): Promise<StockReturnResult> {
+  const items = await tx.orderItem.findMany({
+    where: { shopOrderId },
+    orderBy: { id: "asc" },
+    select: { id: true, productId: true, variantId: true, quantity: true },
+  });
+  await lockProductsForStock(tx, items.map(({ productId }) => productId));
+
+  const result: StockReturnResult = { returned: 0, skipped: 0 };
+  for (const item of items) {
+    const skipReason = await returnSkipReason(tx, item);
+    const inserted = await tx.stockMovement.createMany({
+      data: [
+        {
+          orderItemId: item.id,
+          productId: item.productId,
+          variantId: item.variantId,
+          quantity: item.quantity,
+          type: "RETURNED",
+          applied: skipReason === null,
+          skipReason,
+          createdAt: at,
+        },
+      ],
+      skipDuplicates: true,
+    });
+    // Already returned: never twice.
+    if (inserted.count !== 1) continue;
+    if (skipReason !== null) {
+      result.skipped += 1;
+      continue;
+    }
+    if (item.variantId === null) {
+      await tx.$executeRaw`UPDATE "Product" SET "stock" = "stock" + ${item.quantity} WHERE "id" = ${item.productId}::uuid`;
+    } else {
+      await tx.$executeRaw`
+        UPDATE "ProductVariant" SET "stock" = "stock" + ${item.quantity}, "updatedAt" = now()
+        WHERE "id" = ${item.variantId}::uuid`;
+    }
+    result.returned += 1;
+  }
+  return result;
+}
+
+async function returnSkipReason(
+  tx: Prisma.TransactionClient,
+  item: { productId: string; variantId: string | null; quantity: number },
+): Promise<StockReturnSkipReason | null> {
+  if (item.variantId !== null) {
+    const variant = await tx.productVariant.findFirst({ where: { id: item.variantId, productId: item.productId }, select: { stock: true } });
+    if (variant === null) return "VARIANT_REMOVED";
+    return variant.stock + item.quantity > PRODUCT_MAX_STOCK ? "ABOVE_MAXIMUM" : null;
+  }
+  const product = await tx.product.findUniqueOrThrow({ where: { id: item.productId }, select: { stock: true, _count: { select: { variants: true } } } });
+  if (product._count.variants > 0) return "VARIANT_STRUCTURE_CHANGED";
+  return product.stock + item.quantity > PRODUCT_MAX_STOCK ? "ABOVE_MAXIMUM" : null;
 }

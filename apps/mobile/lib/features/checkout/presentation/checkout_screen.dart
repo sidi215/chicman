@@ -7,6 +7,7 @@ import '../../addresses/presentation/address_screens.dart';
 import '../../cart/presentation/cart_widgets.dart';
 import '../../catalog/domain/catalog.dart';
 import '../../catalog/presentation/catalog_widgets.dart';
+import '../../orders/presentation/order_screens.dart';
 import '../application/checkout_providers.dart';
 import '../domain/checkout.dart';
 import 'checkout_messages.dart';
@@ -693,6 +694,16 @@ class _Confirmation extends StatelessWidget {
           ],
         ),
         FilledButton(
+          key: const Key('checkout-view-order'),
+          onPressed: () => Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (_) => OrderDetailScreen(orderId: order.id),
+            ),
+          ),
+          child: Text(t.viewOrder),
+        ),
+        const SizedBox(height: AppSpacing.s2),
+        OutlinedButton(
           key: const Key('checkout-continue'),
           onPressed: () =>
               Navigator.of(context).popUntil((route) => route.isFirst),

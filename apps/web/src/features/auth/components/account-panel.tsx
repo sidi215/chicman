@@ -96,6 +96,7 @@ export function AccountPanel() {
             <span dir="ltr">{account.profile.phone}</span>
           </p>
           <TextLink href="/account/profile">{t.profileSettings}</TextLink>
+          <TextLink href="/account/orders">{t.myOrders}</TextLink>
           <TextLink href="/account/addresses">{t.myAddresses}</TextLink>
           {addressCount === 0 && !promptDismissed ? (
             <section className="flex flex-col gap-2 rounded-2xl bg-muted p-4" aria-labelledby="address-prompt-title">
@@ -120,6 +121,7 @@ export function AccountPanel() {
           <TextLink href="/seller/shop">{t.myShop}</TextLink>
           {/* Navigation only: the API enforces the approved-seller rule. */}
           {account.roles.includes("SELLER") ? <TextLink href="/seller/products">{t.myProducts}</TextLink> : null}
+          {account.roles.includes("SELLER") ? <TextLink href="/seller/orders">{t.shopOrders}</TextLink> : null}
           {/* Navigation only: the API enforces the ADMIN role. */}
           {account.roles.includes("ADMIN") ? <TextLink href="/admin/shops">{t.adminShops}</TextLink> : null}
         </>

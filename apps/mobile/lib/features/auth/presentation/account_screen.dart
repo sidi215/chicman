@@ -7,6 +7,8 @@ import '../../addresses/application/address_providers.dart';
 import '../../addresses/domain/address.dart';
 import '../../addresses/presentation/address_messages.dart';
 import '../../addresses/presentation/address_screens.dart';
+import '../../orders/presentation/order_messages.dart';
+import '../../orders/presentation/order_screens.dart';
 import '../../shop/presentation/shop_screen.dart';
 import '../application/auth_providers.dart';
 import '../data/auth_repository.dart';
@@ -108,6 +110,13 @@ class _ContactPhone extends ConsumerWidget {
             ),
           ),
           child: Text(t.profileSettings),
+        ),
+        OutlinedButton(
+          key: const Key('account-orders'),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const OrderListScreen()),
+          ),
+          child: Text(OrderMessages.of(context).myOrders),
         ),
         OutlinedButton(
           key: const Key('account-shop'),

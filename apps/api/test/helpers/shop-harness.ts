@@ -8,7 +8,10 @@ import { AddressService, type AddressServiceFaults } from "../../src/modules/add
 import { AdminShopQueries } from "../../src/modules/admin/index.js";
 import { CartService, type CartServiceFaults } from "../../src/modules/cart/index.js";
 import { CheckoutService, type CheckoutServiceFaults } from "../../src/modules/checkout/index.js";
+import { DeliveryLifecycle, DeliveryQueries, type DeliveryLifecycleFaults } from "../../src/modules/delivery/index.js";
 import { StockService } from "../../src/modules/inventory/index.js";
+import { OrderQueries, ShopOrderLifecycle, type ShopOrderLifecycleFaults } from "../../src/modules/orders/index.js";
+import { PaymentService } from "../../src/modules/payments/index.js";
 import { CatalogService, ProductImageService, ProductService, type ProductImageServiceFaults } from "../../src/modules/products/index.js";
 import {
   LogoService,
@@ -90,17 +93,20 @@ export interface HarnessFaults {
   productImage: ProductImageServiceFaults;
   cart: CartServiceFaults;
   checkout: CheckoutServiceFaults;
+  orders: ShopOrderLifecycleFaults;
+  delivery: DeliveryLifecycleFaults;
 }
 
 export const CATALOG_INTERNAL_KEY = "k".repeat(32);
 /** The configuration defaults (`config/env.ts`). */
 export const CHECKOUT_RESPONSE_TIMEOUT_HOURS = 48;
 export const CHECKOUT_RATE_LIMIT = { perUser: 20, perIp: 60, windowMs: 600_000 };
+export const DELIVERY_FAILED_AUTO_CLOSE_DAYS = 7;
 
 export class ShopHarness {
   readonly jwks = new TestJwksServer();
   readonly storage = new FakeObjectStorage();
-  readonly faults: HarnessFaults = { shop: {}, lifecycle: {}, logo: {}, address: {}, productImage: {}, cart: {}, checkout: {} };
+  readonly faults: HarnessFaults = { shop: {}, lifecycle: {}, logo: {}, address: {}, productImage: {}, cart: {}, checkout: {}, orders: {}, delivery: {} };
   prisma!: PrismaClient;
   app!: RunningApp;
   logos!: LogoService;
@@ -112,6 +118,12 @@ export class ShopHarness {
   cartRateLimiter: RateLimiter = new MemoryRateLimiter();
   /** Replaceable, so a test can count or exhaust the checkout placement limit. */
   checkoutRateLimiter: RateLimiter = new MemoryRateLimiter();
+  /** Replaceable, so a test can exhaust the order write limit. */
+  orderRateLimiter: RateLimiter = new MemoryRateLimiter();
+  /** The lifecycle the routes use, for the worker jobs in tests. */
+  orderLifecycle!: ShopOrderLifecycle;
+  /** The delivery lifecycle the routes use, for the closure job in tests. */
+  deliveryLifecycle!: DeliveryLifecycle;
 
   constructor(private readonly databaseUrl: string) {}
 
@@ -129,6 +141,8 @@ export class ShopHarness {
       faults: this.faults.logo,
       log: () => undefined,
     });
+    this.orderLifecycle = new ShopOrderLifecycle(this.prisma, this.faults.orders);
+    this.deliveryLifecycle = new DeliveryLifecycle(this.prisma, { failedAutoCloseDays: DELIVERY_FAILED_AUTO_CLOSE_DAYS, faults: this.faults.delivery });
     this.app = await startApp({
       corsOrigins: [],
       auth: {
@@ -179,6 +193,18 @@ export class ShopHarness {
         rateLimiter: { hit: (key, limit, windowMs) => this.checkoutRateLimiter.hit(key, limit, windowMs) },
         rateLimit: CHECKOUT_RATE_LIMIT,
       },
+      orders: {
+        lifecycle: this.orderLifecycle,
+        queries: new OrderQueries(this.prisma, MEDIA_BASE_URL),
+        rateLimiter: { hit: (key, limit, windowMs) => this.orderRateLimiter.hit(key, limit, windowMs) },
+      },
+      delivery: {
+        lifecycle: this.deliveryLifecycle,
+        queries: new DeliveryQueries(this.prisma, MEDIA_BASE_URL),
+        shopAccess,
+        rateLimiter: { hit: (key, limit, windowMs) => this.orderRateLimiter.hit(key, limit, windowMs) },
+      },
+      payments: { payments: new PaymentService(this.prisma) },
     });
   }
 
@@ -205,6 +231,7 @@ export class ShopHarness {
     this.catalogRateLimiter = new MemoryRateLimiter();
     this.cartRateLimiter = new MemoryRateLimiter();
     this.checkoutRateLimiter = new MemoryRateLimiter();
+    this.orderRateLimiter = new MemoryRateLimiter();
     await resetDatabase(this.prisma);
   }
 

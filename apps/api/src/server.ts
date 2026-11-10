@@ -14,7 +14,10 @@ import { AdminShopQueries } from "./modules/admin/index.js";
 import { CartService } from "./modules/cart/index.js";
 import { CheckoutService } from "./modules/checkout/index.js";
 import { PrismaCustomerRepository } from "./modules/customers/index.js";
+import { DeliveryLifecycle, DeliveryQueries } from "./modules/delivery/index.js";
 import { StockService } from "./modules/inventory/index.js";
+import { OrderQueries, ShopOrderLifecycle } from "./modules/orders/index.js";
+import { PaymentService } from "./modules/payments/index.js";
 import { CatalogService, ProductImageService, ProductService } from "./modules/products/index.js";
 import {
   LogoService,
@@ -91,6 +94,14 @@ const app = createApp({
     rateLimiter,
     rateLimit: config.checkout.rateLimit,
   },
+  orders: { lifecycle: new ShopOrderLifecycle(prisma), queries: new OrderQueries(prisma, mediaPublicBaseUrl), rateLimiter },
+  delivery: {
+    lifecycle: new DeliveryLifecycle(prisma, { failedAutoCloseDays: config.delivery.failedAutoCloseDays }),
+    queries: new DeliveryQueries(prisma, mediaPublicBaseUrl),
+    shopAccess,
+    rateLimiter,
+  },
+  payments: { payments: new PaymentService(prisma) },
 });
 
 const server = app.listen(config.port, () => {

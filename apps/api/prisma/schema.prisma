@@ -608,6 +608,7 @@ model ShopOrder {
   items             OrderItem[]
   statusEvents      ShopOrderStatusEvent[]
   payment           Payment?
+  delivery          Delivery?
 
   @@unique([orderId, shopId])
   @@index([shopId, status, createdAt])
@@ -734,4 +735,80 @@ model PaymentEvent {
   payment     Payment          @relation(fields: [paymentId], references: [id], onDelete: Restrict)
 
   @@index([paymentId, createdAt])
+}
+
+// Delivery (spec 12). Created PENDING by the confirmation transaction (spec
+// 11), then moved by the seller's delivery actions and the automatic closure
+// job. A closed failure (`closedAt` set) is final: undeliverable.
+enum DeliveryStatus {
+  PENDING
+  ASSIGNED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+// One per confirmed shop order, never before confirmation.
+model Delivery {
+  id          String                @id @default(uuid()) @db.Uuid
+  shopOrderId String                @unique @db.Uuid
+  status      DeliveryStatus        @default(PENDING)
+  autoCloseAt DateTime?             @db.Timestamptz(3)
+  closedAt    DateTime?             @db.Timestamptz(3)
+  createdAt   DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime              @updatedAt @db.Timestamptz(3)
+  shopOrder   ShopOrder             @relation(fields: [shopOrderId], references: [id], onDelete: Restrict)
+  events      DeliveryStatusEvent[]
+  attempts    DeliveryAttempt[]
+
+  @@index([status, autoCloseAt])
+}
+
+enum DeliveryAttemptOutcome {
+  DELIVERED
+  FAILED
+}
+
+// Fixed list (D5), shown to the customer translated. No free text.
+enum DeliveryFailureReason {
+  CUSTOMER_UNREACHABLE
+  CUSTOMER_ABSENT
+  CUSTOMER_REFUSED
+  ADDRESS_NOT_FOUND
+  CUSTOMER_COULD_NOT_PAY
+  OTHER
+}
+
+// One per dispatch (spec 12). Never overwritten: the outcome is set once.
+// At most one open attempt (outcome NULL) per delivery: a partial unique
+// index in the migration. `failureReason` exactly when the outcome is FAILED.
+model DeliveryAttempt {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  deliveryId         String                  @db.Uuid
+  number             Int
+  dispatchedAt       DateTime                @db.Timestamptz(3)
+  dispatchedByUserId String                  @db.Uuid
+  outcome            DeliveryAttemptOutcome?
+  failureReason      DeliveryFailureReason?
+  outcomeAt          DateTime?               @db.Timestamptz(3)
+  outcomeByUserId    String?                 @db.Uuid
+  delivery           Delivery                @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+
+  @@unique([deliveryId, number])
+}
+
+// Append-only delivery history (spec 12), written in the change's transaction.
+model DeliveryStatusEvent {
+  id          String          @id @default(uuid()) @db.Uuid
+  deliveryId  String          @db.Uuid
+  fromStatus  DeliveryStatus?
+  toStatus    DeliveryStatus
+  actorType   OrderActorType
+  actorUserId String?         @db.Uuid
+  reasonCode  String?         @db.VarChar(40)
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  delivery    Delivery        @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+
+  @@index([deliveryId, createdAt])
 }

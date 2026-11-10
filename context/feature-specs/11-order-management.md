@@ -6,7 +6,7 @@ Provide a complete order lifecycle for customers and sellers. Customers can view
 
 Business rules come from `context/business-decisions-features-10-18.md` (D1, D4, D6, D7, D8, D11, O3; approved 2026-11-09).
 
-**Built so far (with spec 10, 2026-11-09):** the five tables, `createOrder`, `takeOrderStock` (taking only), `loadCustomerOrder`, the shared status and label contracts, and the image cleanup guard (S2-7). Everything else here is not built. See spec 10, Implementation Notes.
+**Built (2026-11-10):** the whole feature on the API, web, and mobile. The tables, `createOrder`, `takeOrderStock`, and the image cleanup guard came with spec 10 (2026-11-09). See Implementation Notes below.
 
 ## Design & Architecture Decisions
 
@@ -263,27 +263,60 @@ Migrations are additive.
 
 ## Verification Checklist
 
-- [ ] One-shop checkout creates one shop order.
-- [ ] Multi-shop checkout creates the correct shop orders under one customer-facing order.
-- [ ] Sellers see only their own shop orders; another shop's is `404`.
-- [ ] Each seller can independently confirm or reject their whole shop order; another shop's order is unaffected.
-- [ ] Pending orders cannot be treated as confirmed; a delivery exists only after confirmation.
-- [ ] Customer cancellation works only while `PENDING` and before `respondBy`.
-- [ ] Seller cancellation works only while `CONFIRMED` with the delivery not out, and requires a reason.
-- [ ] Administrator cancellation works before dispatch, requires an internal reason, is refused on their own shop, and shows customers only "Annulée par Chicman".
-- [ ] Nobody can cancel once the delivery is out for delivery.
-- [ ] Invalid status transitions are rejected; repeated completed transitions change nothing.
-- [ ] Orders past `respondBy` expire (job or request), return stock, cancel the payment, and refuse late decisions.
-- [ ] The expiry and reminder jobs are idempotent and do not run twice concurrently; one reminder per shop order.
-- [ ] Stock is returned exactly once on rejection, cancellation, expiry, and final failed delivery, including for archived products and suspended shops; unappliable returns are recorded as skipped.
-- [ ] Shop suspension cancels pending and not-yet-dispatched shop orders in the same transaction and leaves deliveries in progress alone.
-- [ ] Order item snapshots remain unchanged after product, variant, shop, address, or profile edits and deletions.
-- [ ] An order shows the product image and the shop contact phones from placement, not the current ones.
-- [ ] Removing a product image, or archiving the product, never deletes an image an order references; a missing image shows the placeholder.
-- [ ] A customer cancellation with `OTHER` requires the explanatory text; the text is refused with any other reason.
-- [ ] Sellers see the full delivery snapshot only from confirmation on.
-- [ ] Concurrent or repeated requests do not create duplicate orders.
-- [ ] Customer, seller, and admin authorization is enforced server-side.
-- [ ] Internal reasons and notes never appear in customer or seller responses.
-- [ ] French and Arabic labels, RTL, and MRU formatting work on web and mobile.
-- [ ] API, web, and mobile tests cover the supported workflows.
+- [x] One-shop checkout creates one shop order.
+- [x] Multi-shop checkout creates the correct shop orders under one customer-facing order.
+- [x] Sellers see only their own shop orders; another shop's is `404`.
+- [x] Each seller can independently confirm or reject their whole shop order; another shop's order is unaffected.
+- [x] Pending orders cannot be treated as confirmed; a delivery exists only after confirmation.
+- [x] Customer cancellation works only while `PENDING` and before `respondBy`.
+- [x] Seller cancellation works only while `CONFIRMED` with the delivery not out, and requires a reason.
+- [x] Administrator cancellation works before dispatch, requires an internal reason, is refused on their own shop, and shows customers only "Annulée par Chicman". *(API only: the admin web screens belong to spec 17.)*
+- [x] Nobody can cancel once the delivery is out for delivery. *(Delivery status set directly in tests: dispatch is spec 12.)*
+- [x] Invalid status transitions are rejected; repeated completed transitions change nothing.
+- [x] Orders past `respondBy` expire (job or request), return stock, cancel the payment, and refuse late decisions.
+- [x] The expiry and reminder jobs are idempotent and do not run twice concurrently; one reminder per shop order. *(Tests call the jobs and the locks directly; the Compose worker was not rebuilt.)*
+- [x] Stock is returned exactly once on rejection, cancellation, expiry, and final failed delivery, including for archived products and suspended shops; unappliable returns are recorded as skipped. *(Final failed delivery through `markShopOrderFailedDelivery`, which spec 12 will call.)*
+- [x] Shop suspension cancels pending and not-yet-dispatched shop orders in the same transaction and leaves deliveries in progress alone.
+- [x] Order item snapshots remain unchanged after product, variant, shop, address, or profile edits and deletions.
+- [x] An order shows the product image and the shop contact phones from placement, not the current ones.
+- [x] Removing a product image, or archiving the product, never deletes an image an order references; a missing image shows the placeholder. *(Cleanup guard tested with spec 10; the web placeholder on a load error was not seen in a browser.)*
+- [x] A customer cancellation with `OTHER` requires the explanatory text; the text is refused with any other reason.
+- [x] Sellers see the full delivery snapshot only from confirmation on.
+- [x] Concurrent or repeated requests do not create duplicate orders. *(Spec 10 tests; transitions also race-tested here.)*
+- [x] Customer, seller, and admin authorization is enforced server-side.
+- [x] Internal reasons and notes never appear in customer or seller responses.
+- [x] French and Arabic labels, RTL, and MRU formatting work on web and mobile. *(Dictionary parity tests on both, a Flutter RTL widget test; the web pages were not opened in a browser.)*
+- [x] API, web, and mobile tests cover the supported workflows.
+
+## Implementation Notes (2026-11-10)
+
+### Scope
+
+As with spec 10, only what this feature calls from other specifications was built with it, as those specifications define it:
+
+| Built with this feature | Owner spec | Left for that spec |
+|---|---|---|
+| `Delivery` and `DeliveryStatusEvent` (all spec 12 columns); `createDelivery` (confirmation), `cancelDelivery` (`PENDING`/`ASSIGNED` only) in `modules/delivery/` | 12 | Attempts, dispatch, ready, failure, closure, the delivered action, the auto-close job, the narrow guard, seller delivery routes and screens |
+| `markPaymentCancelled`, `markPaymentFailed` | 13 | `collect`, admin notes, the seller summary |
+| `SHOP_ORDER_CONFIRMED`, `_REJECTED`, `_CANCELLED`, `_EXPIRED`, `_RESPONSE_REMINDER`, recorded through `recordNotification` | 15 | Read API, notification centers, delivery events |
+| `markShopOrderDelivered`, `markShopOrderFailedDelivery`: the outcomes spec 12 will call in its transactions | 11 (this) | Their callers (spec 12) |
+
+### Decisions the spec left open
+
+- **Migration** `order_lifecycle` (additive): the delivery tables and checks on shop orders (free text only with `OTHER`; `cancelledBy` only when `CANCELLED`; internal reason exactly for administrator cancellations; `closedAt` exactly on final statuses).
+- **Outcome timestamps:** `decidedAt` is the seller's answer (confirmation or rejection); `closedAt` is when the shop order reached a final status.
+- **Deadline:** `now >= respondBy` counts as past. Any write that finds a pending shop order past its deadline expires it in its own transaction and answers `409 SHOP_ORDER_EXPIRED`; an `EXPIRED` shop order answers the same to every action. A suspension expires such orders instead of cancelling them.
+- **Order of checks:** body `400` → unknown or another's `404` → seller shop not approved `403` / administrator's own shop `403 SHOP_SELF_ADMINISTRATION_FORBIDDEN` → status `409`. A customer's unknown order is `ORDER_NOT_FOUND`; a shop order outside that order is `SHOP_ORDER_NOT_FOUND`.
+- **Confirmation body:** none; an empty object is accepted, anything else is `400`.
+- **Seller detail stage:** the full delivery snapshot exactly when a delivery exists (that is, the order was confirmed), including after a later cancellation.
+- **Who sees what of a decision:** customers see the seller's or system's reason code, "Chicman" for an administrator, and nothing for their own cancellation; sellers see the code and the customer's `OTHER` text, and "Chicman" with no reason for an administrator.
+- **Notifications:** keys follow spec 15 (`<type>:<status event ID>:<recipient>`). The reminder is keyed by the shop order (`SHOP_ORDER_RESPONSE_REMINDER:<shopOrderId>:<seller>`), which makes a second one impossible, as section 8 requires. A suspension notifies the customer and the seller (spec 15's table) with `cancelledBy: CHICMAN`, `reasonCode: SHOP_UNAVAILABLE`.
+- **Jobs:** batches of 100, one transaction per shop order; a failing shop order is counted and retried next run without stopping the batch. The reminder is sent only before the deadline. Locks `chicman:shop-order-expiry` and `chicman:shop-order-reminder`.
+- **Lists:** `page`/`pageSize` (default 20, at most 50), newest first. Admin `from`/`to` are inclusive UTC days.
+- **Admin detail of an owned shop:** readable (the spec grants administrators everything); only cancellation is refused, and `canCancel` is `false`.
+- **Clients:** web `/account/orders`, `/account/orders/[orderId]`, `/seller/orders`, `/seller/orders/[shopOrderId]`, linked from the account panel, the shop dashboard, and the checkout confirmation. Mobile: `OrderListScreen` and `OrderDetailScreen` (cancellation in a bottom sheet), from the account screen and the checkout confirmation. Labels have one copy per platform, used by checkout too. Failure reasons of delivery attempts are shown since spec 12 (2026-11-10).
+
+### Verification status
+
+- **Automated:** API `test/orders.test.ts` (43 tests, PostgreSQL), web `features/orders/orders.test.ts` (10), Flutter `test/features/orders/orders_test.dart` (11). Deliberate breaks each caught: no stock return (13 failures), no deadline in requests (2), suspension cancelling deliveries under way (1).
+- **Not verified:** the web pages in a browser, a real Supabase sign-in, Android on a device or emulator, and the jobs inside the running Compose worker (it needs a rebuild).

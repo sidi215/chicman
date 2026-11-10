@@ -11,6 +11,7 @@ import {
 import { HttpError, notFound } from "../../lib/http-error.js";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { recordShopDecisionNotification } from "../notifications/shop-notifications.js";
+import { cancelShopOrdersForSuspension } from "../orders/shop-order-lifecycle.js";
 import { diffFields, lockShopById, shopNotFound, shopStatusConflict } from "./shop.service.js";
 
 export type ShopDecisionAction = "approve" | "reject" | "suspend" | "reinstate";
@@ -115,6 +116,10 @@ export class ShopLifecycle {
       if (input.action === "approve") {
         await tx.userRole.createMany({ data: [{ userId: shop.ownerUserId, role: "SELLER" }], skipDuplicates: true });
       }
+
+      // Suspension cancels the shop's orders that have not left, in this
+      // transaction, with the shop still locked (D8, spec 11 section 9).
+      if (input.action === "suspend") await cancelShopOrdersForSuspension(tx, shopId, event.createdAt);
 
       await recordShopDecisionNotification(tx, {
         recipientUserId: shop.ownerUserId,

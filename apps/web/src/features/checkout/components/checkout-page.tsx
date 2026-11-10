@@ -33,6 +33,7 @@ import {
   type RecipientError,
   type SummaryOutcome,
 } from "../checkout-logic"
+import { accountOrderHref } from "../../orders/order-logic"
 import { problemText, useCheckoutMessages, type CheckoutMessages } from "../messages"
 
 type View =
@@ -338,9 +339,14 @@ function Confirmation({ order, t }: { order: CustomerOrder; t: CheckoutMessages 
         <Row label={t.deliveryFeesTotal} value={formatMru(order.deliveryFeeTotal, locale)} />
         <Row label={t.total} value={formatMru(order.total, locale)} strong />
       </section>
-      <Link href={localizedPath(locale, "/products")} className={`${buttonVariants()} self-start`}>
-        {t.continueShopping}
-      </Link>
+      <div className="flex flex-wrap gap-2">
+        <Link href={accountOrderHref(order.id)} className={buttonVariants()}>
+          {t.viewOrder}
+        </Link>
+        <Link href={localizedPath(locale, "/products")} className={buttonVariants({ variant: "outline" })}>
+          {t.continueShopping}
+        </Link>
+      </div>
     </div>
   )
 }

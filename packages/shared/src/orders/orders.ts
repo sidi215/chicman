@@ -1,4 +1,6 @@
 import type { AddressLocationSource } from "../addresses/address.js";
+import type { CustomerDeliveryProgress } from "../delivery/delivery.js";
+import type { SellerCancellationReason, SystemCancellationReason } from "./lifecycle.js";
 
 /**
  * Orders (spec 11). One order per checkout, one shop order per shop in it, and
@@ -10,7 +12,7 @@ import type { AddressLocationSource } from "../addresses/address.js";
 export const SHOP_ORDER_STATUSES = ["PENDING", "CONFIRMED", "REJECTED", "CANCELLED", "EXPIRED", "DELIVERED", "FAILED_DELIVERY"] as const;
 export type ShopOrderStatus = (typeof SHOP_ORDER_STATUSES)[number];
 
-/** Delivery statuses (spec 12, D4). Used here only to derive the customer label. */
+/** Delivery statuses (spec 12, D4). */
 export const DELIVERY_STATUSES = ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY", "DELIVERED", "FAILED", "CANCELLED"] as const;
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
 
@@ -101,12 +103,38 @@ export interface CustomerPayment {
   status: PaymentStatus;
 }
 
+/**
+ * Who ended a shop order, as shown outside the administration: an
+ * administrator is only ever "Chicman" (D6), never a person.
+ */
+export const SHOP_ORDER_CANCELLERS = ["CUSTOMER", "SELLER", "CHICMAN", "SYSTEM"] as const;
+export type ShopOrderCanceller = (typeof SHOP_ORDER_CANCELLERS)[number];
+
+/**
+ * The customer's view of a decision (spec 11, section 6): the seller's or the
+ * system's reason code, shown translated. A customer's own cancellation and an
+ * administrator's carry no reason here; free text never reaches the customer.
+ */
+export interface CustomerShopOrderDecision {
+  cancelledBy: ShopOrderCanceller | null;
+  reason: SellerCancellationReason | SystemCancellationReason | null;
+}
+
 export interface CustomerShopOrder {
   id: string;
   status: ShopOrderStatus;
   label: ShopOrderLabel;
+  /** The delivery's status (spec 12); `null` until the seller confirms. */
+  deliveryStatus: DeliveryStatus | null;
+  /** Delivery progress (spec 12, section 9); `null` until the seller confirms. */
+  deliveryProgress: CustomerDeliveryProgress | null;
   /** The seller must answer before this time (D7). */
   respondBy: string;
+  /** When the shop order reached a final status, if it has. */
+  closedAt: string | null;
+  decision: CustomerShopOrderDecision;
+  /** Decided by the API: `PENDING` and before `respondBy`. */
+  canCancel: boolean;
   /** Name and contact phones at placement (S2-7). Phones are unverified. */
   shop: { id: string; name: string; contactPhone: string; whatsappPhone: string | null };
   productsSubtotal: string;
@@ -129,13 +157,30 @@ export interface CustomerOrder {
   shopOrders: CustomerShopOrder[];
 }
 
-/** `ORDER_NOT_FOUND` (404): unknown, or another customer's order (never disclosed). */
+/**
+ * Stable error codes of the order routes (spec 11).
+ *
+ * - `ORDER_NOT_FOUND` (404): unknown, or another customer's order (never disclosed).
+ * - `SHOP_ORDER_NOT_FOUND` (404): unknown shop order, another shop's, or not in that order.
+ * - `SHOP_ORDER_STATUS_CONFLICT` (409): the shop order is not in a state that allows this action.
+ * - `SHOP_ORDER_EXPIRED` (409): the response deadline has passed; the shop order is (now) `EXPIRED`.
+ */
 export const ORDER_ERROR_CODES = {
   notFound: "ORDER_NOT_FOUND",
+  shopOrderNotFound: "SHOP_ORDER_NOT_FOUND",
+  statusConflict: "SHOP_ORDER_STATUS_CONFLICT",
+  expired: "SHOP_ORDER_EXPIRED",
 } as const;
 
-/** Order notifications (spec 15, section 5). Only those recorded so far are listed. */
-export const ORDER_NOTIFICATION_TYPES = ["SHOP_ORDER_PLACED"] as const;
+/** Order notifications (spec 15, section 5) recorded by checkout (spec 10) and this feature (spec 11). */
+export const ORDER_NOTIFICATION_TYPES = [
+  "SHOP_ORDER_PLACED",
+  "SHOP_ORDER_CONFIRMED",
+  "SHOP_ORDER_REJECTED",
+  "SHOP_ORDER_CANCELLED",
+  "SHOP_ORDER_EXPIRED",
+  "SHOP_ORDER_RESPONSE_REMINDER",
+] as const;
 export type OrderNotificationType = (typeof ORDER_NOTIFICATION_TYPES)[number];
 
 /** Seller notification of a new shop order. Codes and figures only, never text. */
