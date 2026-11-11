@@ -196,7 +196,7 @@ Web and mobile must share the same visual language but use platform-native compo
 
 - **Navigation (Mobile):** Compact top app bar with profile, notifications, and shopping bag actions.
 
-- **Floating Dock (Mobile):** Fixed bottom navigation bar anchored over the view with rounded pill styling, containing Home, Search, Favorites, and Profile destinations. Built so far (spec 08): Home and Account (`AppShell`); Search and Favorites arrive with their features.
+- **Floating Dock (Mobile):** Fixed bottom navigation bar anchored over the view with rounded pill styling, containing Home, Search, Favorites, and Profile destinations. Built so far: Home and Account (spec 08), Favorites (spec 14), in that order: Home, Favorites, Account (`AppShell`). Search arrives with its feature.
 
 - **Search & Filter Bar:** Full-width rounded search input accompanied by a horizontal scrollable row of rounded category filter chips: All, Clothing, Shoes, and Fashion accessories, the only supported categories (spec 08). The search input arrives with search.
 
@@ -208,7 +208,8 @@ Web and mobile must share the same visual language but use platform-native compo
 
 - **Product Grid (Mobile):** Two-column product layout with optimized spacing and touch-friendly interactions.
 
-- **Product Cards:** 3:4 portrait product images, floating black pill action buttons (Shop), heart icon favorite overlays, store/vendor name, price in Ouguiya (MRU), and star rating indicator. Built so far (spec 08, web `ProductCard`, Flutter `ProductCard`): image, name, price, shop, and an unavailable badge. The whole card opens the product page, where add to cart lives, because variants are chosen there (spec 09). The heart and rating arrive with favorites and reviews.
+- **Notification bell (spec 15):** an outline icon button with the unread count in the cart badge's style (capped at "99+"), shown to signed-in users only. Web: in the storefront header and in a top bar of the seller area, opening that area's notification center; the admin area has none (spec 15, O6.1). Mobile: in the home app bar, opening the customer order notification center. Unread items carry a primary dot and an "Unread" badge (web).
+- **Product Cards:** 3:4 portrait product images, floating black pill action buttons (Shop), heart icon favorite overlays, store/vendor name, price in Ouguiya (MRU), and star rating indicator. Built so far (spec 08, web `ProductCard`, Flutter `ProductCard`): image, name, price, shop, and an unavailable badge. The whole card opens the product page, where add to cart lives, because variants are chosen there (spec 09). The heart is built (spec 14, web `FavoriteButton` beside the card link, Flutter `FavoriteButton` on the image); the rating arrives with reviews.
 
 - **Product Details:** Dedicated product detail experience with large product imagery, product variants, seller information, pricing, and prominent add-to-cart action.
 

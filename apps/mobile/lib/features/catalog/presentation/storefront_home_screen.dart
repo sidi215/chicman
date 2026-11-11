@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/widgets/brand_wordmark.dart';
 import '../../cart/presentation/cart_widgets.dart';
+import '../../notifications/presentation/notifications_screen.dart';
 import '../application/catalog_providers.dart';
 import '../domain/catalog.dart';
 import 'catalog_messages.dart';
@@ -32,7 +33,7 @@ class StorefrontHomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: BrandWordmark(semanticLabel: t.brand),
         centerTitle: false,
-        actions: const [CartAction()],
+        actions: const [NotificationsAction(), CartAction()],
       ),
       body: RefreshIndicator(
         onRefresh: () => ref.refresh(homeSectionsProvider.future),

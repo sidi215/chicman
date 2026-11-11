@@ -56,18 +56,19 @@
 
 - `apps/api/src/modules/payments/` — Cash-on-delivery payments (spec 13). `Payment` (one per shop order, `PENDING` at placement) and append-only `PaymentEvent`. Functions run inside the caller's transaction: `createPayment` (spec 10 placement), `collectPayment` (spec 12's delivered action: exact amount only, the shown amount a precondition), `markPaymentCancelled`, `markPaymentFailed` (specs 11 and 12). One view per viewer (`payment-views.ts`): customer (method, amount due, status), seller (plus collection time and amount), administrator (plus events and correction notes, through spec 11's admin order view). Routes: `GET /sellers/me/payments/summary` (`approvedSeller`; shop orders placed in a UTC period of at most 366 days, by status) and `POST /admin/orders/:shopOrderId/payment/notes` (append-only `ADMIN_NOTE`, never on the administrator's own shop). No ledger, settlement, refunds, or payouts.
 
-- `apps/api/src/modules/notifications/` — Notification creation, delivery, and notification history.
-  - **Today:** it records `Notification` rows (allowlisted payloads) inside the transaction of the event that triggers them (shop decisions, spec 06).
-  - **Spec 15:** keeps that approach, with no outbox. Built so far (with spec 10): the unique `eventKey`, resource references, and `recordNotification` (an insert that does nothing on a key conflict), used by `SHOP_ORDER_PLACED`. Not built: the read API and keys for the six shop decisions.
-  - **Delivery channels:** none are built. Transactional recording guarantees in-app persistence only; email, push, or other external delivery is not implemented and needs its own specification.
+- `apps/api/src/modules/notifications/` — In-app notifications (spec 15): recording, listing, and read state.
+  - **Recording:** `recordNotification` writes a `Notification` row (allowlisted payload of codes, names, and figures) inside the transaction of the business change that causes it, with no outbox. Every row has a unique `eventKey` (`<type>:<source record ID>:<recipient>`), recorded first in the `NotificationEvent` ledger; an existing key records nothing and, when it applies, a resource reference (`SHOP` or `SHOP_ORDER`). Used by the six shop decisions (keyed by the status event or the change request), the order lifecycle (specs 10–11), and delivery (spec 12). Rows recorded before spec 15 keep `eventKey = NULL`.
+  - **Reading** (`NotificationService`, `/api/v1/customers/me/notifications`, `guards.user`): list newest first with an opaque `(createdAt, id)` cursor (`limit` ≤ 50), unread count, mark one read, mark all read (both idempotent, `204`). Every query is bound to the authenticated user; another user's notification is `404 NOTIFICATION_NOT_FOUND`. Each item carries its `audience` (`CUSTOMER` or `SELLER`, worked out from the type and, for cancellations and expiries, from the shop order) and its resource (`orderId` for the customer only). `audience=CUSTOMER` narrows the list, the count, and read-all to customer order notifications (the mobile app). A reference never grants access.
+  - **Retention (O6.3):** notifications are kept 365 days after creation. `purgeExpiredNotifications` (daily worker job, lock `chicman:notification-retention`, batches of 1000, at most 100 per run) deletes older `Notification` rows only. Duplicate prevention lives in `NotificationEvent` (one row per event key, never purged): `recordNotification` writes the notification only when its key is new there, and the reminder job checks it, so a deleted notification's event is never recorded again.
+  - **Delivery channels:** none are built. `notification-channel.ts` is only the interface for a future channel; the configured list is empty and `deliveredAt` stays empty. Transactional recording guarantees in-app persistence only; email, push, or other external delivery is not implemented and needs its own specification.
 
 - `apps/api/src/modules/reviews/` — Product reviews and ratings.
 
-- `apps/api/src/modules/favorites/` — Customer wishlists and favorite products.
+- `apps/api/src/modules/favorites/` — The customer's favorites (`/api/v1/customers/me/favorites`, spec 14): one `Favorite` row per user and product (unique pair), at most 200. `PUT` and `DELETE` by product ID are idempotent. Each read shows the product's current state through `productVisibility` and the availability rule, with the catalog's public summary (`toPublicProductSummary`). A product that is no longer public is `UNAVAILABLE`, with no price, shop, or link. Favorites keep no snapshot and never write the cart.
 
 - `apps/api/src/modules/admin/` — Administrative operations, seller approvals, marketplace monitoring, and platform management.
 
-- `apps/api/src/workers/` — Background processing for notifications, search indexing, and asynchronous tasks. Current jobs: phone-change history retention (every 24 h), shop logo cleanup and reconciliation (every 5 min), and product image cleanup and reconciliation (every 5 min), each behind its own PostgreSQL advisory lock. Shop order expiry and seller response reminders (spec 11) and the automatic closure of failed deliveries (spec 12, `DELIVERY_FAILED_AUTO_CLOSE_DAYS`) run every 5 minutes, each behind its own lock, and are idempotent.
+- `apps/api/src/workers/` — Background processing for notifications, search indexing, and asynchronous tasks. Current jobs: phone-change history retention and notification retention (spec 15, O6.3; each every 24 h), shop logo cleanup and reconciliation (every 5 min), and product image cleanup and reconciliation (every 5 min), each behind its own PostgreSQL advisory lock. Shop order expiry and seller response reminders (spec 11) and the automatic closure of failed deliveries (spec 12, `DELIVERY_FAILED_AUTO_CLOSE_DAYS`) run every 5 minutes, each behind its own lock, and are idempotent.
 
 - `packages/shared/` — Shared API contracts, validation schemas, enums, and common business definitions where compatible with both web and backend TypeScript applications. Application code only: no visual design tokens.
 
@@ -163,7 +164,7 @@ The app follows the profile's `preferredLocale` (`core/locale/app_locale_control
 
 - Sellers can manage only their own shops, products, inventory, seller orders, and delivery operations.
 
-- Customers can access only their own profiles, carts, addresses, orders, favorites, and other private resources.
+- Customers can access only their own profiles, carts, addresses, orders, favorites, notifications, and other private resources.
 
 - Administrators can manage marketplace-wide resources according to their administrative permissions.
 
@@ -193,7 +194,7 @@ The app follows the profile's `preferredLocale` (`core/locale/app_locale_control
 
 11. **Object storage is not a database.** Uploaded files are stored in object storage, while their references and ownership metadata are maintained in PostgreSQL.
 
-12. **Background work must not block API requests.** Notifications, search indexing, and other asynchronous tasks must be processed through background workers.
+12. **Background work must not block API requests.** Notifications, search indexing, and other asynchronous tasks must be processed through background workers. In-app notification records are the exception by design: each is one insert in the transaction of the change that causes it (spec 15, section 3); any future external delivery channel runs in a worker.
 
 13. **All API inputs must be validated.** Never trust client-submitted prices, roles, permissions, stock values, or order totals.
 

@@ -11,6 +11,9 @@ import { ThemeSelector } from "@/components/theme/theme-selector"
 import { buttonVariants } from "@/components/ui/button"
 import { useAuth } from "@/features/auth/auth-provider"
 import { CartLink } from "@/features/cart/components/cart-link"
+import { FavoritesLink } from "@/features/favorites/components/favorites-link"
+import { NotificationsLink } from "@/features/notifications/components/notifications-link"
+import { NOTIFICATIONS_HREF } from "@/features/notifications/notifications-logic"
 import { localizedPath, withoutLocale } from "@/lib/locale"
 import { useLocale } from "@/lib/locale-provider"
 import { cn } from "@/lib/utils"
@@ -99,6 +102,8 @@ export function StorefrontHeader() {
           </div>
           <div className="flex items-center gap-2">
             <LanguageSwitch />
+            <NotificationsLink href={NOTIFICATIONS_HREF} />
+            <FavoritesLink />
             <CartLink />
             <AccountAction />
           </div>

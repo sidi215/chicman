@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../cart/presentation/cart_widgets.dart';
+import '../../favorites/presentation/favorite_button.dart';
 import '../application/catalog_providers.dart';
 import '../domain/catalog.dart';
 import 'catalog_messages.dart';
@@ -81,10 +82,19 @@ class _Content extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.s1),
-        Text(
-          product.name,
-          textDirection: sellerTextDirection(product.name),
-          style: theme.textTheme.headlineLarge,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                product.name,
+                textDirection: sellerTextDirection(product.name),
+                style: theme.textTheme.headlineLarge,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s2),
+            FavoriteButton(productId: product.id, name: product.name),
+          ],
         ),
         if (product.brand != null) ...[
           const SizedBox(height: AppSpacing.s1),

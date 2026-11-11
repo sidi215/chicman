@@ -20,20 +20,28 @@ export function notificationEventKey(type: string, sourceId: string, recipientUs
 
 /**
  * Records one in-app notification inside the caller's transaction (spec 15), so
- * it exists exactly when the business change commits. The insert does nothing
- * when the event key already exists, so a repeated event never duplicates.
+ * it exists exactly when the business change commits.
+ *
+ * The event key goes into the `NotificationEvent` ledger first, and the
+ * notification is written only when the key is new. The ledger is never
+ * purged, so an event stays recorded once even after the retention cleanup
+ * (O6.3) has deleted its notification. A concurrent transaction with the same
+ * key waits on the ledger's primary key, then finds it and records nothing.
  *
  * In-app persistence only: no email, push, or SMS is sent, and `deliveredAt`
  * stays empty until an external channel exists.
  */
 export async function recordNotification(tx: Prisma.TransactionClient, record: NotificationRecord): Promise<void> {
+  const eventKey = notificationEventKey(record.type, record.sourceId, record.recipientUserId);
+  const fresh = await tx.notificationEvent.createMany({ data: [{ eventKey }], skipDuplicates: true });
+  if (fresh.count === 0) return;
   await tx.notification.createMany({
     data: [
       {
         userId: record.recipientUserId,
         type: record.type,
         payload: record.payload,
-        eventKey: notificationEventKey(record.type, record.sourceId, record.recipientUserId),
+        eventKey,
         resourceType: record.resource?.type ?? null,
         resourceId: record.resource?.id ?? null,
       },

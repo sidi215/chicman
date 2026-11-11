@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../favorites/presentation/favorite_button.dart';
 import '../domain/catalog.dart';
 import 'catalog_messages.dart';
 import 'product_detail_screen.dart';
@@ -75,8 +76,8 @@ class UnavailableBadge extends StatelessWidget {
   }
 }
 
-/// The storefront's product card: main image, name, price, shop, and
-/// availability when relevant.
+/// The storefront's product card: main image, name, price, shop,
+/// availability when relevant, and the favorite heart (spec 14).
 class ProductCard extends StatelessWidget {
   const ProductCard({super.key, required this.product});
 
@@ -112,6 +113,14 @@ class ProductCard extends StatelessWidget {
                       start: AppSpacing.s2,
                       child: UnavailableBadge(label: t.unavailable),
                     ),
+                  PositionedDirectional(
+                    top: AppSpacing.s1,
+                    end: AppSpacing.s1,
+                    child: FavoriteButton(
+                      productId: product.id,
+                      name: product.name,
+                    ),
+                  ),
                 ],
               ),
             ),

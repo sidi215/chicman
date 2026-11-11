@@ -1,0 +1,32 @@
+- generic [active] [ref=f1e1]:
+  - main [ref=f1e54]:
+    - link "العربية" [ref=f1e55] [cursor=pointer]:
+      - /url: /login
+    - group "Thème" [ref=f1e56]:
+      - button "Système" [pressed] [ref=f1e57]
+      - button "Clair" [ref=f1e60]
+      - button "Sombre" [ref=f1e67]
+    - img "Chicman" [ref=f1e70]
+    - generic [ref=f1e71]:
+      - generic [ref=f1e72]:
+        - heading "Connexion" [level=3] [ref=f1e73]
+        - paragraph [ref=f1e74]: Connectez-vous avec votre adresse e-mail.
+      - generic [ref=f1e75]:
+        - generic [ref=f1e76]:
+          - generic [ref=f1e77]:
+            - generic [ref=f1e78]: Adresse e-mail
+            - textbox "Adresse e-mail" [ref=f1e79]:
+              - /placeholder: nom@exemple.com
+          - generic [ref=f1e80]:
+            - generic [ref=f1e81]: Mot de passe
+            - textbox "Mot de passe" [ref=f1e82]
+          - generic "Vérification anti-robot" [ref=f1e84]
+          - button "Se connecter" [ref=f1e87]
+        - link "Mot de passe oublié ?" [ref=f1e88] [cursor=pointer]:
+          - /url: /forgot-password
+        - paragraph [ref=f1e89]:
+          - text: Pas encore de compte ?
+          - link "Créer un compte" [ref=f1e90] [cursor=pointer]:
+            - /url: /register
+  - button "Open Next.js Dev Tools" [ref=f1e49] [cursor=pointer]
+  - alert [ref=f1e53]: Tous les produits

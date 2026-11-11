@@ -21,6 +21,7 @@ export async function resetDatabase(prisma: PrismaClient): Promise<void> {
   await prisma.orderItem.deleteMany();
   await prisma.shopOrder.deleteMany();
   await prisma.order.deleteMany();
+  await prisma.favorite.deleteMany();
   await prisma.cartItem.deleteMany();
   await prisma.cart.deleteMany();
   await prisma.productImageUpload.updateMany({ data: { resultImageId: null, status: "PENDING" } });
@@ -30,6 +31,7 @@ export async function resetDatabase(prisma: PrismaClient): Promise<void> {
   await prisma.product.deleteMany();
   await prisma.customerAddress.deleteMany();
   await prisma.notification.deleteMany();
+  await prisma.notificationEvent.deleteMany();
   await prisma.shopLogoUpload.updateMany({ data: { resultObjectId: null, status: "PENDING" } });
   await prisma.shopLogoObject.deleteMany();
   await prisma.shopLogoUpload.deleteMany();

@@ -20,6 +20,7 @@ Feature 03 (Authentication) is in progress. Feature 04 (Customer Profile) is **i
 - **Feature 11: implementation complete (2026-11-10)** on the API, web, and mobile: the shop order lifecycle (confirm, reject, customer, seller, and administrator cancellation, expiry, reminders), stock returns, the suspension function, and the order screens. The parts of specs 12, 13, and 15 it calls were built with it (spec 11, Implementation Notes). API 555, web 213, Flutter 233. Not verified in a browser or on a device.
 - **Feature 12: implementation complete (2026-11-10)** on the API, web (seller), and mobile (customer): dispatch, attempts, "delivered, cash received", failure, closure, the automatic closure job, and the narrow access of suspended shops. Spec 13's `collect` and spec 15's four delivery notifications were built with it (spec 12, Implementation Notes). API 579, web 217, Flutter 237. Not verified in a browser or on a device.
 - **Feature 13: implementation complete (2026-11-10)** on the API, web (seller), and mobile (customer): administrator correction notes, the seller collection summary (`/seller/payments`), and the seller's collection time and amount. The rest was built with specs 10–12. API 591, web 221, Flutter 238. Not verified in a browser or on a device.
+- **Feature 15: implementation complete (2026-11-11)** on the API, web, and mobile: keys for the six shop decisions, the read API (list, unread count, mark one or all read), the delivery-channel interface (no channel), and the notification centers with unread bells (web storefront and seller; mobile customer order notifications only), and 365-day retention. **Limitation: notifications are in-app records only; no email, push, or SMS is sent.** API 636, web 244, Flutter 275. Web and Android manually verified by the project owner (2026-11-11). O6 resolved and its follow-up implemented the same day (not manually verified; the new migration is applied to the test database only).
 - **Feature 09: implementation complete (2026-11-08)** on the API, web, and mobile. One cart per customer, grouped by shop, at `/cart` on the web and on a dedicated screen on mobile. Reviewed 2026-11-09: API 470, web 187, Flutter 206. A real sign-in and Android on a device or emulator are not verified.
 
 ### Authentication verification summary
@@ -52,8 +53,42 @@ Details: `feature-specs/03-authentication.md` (Verification Status) and `feature
 | 11 | Order Management | `feature-specs/11-order-management.md` | Implementation Complete (2026-11-10: API, web, and mobile, with the parts of specs 12, 13, and 15 it calls; automated tests pass; the web pages in a browser, a real Supabase sign-in, Android, and the jobs in the Compose worker are **not verified**; not committed) |
 | 12 | Delivery Management | `feature-specs/12-delivery-management.md` | Implementation Complete (2026-11-10: API, web seller pages, and mobile customer view, with spec 13's `collect` and spec 15's delivery notifications; automated tests pass; the web pages in a browser, a real Supabase sign-in, Android, and the closure job in the Compose worker are **not verified**; not committed) |
 | 13 | Cash on Delivery | `feature-specs/13-cash-on-delivery.md` | Implementation Complete (2026-11-10: API, web seller pages, and mobile customer view; with specs 10–12 for creation, closing, and collection; automated tests pass; the web pages in a browser, a real Supabase sign-in, and Android are **not verified**; not committed) |
+| 14 | Favorites | `feature-specs/14-favorites.md` | In Progress (2026-11-10: API, web, and mobile implemented; automated tests pass; the hidden-product rule (O9) applies the audit's recommendation and awaits the project owner's confirmation; the web pages in a browser, a real Supabase sign-in, and Android are **not verified**; the migration is applied to the test database only; not committed) |
+| 15 | Notifications | `feature-specs/15-notifications.md` | Implementation Complete (2026-11-11: API, web, and mobile; in-app records only, no external channel; automated tests pass; web and Android manually verified by the project owner on 2026-11-11; O6 resolved and its follow-up implemented 2026-11-11 (no admin-area bell; 365-day cleanup with an event-key ledger), automated tests pass, not manually verified, migration applied to the test database only; not committed) |
 
 ## Completed Work
+
+### 15: O6 follow-up — admin area and notification retention (2026-11-11)
+
+- **Scope:** O6.1 and O6.3 only (spec 15, O6 follow-up). Recipients, notification channels, and order retention (O5) unchanged; O6.2 needed no behavior change (a mobile code comment).
+- **Database:** migration `20261111120000_notification_retention`: the `NotificationEvent` key ledger (backfilled from existing keys) and an index on `Notification(createdAt)`. Applied to the **test database only** (backfill checked on seeded rows; no drift). The development database still needs `pnpm --filter api db:deploy`, which also applies the pending spec 14 migration.
+- **API:** `recordNotification` records the key in the ledger first and writes the notification only for a new key; the reminder job checks the ledger. `purgeExpiredNotifications` deletes notifications older than 365 days in bounded batches; worker job `notification retention` (at start, then every 24 h, lock `chicman:notification-retention`). Checked with a short worker run against the test database. The Compose `worker` needs a rebuild to run it.
+- **Web:** `admin/layout.tsx` and `/admin/notifications` removed; the storefront and seller bells are unchanged.
+- **Tests:** API 636/636 (+7: boundary, read/unread, legacy rows, idempotent and concurrent runs, bounded batches, business records untouched, no re-recording and no second reminder after deletion; the last two checked to fail without the ledger); web 244/244; `flutter analyze` clean. Workspace typecheck and web lint pass.
+- **Not verified manually:** the admin pages without the bell; the job in the Compose worker.
+
+### 15: notifications — API, web, and mobile (2026-11-11)
+
+- **Scope:** the whole spec. The order and delivery events were already built with specs 10–12. Details and the decisions the spec left open: spec 15, Implementation Notes.
+- **Shared:** `notifications/notifications.ts` (`NOTIFICATION_TYPES`, payload map per type, `ShopDecisionNotificationPayload` moved here, audiences, resources, `NotificationItem`, `NotificationList`, query schemas with `limit` ≤ 50 and the optional `audience=CUSTOMER`, `NOTIFICATION_NOT_FOUND`).
+- **API:** no migration (the columns and index came with spec 10). `recordShopDecisionNotification` now uses `recordNotification` with keys from the status event or change request and a `SHOP` resource (`shop-lifecycle.ts` passes them). New `NotificationService` and routes under `/customers/me/notifications` (list with an opaque `(createdAt, id)` cursor, `unread-count`, `:notificationId/read`, `read-all`; writes `204`, rate-limited), wired in `app.ts`, `server.ts`, and the test harness. `notification-channel.ts`: the interface for future channels, with none configured.
+- **Web:** `features/notifications/` (logic, messages, provider, bell, center page); routes `/notifications` and `/seller/notifications`; new `seller/layout.tsx` (provider and a bar with the bell); bell in the storefront header. (The admin bell and `/admin/notifications` were removed by the O6 follow-up.)
+- **Mobile:** `features/notifications/` (domain, provider, messages, bell, screen); bell in the home app bar; `ApiClient.classify` decodes `204` as no content.
+- **Tests:** API 629/629 (+15, and the six-decision test now checks keys and resources), web 244/244 (+12), Flutter 275/275 (+15); workspace typecheck, web lint, and `flutter analyze` pass.
+- **Manual verification (2026-11-11):** web and Android verified by the project owner.
+- **O6 resolved (2026-11-11, project owner):** no administrator audience (O6.1), seller notifications web only (O6.2, no change), 365-day retention with a daily bounded cleanup that keeps event idempotency (O6.3). Both follow-ups implemented the same day (next entry).
+
+### 14: favorites — API, web, and mobile (2026-11-10)
+
+- **Scope:** the whole spec. Details and the decisions the spec left open: spec 14, Implementation Notes.
+- **Shared:** `favorites/favorites.ts` (`FavoriteItem`, `FavoriteList`, `FavoriteState`, `FAVORITES_MAX_ITEMS` = 200, `FAVORITE_ERROR_CODES`).
+- **API:** `Favorite` model and migration `20261110180000_favorites` (unique `(userId, productId)`, `RESTRICT` foreign keys; checked against the schema with `prisma migrate diff`). `modules/favorites/` (`FavoriteService`, routes `GET`, `PUT /:productId`, `DELETE /:productId` under `/customers/me/favorites`), wired in `app.ts`, `server.ts`, and the test harness. `catalog.service.ts` now exports `publicSummaryInclude` and `toPublicProductSummary`, so favorites reuse the catalog's card mapping instead of a second one; catalog behavior is unchanged.
+- **Web:** `features/favorites/` (logic, provider, messages, `FavoriteButton`, `FavoritesLink`, `FavoritesPage`); `/favorites` route; provider in the storefront layout; heart on `ProductCard` and on the product page; header link.
+- **Mobile:** `features/favorites/` (domain, `favoritesProvider`, messages, `FavoriteButton`, `FavoritesScreen`); Favorites dock destination (Home, Favorites, Account); heart on `ProductCard` and on the product page. The catalog test that checks the account tab's index was updated (Account moved from 1 to 2).
+- **Tests:** API 614/614 (+23), web 228/228 (+7), Flutter 255/255 (+17); workspace typecheck, web lint, and `flutter analyze` pass.
+- **Follow-ups (2026-11-11, web):** (1) the card heart was placed below the card when signed in (the position class reached the inner button, not the control's wrapper); it now sits in the image's top-end corner through an image-sized layer, checked at 375, 768, and 1920 px. (2) The header heart shows the number of saved products (`count` from `FavoritesProvider`, the deduplicated list, so every heart and the favorites page update it at once; hidden at zero and after sign-out; capped at "99+"), styled and placed exactly like the cart badge (same classes, overlapping the icon's top-end corner), checked side by side at 375 and 1920 px. Web tests 230/230.
+- **Review fixes (2026-11-11, web and mobile):** favorites list requests (read, add, remove) now run one at a time per account, so a late answer can never replace a newer list; a request still queued when the account changes is dropped unsent; a `401` signs out only the account that made the request. The mobile sign-in, setup, and retry messages scroll. Web 232/232, Flutter 260/260; each new test was checked to fail without its fix.
+- **Housekeeping note:** a stray Prettier run with default settings reformatted eight unrelated storefront route files; all eight were restored to their committed content (verified with `git status`).
 
 ### 13: cash on delivery — API, web, and mobile (2026-11-10)
 
@@ -785,6 +820,7 @@ Each finding was checked against the code first. Findings that the code already 
 - **Web cart is a page (feature 09):** `/cart`, as spec 09 requires, replacing the drawer in `ui-context.md`.
 - **Price changes need acknowledgement (feature 09, approved 2026-11-09):** a warning stays until the customer accepts the price, removes the line, or the price returns. `POST …/items/:itemId/accept-price` compares the shown price with the current one and stores only the current one. Safeguards: spec 09.
 - **Stock figure in the cart (feature 09, approved 2026-11-09):** shown only on a line already above the stock, only for that line, so it can be corrected. Never automatic, never on public pages. Rules: spec 09.
+- **Favorites and hidden products (feature 14, O9 / C11, pending confirmation):** a favorite whose product is no longer public shows "unavailable" with no price, shop, or link, and favorites keep no price snapshot. This applies spec 14's "public product visibility rules" and the audit's recommendation; the project owner has not confirmed it yet.
 - **Mobile seller management:** not part of feature 07. It is a future feature that reuses the existing seller product API; it has no spec yet.
 
 ## Open Questions
@@ -826,7 +862,7 @@ Each finding was checked against the code first. Findings that the code already 
 - **First web visit:** defaults to French without reading the browser's language.
 - **Email-confirmation check at scale (technical decision):** `GET /auth/v1/user` shares Supabase's per-IP sign-in bucket (30 per 5 minutes), and every account setup comes from the API's IP. Options: the Admin API with the secret key on the API, or `Sb-Forwarded-For` with the secret key and IP forwarding. Either option would reintroduce a Supabase secret key, in the API environment only (it was removed on 2026-11-06 because nothing used it).
 - A general personal-data retention policy for the platform is not defined; only the phone change history has one.
-- **Features 10–18 (2026-11-09):** the earlier Feature 10 questions (unaccepted prices, unbuyable lines, stock, delivery fee, address fields) are **decided**: `business-decisions-features-10-18.md` (D1–D11, O1, O3, approved by the project owner). O2 (shop owners buying their own products) was confirmed at the Stage 2 review and is enforced by checkout. Still open there: O4–O10 (admin scope, retention, notification recipients, search, favorites, categories, reviews). Audit: `specification-overlap-audit.md`.
+- **Features 10–18 (2026-11-09):** the earlier Feature 10 questions (unaccepted prices, unbuyable lines, stock, delivery fee, address fields) are **decided**: `business-decisions-features-10-18.md` (D1–D11, O1, O3, approved by the project owner). O2 (shop owners buying their own products) was confirmed at the Stage 2 review and is enforced by checkout. Still open there: O4–O10 (admin scope, retention, notification recipients, search, favorites, categories, reviews). O9 (favorites) is implemented with the audit's recommendation and only needs confirmation. Audit: `specification-overlap-audit.md`.
 - **Notifications delivery (feature 06 follow-up):** shop decision notifications are recorded but not delivered; the channels (in-app list, push, email) and a read API belong to a notifications feature that has no spec yet.
 
 ## Next Steps
@@ -891,7 +927,13 @@ Each finding was checked against the code first. Findings that the code already 
 2. **Admin note:** `POST /api/v1/admin/orders/:shopOrderId/payment/notes` with a reason (no admin screen until spec 17); check it shows in `GET /admin/orders/:shopOrderId` and nowhere else.
 3. **Android:** the payment status on the order details, in French and Arabic.
 
-**Order chain (specs 15, 16, 17):** checkout (10), the lifecycle (11), delivery (12), and cash on delivery (13) are built. Remaining, in the planned order: 15 (phase 1 rest: keys for shop decisions, read API, notification centers), 16, 17 (admin order screens over the existing `/admin/orders` API); 14 and 18 independently.
+**Feature 14, remaining (project owner):**
+1. **Confirm O9:** hidden favorites show "unavailable" with no price, shop, or link (spec 14, Implementation Notes). If another rule is wanted, only `FavoriteService.toItem` and the two clients' rows change.
+2. **Deploy the migration** `favorites` to the development database (`pnpm --filter @chicman/api db:deploy`) and with the matching API version elsewhere. It is applied to the test database only.
+3. **Web, real account:** heart a product on the home page and on a product page, open `/favorites`, remove one, then archive a favorited product as its seller and check it shows "Indisponible" with no price or link. Check the cart is unchanged, French and Arabic, and the console for CSP messages.
+4. **Android, real account:** the hearts, the Favorites dock tab, removal, and the same product hidden by its seller; then open the web on the same account and check the same list (cross-platform sync).
+
+**Order chain (specs 15, 16, 17):** checkout (10), the lifecycle (11), delivery (12), and cash on delivery (13) are built. Remaining, in the planned order: 15 (phase 1 rest: keys for shop decisions, read API, notification centers), 16, 17 (admin order screens over the existing `/admin/orders` API); 18 independently (14 is implemented).
 
 **Future feature (no spec yet):** mobile seller management in Flutter, reusing `/api/v1/sellers/me/products`.
 
