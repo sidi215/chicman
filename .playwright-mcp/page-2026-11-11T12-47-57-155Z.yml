@@ -1,0 +1,131 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - link "Accueil" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img "Chicman" [ref=e7]
+          - group "Thème" [ref=e9]:
+            - button "Système" [pressed] [ref=e10]
+            - button "Clair" [ref=e13]
+            - button "Sombre" [ref=e20]
+          - generic [ref=e23]:
+            - link "العربية" [ref=e24] [cursor=pointer]:
+              - /url: /ar/products
+            - link "Favoris" [ref=e25] [cursor=pointer]:
+              - /url: /favorites
+            - link "Panier" [ref=e26] [cursor=pointer]:
+              - /url: /cart
+            - link "Créer un compte" [ref=e27] [cursor=pointer]:
+              - /url: /register
+            - link "Se connecter" [ref=e28] [cursor=pointer]:
+              - /url: /login
+        - navigation "Catégories" [ref=e29]:
+          - link "Tous les produits" [ref=e30] [cursor=pointer]:
+            - /url: /products
+          - link "Vêtements" [ref=e31] [cursor=pointer]:
+            - /url: /products?category=CLOTHING
+          - link "Chaussures" [ref=e32] [cursor=pointer]:
+            - /url: /products?category=SHOES
+          - link "Accessoires de mode" [ref=e33] [cursor=pointer]:
+            - /url: /products?category=FASHION_ACCESSORIES
+    - main [ref=e34]:
+      - generic [ref=e35]:
+        - generic [ref=e36]:
+          - heading "Tous les produits" [level=1] [ref=e37]
+          - status [ref=e38]: "Résultats : 6"
+        - generic [ref=e39]:
+          - generic [ref=e40]: Trier par
+          - combobox "Trier par" [ref=e41]:
+            - option "Nouveautés" [selected]
+            - option "Prix croissant"
+            - option "Prix décroissant"
+      - generic [ref=e42]:
+        - complementary "Filtres" [ref=e44]:
+          - group "Catégorie" [ref=e45]:
+            - generic [ref=e47]:
+              - button "Toutes" [pressed] [ref=e48]
+              - button "Vêtements" [ref=e49]
+              - button "Chaussures" [ref=e50]
+              - button "Accessoires de mode" [ref=e51]
+          - group "Prix (MRU)" [ref=e53]:
+            - generic [ref=e55]:
+              - generic [ref=e56]:
+                - generic [ref=e57]: Minimum
+                - textbox "Minimum" [ref=e58]
+              - generic [ref=e59]:
+                - generic [ref=e60]: Maximum
+                - textbox "Maximum" [ref=e61]
+            - button "Appliquer le prix" [ref=e62]
+          - group "Disponibilité" [ref=e63]:
+            - button "Disponibles uniquement" [ref=e66]
+        - generic [ref=e67]:
+          - list [ref=e68]:
+            - listitem [ref=e69]:
+              - generic [ref=e70]:
+                - link "Indisponible timer 100,00 MRU chicrim" [ref=e71] [cursor=pointer]:
+                  - /url: /products/3419aead-e6a6-4988-9e1b-4fd5b105de3b
+                  - generic [ref=e72]: Indisponible
+                  - generic [ref=e74]:
+                    - generic [ref=e75]: timer
+                    - generic [ref=e76]: 100,00 MRU
+                    - generic [ref=e77]: chicrim
+                - generic [ref=e78]:
+                  - button "Ajouter timer aux favoris" [disabled]
+            - listitem [ref=e79]:
+              - generic [ref=e80]:
+                - link "test 900,00 MRU vibe" [ref=e81] [cursor=pointer]:
+                  - /url: /products/92a5af19-a0c2-4f82-9fe5-7d7d3a04cafe
+                  - generic [ref=e83]:
+                    - generic [ref=e84]: test
+                    - generic [ref=e85]: 900,00 MRU
+                    - generic [ref=e86]: vibe
+                - generic [ref=e87]:
+                  - button "Ajouter test aux favoris" [disabled]
+            - listitem [ref=e88]:
+              - generic [ref=e89]:
+                - link "bantalon 5 000,00 MRU vibe" [ref=e90] [cursor=pointer]:
+                  - /url: /products/abc824f1-7952-4d09-a976-b7d0dab61f69
+                  - generic [ref=e92]:
+                    - generic [ref=e93]: bantalon
+                    - generic [ref=e94]: 5 000,00 MRU
+                    - generic [ref=e95]: vibe
+                - generic [ref=e96]:
+                  - button "Ajouter bantalon aux favoris" [disabled]
+            - listitem [ref=e97]:
+              - generic [ref=e98]:
+                - link "t-shirt 100,00 MRU vibe" [ref=e99] [cursor=pointer]:
+                  - /url: /products/9f111892-36e6-4911-af30-e058c6b7f219
+                  - generic [ref=e101]:
+                    - generic [ref=e102]: t-shirt
+                    - generic [ref=e103]: 100,00 MRU
+                    - generic [ref=e104]: vibe
+                - generic [ref=e105]:
+                  - button "Ajouter t-shirt aux favoris" [disabled]
+            - listitem [ref=e106]:
+              - generic [ref=e107]:
+                - link "boubou 4 000,00 MRU vibe" [ref=e108] [cursor=pointer]:
+                  - /url: /products/359206b8-213c-47cb-b98a-022ff48c9718
+                  - generic [ref=e110]:
+                    - generic [ref=e111]: boubou
+                    - generic [ref=e112]: 4 000,00 MRU
+                    - generic [ref=e113]: vibe
+                - generic [ref=e114]:
+                  - button "Ajouter boubou aux favoris" [disabled]
+            - listitem [ref=e115]:
+              - generic [ref=e116]:
+                - link "vibe 900,00 MRU vibe" [ref=e117] [cursor=pointer]:
+                  - /url: /products/3d2f9518-5ac5-4c5b-ac17-bf98778e6725
+                  - generic [ref=e119]:
+                    - generic [ref=e120]: vibe
+                    - generic [ref=e121]: 900,00 MRU
+                    - generic [ref=e122]: vibe
+                - generic [ref=e123]:
+                  - button "Ajouter vibe aux favoris" [disabled]
+          - navigation "Pagination" [ref=e124]:
+            - generic: Précédent
+            - generic [ref=e125]: Page 1 sur 1
+            - generic: Suivant
+  - button "Open Next.js Dev Tools" [ref=e131] [cursor=pointer]
+  - alert [ref=e135]

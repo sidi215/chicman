@@ -50,6 +50,7 @@ model User {
   customerAddresses         CustomerAddress[]
   cart                      Cart?
   orders                    Order[]
+  favorites                 Favorite[]
 }
 
 // A user holds a set of roles (for example CUSTOMER and SELLER).
@@ -276,6 +277,17 @@ model Notification {
   @@index([userId, createdAt])
   @@index([deliveredAt, createdAt])
   @@index([userId, readAt, createdAt])
+  // The daily retention cleanup (spec 15, O6.3): rows older than 365 days.
+  @@index([createdAt])
+}
+
+// Every notification event key ever recorded (spec 15, O6.3). Recording inserts
+// the key here first and writes the notification only when the key is new, so
+// an event stays recorded once even after the retention cleanup has deleted its
+// notification. Keys only: no payload, no recipient relation, never purged.
+model NotificationEvent {
+  eventKey   String   @id @db.VarChar(200)
+  recordedAt DateTime @default(now()) @db.Timestamptz(3)
 }
 
 enum NotificationResourceType {
@@ -393,6 +405,7 @@ model Product {
   uploads     ProductImageUpload[]
   cartItems   CartItem[]
   orderItems  OrderItem[]
+  favorites   Favorite[]
 
   @@index([shopId, createdAt])
   @@index([status, createdAt])
@@ -524,6 +537,24 @@ model CartItem {
   @@index([productId])
   @@index([shopId])
   @@index([variantId])
+}
+
+// A product the customer saved (feature 14). One row per user and product
+// (unique pair), so a repeated add changes nothing. It stores no price or
+// product data: every read shows the product's current state through the public
+// visibility rules. Products are never hard-deleted, so `Restrict` keeps the
+// reference valid, and a favorite survives archiving (shown as unavailable).
+model Favorite {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  productId String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, productId])
+  @@index([userId, createdAt])
+  @@index([productId])
 }
 
 // ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import { buttonVariants } from "@/components/ui/button"
 import { Chip } from "@/components/ui/chip"
 import { TextLink } from "@/features/auth/components/text-link"
 import { AddToCart } from "@/features/cart/components/add-to-cart"
+import { FavoriteButton } from "@/features/favorites/components/favorite-button"
 import { localizedPath } from "@/lib/locale"
 import { useLocale } from "@/lib/locale-provider"
 import { formatMru } from "@/lib/money"
@@ -160,9 +161,12 @@ function ProductContent({ product, t }: { product: PublicProductDetail; t: Store
           <Link href={localizedPath(locale, listingHref({ ...NO_FILTERS, category: product.category }))} className="type-label-medium text-muted-foreground hover:underline">
             {t.categories[product.category]}
           </Link>
-          <h1 dir="auto" className="type-headline-large">
-            {product.name}
-          </h1>
+          <div className="flex items-start justify-between gap-3">
+            <h1 dir="auto" className="min-w-0 type-headline-large">
+              {product.name}
+            </h1>
+            <FavoriteButton productId={product.id} name={product.name} />
+          </div>
           {product.brand === null ? null : (
             <p className="type-body-medium text-muted-foreground">
               {t.brandLabel} : <span dir="auto">{product.brand}</span>

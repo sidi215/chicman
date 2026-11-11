@@ -18,3 +18,5 @@ export * from "./orders/lifecycle.js";
 export * from "./delivery/delivery.js";
 export * from "./payments/payments.js";
 export * from "./checkout/checkout.js";
+export * from "./favorites/favorites.js";
+export * from "./notifications/notifications.js";

@@ -27,7 +27,8 @@ const ORDER_BY: Record<CatalogSort, Prisma.ProductOrderByWithRelationInput[]> = 
 /** Distinct values read for one facet; a far larger list would not be usable as filter chips. */
 const FACET_LIMIT = 100;
 
-const summaryInclude = {
+/** What a public product card needs, for the catalog and for favorites (spec 14). */
+export const publicSummaryInclude = {
   images: { ...activeImages, take: 1, select: { objectKey: true } },
   variants: { select: { stock: true } },
   shop: { select: { id: true, shopName: true } },
@@ -104,7 +105,7 @@ export class CatalogService {
     const [products, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
-        include: summaryInclude,
+        include: publicSummaryInclude,
         orderBy: ORDER_BY[query.sort],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -160,11 +161,8 @@ export class CatalogService {
     return { sizes: distinctValues(sizes.map(({ size }) => size)), colors: distinctValues(colors.map(({ color }) => color)) };
   }
 
-  private toSummary(product: Prisma.ProductGetPayload<{ include: typeof summaryInclude }>): PublicProductSummary {
-    return {
-      ...this.baseFields(product, product.images[0]?.objectKey, product.variants),
-      shop: { id: product.shop.id, name: product.shop.shopName },
-    };
+  private toSummary(product: Prisma.ProductGetPayload<{ include: typeof publicSummaryInclude }>): PublicProductSummary {
+    return toPublicProductSummary(product, this.mediaUrl);
   }
 
   private baseFields(
@@ -172,15 +170,38 @@ export class CatalogService {
     mainImageKey: string | undefined,
     variants: readonly { stock: number }[],
   ): Omit<PublicProductSummary, "shop"> {
-    return {
-      id: product.id,
-      name: product.name,
-      category: product.category as ProductCategory,
-      brand: product.brand,
-      price: product.price.toFixed(2),
-      available: productAvailability(product.stock, variants).available,
-      // `PUBLIC_PRODUCT_WHERE` guarantees an active image.
-      mainImageUrl: this.mediaUrl(mainImageKey ?? ""),
-    };
+    return publicBaseFields(product, mainImageKey, variants, this.mediaUrl);
   }
+}
+
+function publicBaseFields(
+  product: Prisma.ProductGetPayload<object>,
+  mainImageKey: string | undefined,
+  variants: readonly { stock: number }[],
+  mediaUrl: MediaUrl,
+): Omit<PublicProductSummary, "shop"> {
+  return {
+    id: product.id,
+    name: product.name,
+    category: product.category as ProductCategory,
+    brand: product.brand,
+    price: product.price.toFixed(2),
+    available: productAvailability(product.stock, variants).available,
+    // `PUBLIC_PRODUCT_WHERE` guarantees an active image.
+    mainImageUrl: mediaUrl(mainImageKey ?? ""),
+  };
+}
+
+/**
+ * The public card of a product. Only for a product that passes
+ * `PUBLIC_PRODUCT_WHERE` (or `productVisibility` = `PUBLIC`): it shows the price.
+ */
+export function toPublicProductSummary(
+  product: Prisma.ProductGetPayload<{ include: typeof publicSummaryInclude }>,
+  mediaUrl: MediaUrl,
+): PublicProductSummary {
+  return {
+    ...publicBaseFields(product, product.images[0]?.objectKey, product.variants, mediaUrl),
+    shop: { id: product.shop.id, name: product.shop.shopName },
+  };
 }

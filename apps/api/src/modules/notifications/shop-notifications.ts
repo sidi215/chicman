@@ -1,32 +1,27 @@
-import type { ShopNotificationType, ShopStatus } from "@chicman/shared";
+import type { ShopDecisionNotificationPayload, ShopNotificationType, ShopStatus } from "@chicman/shared";
 
 import type { Prisma } from "../../generated/prisma/client.js";
+import { recordNotification } from "./notifications.js";
+
+export type { ShopDecisionNotificationPayload } from "@chicman/shared";
 
 /**
  * Owner notifications for the six administrative shop decisions (spec 06,
- * Owner notifications). The record is written inside the decision
- * transaction, so it exists exactly when the decision commits; delivery
- * channels belong to the notifications module and its workers.
+ * Owner notifications), recorded through the generalized helper (spec 15).
+ * The record is written inside the decision transaction, so it exists exactly
+ * when the decision commits.
  *
  * The payload is built field by field from this allowlist, never from the
  * decision record: it never carries internal reasons, internal notes,
  * administrator identities, audit metadata, or the application-rejection
  * reason (the owner reads that in the seller dashboard).
  */
-export interface ShopDecisionNotificationPayload {
-  shopName: string;
-  /** Resulting shop status (the shop status is unchanged by change requests). */
-  shopStatus: ShopStatus;
-  /** Change-request outcome, for change-request decisions only. */
-  changeRequestOutcome?: "APPROVED" | "REJECTED";
-  /** Affected field names, for change-request decisions only. */
-  fields?: ("shopName" | "city")[];
-  decidedAt: string;
-}
-
 export interface ShopDecisionNotification {
   recipientUserId: string;
   type: ShopNotificationType;
+  shopId: string;
+  /** The decision record: the shop status event, or the change request (spec 15, section 3). */
+  decisionId: string;
   shopName: string;
   shopStatus: ShopStatus;
   changeRequestOutcome?: "APPROVED" | "REJECTED";
@@ -46,16 +41,13 @@ export function shopDecisionPayload(input: ShopDecisionNotification): ShopDecisi
   return payload;
 }
 
-/** Records one owner notification in the caller's transaction. */
-export async function recordShopDecisionNotification(
-  tx: Prisma.TransactionClient,
-  input: ShopDecisionNotification,
-): Promise<void> {
-  await tx.notification.create({
-    data: {
-      userId: input.recipientUserId,
-      type: input.type,
-      payload: { ...shopDecisionPayload(input) },
-    },
+/** Records one owner notification in the caller's transaction, keyed by the decision record. */
+export async function recordShopDecisionNotification(tx: Prisma.TransactionClient, input: ShopDecisionNotification): Promise<void> {
+  await recordNotification(tx, {
+    recipientUserId: input.recipientUserId,
+    type: input.type,
+    payload: { ...shopDecisionPayload(input) },
+    sourceId: input.decisionId,
+    resource: { type: "SHOP", id: input.shopId },
   });
 }

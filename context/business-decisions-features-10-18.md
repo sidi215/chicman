@@ -409,6 +409,20 @@ These lists result from D4, D5, D7 and D9 together.
 | S2-6 | Checkout rate limits | 20 per user and 60 per IP address per 10 minutes, as initial **configurable** server-side values, not business rules |
 | S2-7 | Historical order information | An order keeps the information that applied at placement. Each order item stores the **product image reference** used at placement, and each shop order stores the **shop contact phone numbers** used at placement. Historical orders never depend on the seller's current image or contact details. Referenced images are kept available (product image cleanup never deletes an object an order references), with a placeholder as a safe fallback if an image is missing anyway |
 
+## Confirmed by the project owner (2026-11-11): O6, notifications
+
+O6 is **resolved**. Security events (also named in O6) are unchanged: spec 03 defines none, so none is recorded (spec 15, section 5).
+
+| # | Topic | Confirmed decision | Rationale |
+|---|---|---|---|
+| O6.1 | Administrator notifications | No separate administrator audience in the first release: no administrator-specific events or recipients. The admin area must not present an administrator's ordinary customer or seller notifications as administrator notifications. | No administrator event is defined yet; showing personal notifications in the admin area would be misleading. |
+| O6.2 | Seller notifications on mobile | Web only in the first release. The Flutter app keeps showing customer order notifications only; no seller filter, tab, or screen is added. Sellers read theirs in the web seller notification center. | Follows O1: seller operations are web only. |
+| O6.3 | Notification retention | Notifications are kept **365 days after creation**, then become eligible for deletion. A daily cleanup job deletes them in safe, bounded batches; it is idempotent and never deletes order, delivery, payment, or other business records. Deleting a notification must not weaken event idempotency: an event already recorded must never be recorded again after its notification is deleted. | Bounds the table's growth while keeping a year of history. |
+
+External delivery (email, push, SMS) stays out of scope (S2-3): the channel interface remains an extension point only.
+
+**Implementation status (2026-11-11):** implemented as spec 15 records it (section 7 and O6 follow-up): the admin area has no notification bell or center, and a daily bounded job deletes notifications older than 365 days while a separate, never-purged event-key ledger (`NotificationEvent`) keeps every event recorded once.
+
 ## Open questions (still unresolved)
 
 These came from the audit and were not part of either decision round. None is assumed.
@@ -417,7 +431,6 @@ These came from the audit and were not part of either decision round. None is as
 |---|---|---|
 | O4 | Admin scope beyond D6 and D9: user oversight (no email stored; no Supabase secret key), product moderation (C12), statistics definitions, phone history access (Q14) | Feature 17 |
 | O5 | Retention of orders, snapshots with personal data, payment events; effect on account deletion (Q18) | Data policy; not the first implementation |
-| O6 | Notification recipients: admin events, owners on mobile, security events, retention (Q15) | Feature 15 scope |
 | O8 | Search: sold-out products (C8), PostgreSQL fallback, production hosting (Q16) | Feature 18 |
-| O9 | Favorites: price display for hidden products (C11) | Feature 14 |
+| O9 | Favorites: price display for hidden products (C11) | Feature 14. **Implemented with the audit's recommendation (2026-11-10), awaiting the project owner's confirmation:** a hidden favorite shows "unavailable" with no price, shop, or link; no price snapshot (spec 14, Implementation Notes) |
 | O10 | Category management (C13); reviews and reported issues (Q19, D8 in the audit) | Feature 17 scope; roadmap |

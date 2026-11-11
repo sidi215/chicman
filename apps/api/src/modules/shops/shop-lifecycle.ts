@@ -107,7 +107,7 @@ export class ShopLifecycle {
           ...reasons,
           internalNote: input.body.internalNote ?? null,
         },
-        select: { createdAt: true },
+        select: { id: true, createdAt: true },
       });
 
       // Initial approval only (including after a resubmission): grant SELLER
@@ -124,6 +124,8 @@ export class ShopLifecycle {
       await recordShopDecisionNotification(tx, {
         recipientUserId: shop.ownerUserId,
         type: transition.notification,
+        shopId,
+        decisionId: event.id,
         shopName: shop.shopName,
         shopStatus: transition.to,
         decidedAt: event.createdAt,
@@ -209,6 +211,8 @@ export class ShopLifecycle {
       await recordShopDecisionNotification(tx, {
         recipientUserId: shop.ownerUserId,
         type: outcome === "APPROVED" ? "SHOP_CHANGE_REQUEST_APPROVED" : "SHOP_CHANGE_REQUEST_REJECTED",
+        shopId,
+        decisionId: requestId,
         shopName,
         shopStatus: shop.status,
         changeRequestOutcome: outcome,

@@ -11,6 +11,8 @@ import { createCartRouter, type CartDependencies } from "./modules/cart/index.js
 import { createCheckoutRouter, type CheckoutDependencies } from "./modules/checkout/index.js";
 import { createCustomerRouter, type CustomerDependencies } from "./modules/customers/index.js";
 import { createDeliveryRouter, type DeliveryDependencies } from "./modules/delivery/index.js";
+import { createFavoriteRouter, type FavoriteDependencies } from "./modules/favorites/index.js";
+import { createNotificationRouter, type NotificationDependencies } from "./modules/notifications/index.js";
 import { createOrderRouter, type OrderDependencies } from "./modules/orders/index.js";
 import { createPaymentRouter, type PaymentDependencies } from "./modules/payments/index.js";
 import { createCatalogRouter, createProductRouter, type CatalogDependencies, type ProductDependencies } from "./modules/products/index.js";
@@ -41,13 +43,17 @@ export interface AppOptions {
   delivery?: DeliveryDependencies;
   /** Seller collection summary and administrator correction notes (spec 13). */
   payments?: PaymentDependencies;
+  /** Customer favorites (spec 14). */
+  favorites?: FavoriteDependencies;
+  /** The user's in-app notifications (spec 15). */
+  notifications?: NotificationDependencies;
   /** Express `trust proxy` hops, so `req.ip` is the client address. */
   trustProxyHops?: number;
   /** Extra routers mounted under `/api/v1` (feature modules, test fixtures). */
   routers?: (guards: AuthGuards) => Router[];
 }
 
-export function createApp({ corsOrigins, auth, customers, addresses, shops, admin, products, catalog, cart, checkout, orders, delivery, payments, trustProxyHops, routers }: AppOptions): Express {
+export function createApp({ corsOrigins, auth, customers, addresses, shops, admin, products, catalog, cart, checkout, orders, delivery, payments, favorites, notifications, trustProxyHops, routers }: AppOptions): Express {
   const app = express();
   const guards = createAuthGuards(auth);
 
@@ -73,6 +79,8 @@ export function createApp({ corsOrigins, auth, customers, addresses, shops, admi
   if (orders !== undefined) app.use("/api/v1", createOrderRouter(guards, orders));
   if (delivery !== undefined) app.use("/api/v1", createDeliveryRouter(guards, delivery));
   if (payments !== undefined) app.use("/api/v1", createPaymentRouter(guards, payments));
+  if (favorites !== undefined) app.use("/api/v1", createFavoriteRouter(guards, favorites));
+  if (notifications !== undefined) app.use("/api/v1", createNotificationRouter(guards, notifications));
   for (const router of routers?.(guards) ?? []) app.use("/api/v1", router);
 
   app.use(notFoundHandler);

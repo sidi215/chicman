@@ -7,6 +7,8 @@ import { createPrismaClient, type PrismaClient } from "../../src/lib/prisma.js";
 import { AddressService, type AddressServiceFaults } from "../../src/modules/addresses/index.js";
 import { AdminShopQueries } from "../../src/modules/admin/index.js";
 import { CartService, type CartServiceFaults } from "../../src/modules/cart/index.js";
+import { FavoriteService, type FavoriteServiceFaults } from "../../src/modules/favorites/index.js";
+import { NotificationService } from "../../src/modules/notifications/index.js";
 import { CheckoutService, type CheckoutServiceFaults } from "../../src/modules/checkout/index.js";
 import { DeliveryLifecycle, DeliveryQueries, type DeliveryLifecycleFaults } from "../../src/modules/delivery/index.js";
 import { StockService } from "../../src/modules/inventory/index.js";
@@ -92,6 +94,7 @@ export interface HarnessFaults {
   address: AddressServiceFaults;
   productImage: ProductImageServiceFaults;
   cart: CartServiceFaults;
+  favorites: FavoriteServiceFaults;
   checkout: CheckoutServiceFaults;
   orders: ShopOrderLifecycleFaults;
   delivery: DeliveryLifecycleFaults;
@@ -106,7 +109,7 @@ export const DELIVERY_FAILED_AUTO_CLOSE_DAYS = 7;
 export class ShopHarness {
   readonly jwks = new TestJwksServer();
   readonly storage = new FakeObjectStorage();
-  readonly faults: HarnessFaults = { shop: {}, lifecycle: {}, logo: {}, address: {}, productImage: {}, cart: {}, checkout: {}, orders: {}, delivery: {} };
+  readonly faults: HarnessFaults = { shop: {}, lifecycle: {}, logo: {}, address: {}, productImage: {}, cart: {}, favorites: {}, checkout: {}, orders: {}, delivery: {} };
   prisma!: PrismaClient;
   app!: RunningApp;
   logos!: LogoService;
@@ -116,6 +119,10 @@ export class ShopHarness {
   catalogRateLimiter: RateLimiter = new MemoryRateLimiter();
   /** Replaceable, so a test can exhaust the cart write limit. */
   cartRateLimiter: RateLimiter = new MemoryRateLimiter();
+  /** Replaceable, so a test can exhaust the favorite write limit. */
+  favoriteRateLimiter: RateLimiter = new MemoryRateLimiter();
+  /** Replaceable, so a test can exhaust the notification write limit. */
+  notificationRateLimiter: RateLimiter = new MemoryRateLimiter();
   /** Replaceable, so a test can count or exhaust the checkout placement limit. */
   checkoutRateLimiter: RateLimiter = new MemoryRateLimiter();
   /** Replaceable, so a test can exhaust the order write limit. */
@@ -205,6 +212,14 @@ export class ShopHarness {
         rateLimiter: { hit: (key, limit, windowMs) => this.orderRateLimiter.hit(key, limit, windowMs) },
       },
       payments: { payments: new PaymentService(this.prisma) },
+      favorites: {
+        favorites: new FavoriteService(this.prisma, MEDIA_BASE_URL, this.faults.favorites),
+        rateLimiter: { hit: (key, limit, windowMs) => this.favoriteRateLimiter.hit(key, limit, windowMs) },
+      },
+      notifications: {
+        notifications: new NotificationService(this.prisma),
+        rateLimiter: { hit: (key, limit, windowMs) => this.notificationRateLimiter.hit(key, limit, windowMs) },
+      },
     });
   }
 
@@ -230,6 +245,8 @@ export class ShopHarness {
     this.productRateLimiter = new MemoryRateLimiter();
     this.catalogRateLimiter = new MemoryRateLimiter();
     this.cartRateLimiter = new MemoryRateLimiter();
+    this.favoriteRateLimiter = new MemoryRateLimiter();
+    this.notificationRateLimiter = new MemoryRateLimiter();
     this.checkoutRateLimiter = new MemoryRateLimiter();
     this.orderRateLimiter = new MemoryRateLimiter();
     await resetDatabase(this.prisma);

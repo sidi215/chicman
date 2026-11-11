@@ -12,10 +12,12 @@ import { createEmailConfirmationChecker, createTokenVerifier } from "./modules/a
 import { AddressService } from "./modules/addresses/index.js";
 import { AdminShopQueries } from "./modules/admin/index.js";
 import { CartService } from "./modules/cart/index.js";
+import { FavoriteService } from "./modules/favorites/index.js";
 import { CheckoutService } from "./modules/checkout/index.js";
 import { PrismaCustomerRepository } from "./modules/customers/index.js";
 import { DeliveryLifecycle, DeliveryQueries } from "./modules/delivery/index.js";
 import { StockService } from "./modules/inventory/index.js";
+import { NotificationService } from "./modules/notifications/index.js";
 import { OrderQueries, ShopOrderLifecycle } from "./modules/orders/index.js";
 import { PaymentService } from "./modules/payments/index.js";
 import { CatalogService, ProductImageService, ProductService } from "./modules/products/index.js";
@@ -102,6 +104,8 @@ const app = createApp({
     rateLimiter,
   },
   payments: { payments: new PaymentService(prisma) },
+  favorites: { favorites: new FavoriteService(prisma, mediaPublicBaseUrl), rateLimiter },
+  notifications: { notifications: new NotificationService(prisma), rateLimiter },
 });
 
 const server = app.listen(config.port, () => {

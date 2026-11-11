@@ -181,7 +181,8 @@ void main() {
       expect(find.text('Nouveautés').hitTestable(), findsNothing);
       // The callback screen has handled the link instead of being lost.
       final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
-      expect(bar.selectedIndex, 1);
+      // Home, Favorites (spec 14), Account.
+      expect(bar.selectedIndex, 2);
     });
 
     testWidgets('an empty catalog is explained', (tester) async {

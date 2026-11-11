@@ -128,7 +128,9 @@ class ApiClient {
     final status = response.statusCode;
     if (status >= 200 && status < 300) {
       try {
-        return ApiOk(decode(jsonDecode(response.body)), statusCode: status);
+        // `204 No Content` has no body: the decoder receives `null`.
+        final json = status == 204 ? null : jsonDecode(response.body);
+        return ApiOk(decode(json), statusCode: status);
       } on Object {
         return ApiError(status, 'INVALID_RESPONSE');
       }

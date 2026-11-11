@@ -4,7 +4,7 @@
 
 Provide a consistent notification system that informs customers, sellers, and administrators about important events in their workflows, with clear separation between notification creation, delivery, and read state.
 
-**Built so far (with spec 10, 2026-11-09):** the `eventKey`, `resourceType`, and `resourceId` columns with the `(userId, readAt, createdAt)` index, the generalized `recordNotification` helper (`modules/notifications/notifications.ts`), and `SHOP_ORDER_PLACED`. With spec 11 (2026-11-10): `SHOP_ORDER_CONFIRMED`, `SHOP_ORDER_REJECTED`, `SHOP_ORDER_CANCELLED`, `SHOP_ORDER_EXPIRED`, `SHOP_ORDER_RESPONSE_REMINDER`. With spec 12 (2026-11-10): `DELIVERY_DISPATCHED`, `DELIVERY_ATTEMPT_FAILED` (keyed by the attempt), `DELIVERY_COMPLETED`, `DELIVERY_CLOSED_UNDELIVERABLE` (keyed by the delivery status event), customer only. Not built: keys for the six shop decisions, the read API, and the notification centers.
+**Status (2026-11-11):** implemented on the API, web, and mobile. The order and delivery events were built with specs 10–12; this feature added the keys for the six shop decisions, the read API, the delivery-channel interface, and the web and mobile notification centers. Details: Implementation Notes. O6 was resolved on 2026-11-11 (section 7), and its two follow-ups (no admin-area bell; the 365-day cleanup with an event-key ledger) were implemented the same day (O6 follow-up).
 
 ## Design & Architecture Decisions
 
@@ -74,19 +74,25 @@ Events for the order chain are recorded by the feature that owns the change, thr
 
 **Not recorded:**
 - Account or profile security events: none is defined by the authentication requirements (spec 03), so none is recorded.
-- Administrator events: none in this release (unresolved, section 7).
+- Administrator events: none in this release (O6.1, section 7).
 
 ### 6. Resource references
 
 Each notification may carry a resource reference (`resourceType`: `SHOP` or `SHOP_ORDER`; `resourceId`). Opening it goes through the normal route for that resource, which checks ownership again. A reference never grants access.
 
-### 7. Unresolved (O6)
+### 7. Recipients and retention (O6, resolved 2026-11-11)
 
-These stay open in `business-decisions-features-10-18.md` and are not assumed:
+Confirmed by the project owner (`business-decisions-features-10-18.md`, O6):
 
-- Whether administrators receive any notification.
-- Whether seller-addressed notifications (shop decisions, new orders) appear in the Flutter app. The Flutter app is customer-focused (O1). Until decided, the mobile notification center lists **customer order notifications only**.
-- How long notifications are kept.
+- **O6.1 — Administrators:** no separate administrator audience in the first release; no administrator-specific events or recipients. The admin area must not present an administrator's ordinary customer or seller notifications as administrator notifications. Customer and seller notifications are unchanged.
+- **O6.2 — Seller notifications on mobile:** web only (O1). The Flutter app lists **customer order notifications only**, with no seller filter, tab, or screen. Sellers read theirs in the web seller notification center.
+- **O6.3 — Retention:** a notification is kept **365 days after its creation**, then becomes eligible for deletion.
+  - A **daily** cleanup job deletes eligible notifications in **bounded batches**, so no run holds a long transaction or loads the database heavily.
+  - It deletes notification records only: never orders, deliveries, payments, or any other business record.
+  - It is idempotent and safe to run more than once, or from two workers at once.
+  - **Idempotency survives deletion:** an event already recorded must never be recorded again after its notification is deleted. Event keys are therefore kept apart from the notification rows (Implementation Notes, O6 follow-up). Uniqueness is never weakened.
+- **Security events:** none is recorded (section 5; spec 03 defines none).
+- **External delivery** stays out of scope (section 3): the channel interface remains an extension point only.
 
 ## Implementation Details
 
@@ -117,7 +123,7 @@ Inspect existing notification records and architecture before changing anything.
 
 ### Web
 
-- A notification center and an unread indicator in the storefront header, and in the seller and admin layouts.
+- A notification center and an unread indicator in the storefront header and in the seller layout. The admin layout follows O6.1 (section 7).
 - Client state follows the cart provider's account-change guard (`features/cart/cart-provider.tsx`).
 
 ### Mobile
@@ -144,16 +150,71 @@ Inspect existing notification records and architecture before changing anything.
 
 ## Verification Checklist
 
-- [ ] The six existing shop decisions still create exactly one notification each, now with an event key.
-- [ ] Each supported business event in section 5 creates the correct notification, in the same transaction as its change.
-- [ ] Notifications reach only the intended recipients.
-- [ ] Duplicate events (retries, repeated worker runs) do not create duplicate notifications.
-- [ ] Users can list their own notifications and unread count.
-- [ ] Users can mark their own notifications as read, one or all, repeatedly without error.
-- [ ] Users cannot access another user's notifications (`404`).
-- [ ] Internal administrative reasons and notes never appear in notifications.
-- [ ] A rolled-back business change leaves no notification.
-- [ ] Delivery and read states are not confused; `deliveredAt` stays empty without a channel.
-- [ ] No email, push, or SMS is sent, and no documentation or interface claims external delivery.
-- [ ] Web and mobile notification interfaces support French and Arabic RTL.
-- [ ] API, web, and mobile tests cover the supported workflows.
+- [x] The six existing shop decisions still create exactly one notification each, now with an event key. (`shops.test.ts`: key from the status event or change request, `SHOP` resource, `deliveredAt` empty.)
+- [x] Each supported business event in section 5 creates the correct notification, in the same transaction as its change. (Order and delivery events: `orders.test.ts`, `delivery.test.ts`; shop decisions: `shops.test.ts`.)
+- [x] Notifications reach only the intended recipients. (Recipient tests in specs 06, 11, 12; `notifications.test.ts` checks audiences and resources per party.)
+- [x] Duplicate events (retries, repeated worker runs) do not create duplicate notifications. (`notifications.test.ts`: repeated and concurrent recording; reminder and job reruns in `orders.test.ts`, `delivery.test.ts`.)
+- [x] Users can list their own notifications and unread count.
+- [x] Users can mark their own notifications as read, one or all, repeatedly without error.
+- [x] Users cannot access another user's notifications (`404`).
+- [x] Internal administrative reasons and notes never appear in notifications. (Checked in the stored rows and in the list responses.)
+- [x] A rolled-back business change leaves no notification. (`notifications.test.ts`; failed decisions in `shops.test.ts`.)
+- [x] Delivery and read states are not confused; `deliveredAt` stays empty without a channel. (`deliveredAt` is not in the API response; marking read never sets it.)
+- [x] No email, push, or SMS is sent, and no documentation or interface claims external delivery. (No channel configured; web and mobile texts are tested for it.)
+- [x] Web and mobile notification interfaces support French and Arabic RTL. (Both languages checked by tests and the mobile RTL layout by a widget test; web in a browser and Android manually verified by the project owner on 2026-11-11.)
+- [x] API, web, and mobile tests cover the supported workflows. (API `notifications.test.ts` 15, web `notifications.test.ts` 12, Flutter `notifications_test.dart` 15.)
+
+## Implementation Notes (2026-11-11)
+
+### Decisions the spec left open
+
+- **Mobile scope (section 7, O6.2):** the routes take an optional `audience=CUSTOMER` query parameter, which narrows the list, the unread count, and read-all to customer order notifications. The mobile app always sends it, so its list, its bell, and its "mark all read" never touch seller notifications (which a seller reads on the web). Filtering on the client would have broken pagination and the count. Without the parameter, every notification of the user is included (web).
+- **Audience:** each item carries `audience` (`CUSTOMER` or `SELLER`). Types sent to one party only take it from the type; `SHOP_ORDER_CANCELLED` and `SHOP_ORDER_EXPIRED` take it from the shop order (the recipient placed the order → `CUSTOMER`). This is unambiguous because checkout refuses an order from one's own shop (`OWN_SHOP`, spec 10). No column was added.
+- **Resource:** `{ type: "SHOP", id }` or `{ type: "SHOP_ORDER", id, orderId }`. `orderId` (the customer order page's ID) is given to the customer only; the seller opens the shop order by its own ID. Links: customer → `/account/orders/:orderId` (mobile: the order detail screen); seller → `/seller/orders/:shopOrderId`; shop → `/seller/shop`. Those routes check ownership again. Rows recorded before resource references existed list with `resource: null` and open nothing.
+- **Response:** `NotificationList` = `items` (`id`, `type`, `payload` as recorded, `audience`, `resource`, `createdAt`, `readAt`) and `nextCursor` (opaque base64url of the last `(createdAt, id)`; `null` on the last page). `limit` defaults to 20, at most 50. The recipient, the event key, and `deliveredAt` are not returned. Unread count: `{ unread }`.
+- **Errors and writes:** an unknown, malformed, or another user's notification ID is `404 NOTIFICATION_NOT_FOUND`; a malformed cursor or an unknown query parameter is `400 BAD_REQUEST`. Mark one read and read-all answer `204` and are idempotent: a notification keeps its first `readAt`. Both writes are rate-limited (`notification-write`: 300 per user, 600 per IP, 10 minutes).
+- **Shop decisions (section 3):** `recordShopDecisionNotification` now goes through `recordNotification`, keyed by the shop status event (application approval or rejection, suspension, reinstatement) or the change request (change-request decisions), with a `SHOP` resource. The payload type moved to `packages/shared` (`ShopDecisionNotificationPayload`); its allowlist is unchanged.
+- **Delivery abstraction:** `modules/notifications/notification-channel.ts` defines `NotificationChannel` and an empty `CONFIGURED_NOTIFICATION_CHANNELS`. Nothing reads it; no provider, job, or retry exists. **Limitation:** notifications are in-app records only (recorded in `progress-tracker.md`).
+- **Retention (O6.3):** 365 days; implemented on 2026-11-11 (O6 follow-up below).
+- **Administrators:** no administrator event is recorded (O6.1). The admin area has no bell and no notification center; an administrator reads their own customer and seller notifications in the storefront and the seller area (O6 follow-up below).
+
+### Web
+
+- `features/notifications/`: logic (paths, result handling, text rendering from codes, links, local read state), messages (French and Arabic), `NotificationsProvider` (the unread count, with the cart provider's account-change guard; read on sign-in, on each page change, and on window focus; no polling or push), `NotificationsLink` (bell with the cart badge's style; signed-in users only), `NotificationsPage` (newest first, "see more", mark one or all read; opening an item marks it read).
+- Routes: `/notifications` (storefront, bell in the header) and `/seller/notifications`. A new `seller/layout.tsx` adds the provider and a top bar with the bell; the pages are unchanged. The admin area has none (O6.1).
+
+### Mobile
+
+- `features/notifications/` (domain, `notificationsProvider` with the cart's account-change guard, messages, `NotificationsAction`, `NotificationsScreen`). The bell is in the home app bar, hidden for guests; the count is read on sign-in, when the screen opens, after each change, and when the app returns to the foreground. Tapping a notification marks it read and opens the customer order.
+- `ApiClient.classify` now decodes a `204 No Content` answer as `null` (before, an empty body was `INVALID_RESPONSE`); other statuses are unchanged.
+
+## O6 follow-up (implemented 2026-11-11)
+
+The decisions are in section 7. Scope: the admin area (O6.1) and retention (O6.3) only. Recipients, notification channels, and order retention (O5) are unchanged; O6.2 needed no behavior change.
+
+### Findings that shaped it
+
+- `Notification.eventKey` was the only duplicate guard: `recordNotification` inserted with `skipDuplicates`, and the reminder job (`remindDue`) selected shop orders with `NOT EXISTS` on that key. Deleting a notification would have deleted its key, so the event could have been recorded again.
+- In practice no producer replays an event a year later (every key comes from a record created once by a conditional change; a reminder is only due while the shop order is `PENDING` before its deadline). The database guarantee is kept anyway.
+- Nothing references `Notification` by foreign key, so deleting notifications touches no business table.
+
+### What was built
+
+- **Migration `20261111120000_notification_retention`:** table `NotificationEvent` (`eventKey VARCHAR(200)` primary key, `recordedAt`), with no payload and no foreign key, backfilled from every non-null `Notification.eventKey`; index `Notification(createdAt)`. `Notification.eventKey` keeps its unique index. Applied to the test database (backfill checked on seeded rows; no drift against the schema). **Not applied to the development database**, like the spec 14 migration.
+- **Event-key ledger:** `recordNotification` inserts the key into `NotificationEvent` first (`ON CONFLICT DO NOTHING`) and writes the notification only when the key is new, in the caller's transaction. A concurrent transaction with the same key waits on the primary key, then records nothing. The reminder job's `NOT EXISTS` reads the ledger. Ledger rows are never deleted: about one small row per notification ever recorded, and no personal data beyond the recipient's user ID inside the key.
+- **Cleanup (`modules/notifications/notification-retention.ts`):** `purgeExpiredNotifications` deletes `Notification` rows with `createdAt < now − 365 days` (365 × 24 hours), read or unread, with or without an event key, oldest first, in batches of 1000, at most 100 batches per run, each batch its own statement. Worker job `notification retention`: at start, then every 24 hours, under the advisory lock `chicman:notification-retention`. A backlog larger than one run is finished by later runs.
+- **Admin area (O6.1):** `admin/layout.tsx` and the `/admin/notifications` route are removed. The storefront and seller bells and centers are unchanged.
+- **Mobile (O6.2):** code comment only.
+
+### Checks
+
+- [x] A notification older than 365 days is deleted; one at the boundary or newer is kept; read and unread alike; rows without an event key too.
+- [x] A repeated or concurrent cleanup run deletes nothing more and fails nothing.
+- [x] Batches are bounded (a backlog larger than one run is finished by later runs).
+- [x] Orders, shop orders, items, status events, stock movements, payments, payment events, deliveries, and products are unchanged by a cleanup.
+- [x] After a notification is deleted, recording the same event again records nothing, and the reminder job does not remind again. (Both tests were checked to fail without the ledger.)
+- [x] The migration backfills the ledger from existing keys (checked on the test database).
+- [x] The admin area has no bell and no notification center; the storefront and seller bells are unchanged.
+- [x] The mobile app still lists customer order notifications only (no behavior change).
+- [x] The worker runs the job on start and schedules it every 24 hours (short run against the test database).
+- [ ] Manual check: the admin pages in a browser without the bell. The Compose `worker` still needs a rebuild, and the development database the migration, before the job runs there.

@@ -399,6 +399,18 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
       const crApproved = notifications[4]?.payload as { fields: string[]; changeRequestOutcome: string };
       assert.deepEqual(crApproved.fields, ["city"]);
       assert.equal(crApproved.changeRequestOutcome, "APPROVED");
+
+      // Spec 15: each is keyed by its decision record and points at the shop.
+      const events = await h.prisma.shopStatusEvent.findMany({ where: { shopId, decisionType: { not: null } }, orderBy: { createdAt: "asc" } });
+      const requests = await h.prisma.shopChangeRequest.findMany({ where: { shopId }, orderBy: { submittedAt: "asc" } });
+      const decisionIds = [...events.map(({ id }) => id), ...requests.map(({ id }) => id)];
+      assert.equal(decisionIds.length, 6);
+      notifications.forEach((notification, index) => {
+        assert.equal(notification.eventKey, `${notification.type}:${decisionIds[index]}:${owner.userId}`);
+        assert.equal(notification.resourceType, "SHOP");
+        assert.equal(notification.resourceId, shopId);
+        assert.equal(notification.deliveredAt, null);
+      });
     });
   });
 

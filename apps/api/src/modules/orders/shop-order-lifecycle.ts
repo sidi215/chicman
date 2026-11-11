@@ -417,7 +417,8 @@ export class ShopOrderLifecycle {
   /**
    * The reminder job (D7): one seller notification per `PENDING` shop order
    * once `remindAt` has passed and before the deadline. Its event key is the
-   * shop order, so it can never be recorded twice.
+   * shop order, so it can never be recorded twice. The key is looked up in the
+   * event ledger, which outlives the notification (spec 15, O6.3).
    */
   async remindDue(batchSize = 100): Promise<JobResult> {
     const due = await this.prisma.$queryRaw<{ id: string; shopId: string }[]>`
@@ -425,8 +426,8 @@ export class ShopOrderLifecycle {
       JOIN "Shop" s ON s."id" = so."shopId"
       WHERE so."status" = 'PENDING' AND so."remindAt" <= now() AND so."respondBy" > now()
         AND NOT EXISTS (
-          SELECT 1 FROM "Notification" n
-          WHERE n."eventKey" = 'SHOP_ORDER_RESPONSE_REMINDER:' || so."id"::text || ':' || s."ownerUserId"::text
+          SELECT 1 FROM "NotificationEvent" e
+          WHERE e."eventKey" = 'SHOP_ORDER_RESPONSE_REMINDER:' || so."id"::text || ':' || s."ownerUserId"::text
         )
       ORDER BY so."remindAt", so."id"
       LIMIT ${batchSize}`;
