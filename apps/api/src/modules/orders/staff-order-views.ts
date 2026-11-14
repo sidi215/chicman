@@ -166,6 +166,7 @@ export async function listAdminShopOrders(db: Db, query: AdminOrderListQuery): P
   const where = {
     ...(query.status === undefined ? {} : { status: query.status }),
     ...(query.shopId === undefined ? {} : { shopId: query.shopId }),
+    ...(query.reference === undefined ? {} : { order: { reference: { contains: query.reference } } }),
     ...(createdAt === undefined ? {} : { createdAt }),
   } satisfies Prisma.ShopOrderWhereInput;
   const [total, rows] = await Promise.all([

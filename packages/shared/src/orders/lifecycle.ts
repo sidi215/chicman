@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { orderReferenceSearchSchema } from "../admin/admin.js";
 import type { AdminDeliveryAttempt, SellerDeliveryRecord } from "../delivery/delivery.js";
 import type { SellerPayment } from "../payments/payments.js";
 import { internalDecisionSchema, plainText } from "../shops/schemas.js";
@@ -94,11 +95,15 @@ const shopOrderStatus = z.enum(["PENDING", "CONFIRMED", "REJECTED", "CANCELLED",
 export const sellerOrderListQuerySchema = z.strictObject({ status: shopOrderStatus.optional(), page, pageSize });
 export type SellerOrderListQuery = z.output<typeof sellerOrderListQuerySchema>;
 
-/** `GET /admin/orders`: `from` and `to` are UTC days (inclusive) of placement. */
+/**
+ * `GET /admin/orders`: `from` and `to` are UTC days (inclusive) of placement.
+ * `reference` searches order references (spec 17; see `orderReferenceSearchSchema`).
+ */
 export const adminOrderListQuerySchema = z
   .strictObject({
     status: shopOrderStatus.optional(),
     shopId: z.uuid().optional(),
+    reference: orderReferenceSearchSchema.optional(),
     from: z.iso.date().optional(),
     to: z.iso.date().optional(),
     page,

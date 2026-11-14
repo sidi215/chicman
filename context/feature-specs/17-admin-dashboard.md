@@ -64,15 +64,24 @@ Requirements:
 
 ## Verification Checklist
 
-- [ ] Only authorized admins can access admin routes and APIs.
-- [ ] Admin provisioning follows the approved process.
-- [ ] Shop review and decisions follow Spec 06.
-- [ ] All required administrative reasons are validated.
-- [ ] Administrative actions are audited.
-- [ ] Non-admin users cannot perform administrative operations.
-- [ ] User and product management preserve ownership and protected fields.
-- [ ] Order and delivery oversight does not bypass normal business invariants: administrators can only read, cancel before dispatch, and annotate payments, never on their own shop.
-- [ ] Statistics use real data and correct definitions.
-- [ ] Lists support appropriate filtering and pagination.
-- [ ] French and Arabic RTL support works.
-- [ ] API and web tests cover authorization and administrative workflows.
+- [x] Only authorized admins can access admin routes and APIs. *(API: `admin` guard on every route, authorization matrix; web: `AccountGate area="admin"` on every admin page.)*
+- [x] Admin provisioning follows the approved process. *(AT-1 `admin:provision`; no public registration.)*
+- [x] Shop review and decisions follow Spec 06.
+- [x] All required administrative reasons are validated. *(Shared schemas, used by the API and by the web forms before sending.)*
+- [x] Administrative actions are audited. *(`ShopStatusEvent`, change requests, `ShopOrderStatusEvent`, `PaymentEvent` `ADMIN_NOTE`.)*
+- [x] Non-admin users cannot perform administrative operations.
+- [ ] User and product management preserve ownership and protected fields. *(Not built: waits for O4.)*
+- [x] Order and delivery oversight does not bypass normal business invariants: administrators can only read, cancel before dispatch, and annotate payments, never on their own shop.
+- [ ] Statistics use real data and correct definitions. *(Not built: waits for O4.)*
+- [x] Lists support appropriate filtering and pagination.
+- [x] French and Arabic RTL support works. *(Every text exists in both languages, checked by a test; browser checks with a real administrator passed, reported by the project owner on 2026-11-14.)*
+- [x] API and web tests cover authorization and administrative workflows.
+
+## Implementation Notes (2026-11-14)
+
+- **Scope built:** the approved parts only. Shop review, suspension, reinstatement, and change requests already existed from spec 06 (API and web); order and delivery oversight routes from specs 11 and 13. This feature adds the admin area navigation, the order oversight screens, and search and pagination on the lists. **Not built:** user oversight, product moderation, and statistics (O4), category management (O10).
+- **Shared (`packages/shared/src/admin/admin.ts`):** `adminShopListQuerySchema` (`status`, `openChangeRequest`, `q` plain text 1–100, `page`, `pageSize` default 20, at most 50), `normalizeOrderReferenceSearch` and `orderReferenceSearchSchema`. `AdminShopListResponse` now carries `page`, `pageSize`, `total`. `adminOrderListQuerySchema` (spec 11) gains `reference`.
+- **API (no new route, no migration):** `GET /admin/shops` validates with the shared schema; `q` matches the shop name or city (case-insensitive, contains); paginated, still oldest change first. The old `limit` parameter is refused (`400`; only the web used it). `GET /admin/orders?reference=` matches order references containing the code: case-insensitive, spaces ignored, with or without `CM-`, 3–10 letters or digits (`400` otherwise).
+- **Web:** `features/admin/admin-dashboard.ts` (areas, list queries checked with the API's schemas, paths, cancellation and payment-note bodies), `components/admin-shared.tsx` (session-guarded API hook, reason form, pagination), `components/admin-orders.tsx`. `AdminShell` has a navigation (Boutiques, Commandes). `/admin/shops`: search, an "all" filter, result count, pages; the shop detail links to the shop's orders. `/admin/orders`: status chips, reference search, placement days (UTC), the shop filter from `?shopId=`, pages. `/admin/orders/[shopOrderId]`: shop and customer, decision (with internal reason and note), items and amounts, the delivery snapshot, the delivery record (attempts with actors, history, automatic closure), the payment and its events, the order history, stock movements; the cancellation form only when the API says `canCancel`, and the payment note form (`403` on an owned shop is explained). No other action is offered.
+- **Tests:** API 677 (+1 shop search and pagination; the order list test covers the reference search). Web 284 (+13 in `admin-dashboard.test.ts`, including French/Arabic key parity). Typecheck, lint, and the production build pass.
+- **Verified (2026-11-14):** the project owner reported that all browser checks with a real administrator session passed.

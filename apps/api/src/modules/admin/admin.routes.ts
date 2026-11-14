@@ -1,11 +1,5 @@
-import {
-  applicationRejectionSchema,
-  internalDecisionSchema,
-  SHOP_ERROR_CODES,
-  SHOP_STATUSES,
-} from "@chicman/shared";
+import { adminShopListQuerySchema, applicationRejectionSchema, internalDecisionSchema, SHOP_ERROR_CODES } from "@chicman/shared";
 import { Router } from "express";
-import { z } from "zod";
 
 import { notFound } from "../../lib/http-error.js";
 import { parseOrBadRequest } from "../../lib/validation.js";
@@ -21,12 +15,6 @@ export interface AdminDependencies {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const listQuerySchema = z.strictObject({
-  status: z.enum(SHOP_STATUSES).optional(),
-  openChangeRequest: z.enum(["true", "false"]).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-});
-
 function shopIdParam(value: unknown): string {
   const id = String(value ?? "");
   if (!UUID.test(id)) throw notFound(SHOP_ERROR_CODES.shopNotFound);
@@ -40,20 +28,23 @@ function parseDecision(action: ShopDecisionAction, body: unknown): ShopDecisionI
 }
 
 /**
- * `/api/v1/admin` shop administration (spec 06, rule 7). Administrators
- * only (role `ADMIN` from PostgreSQL): others → `403`, no token → `401`.
+ * `/api/v1/admin` shop administration (spec 06, rule 7; list search and
+ * pagination, spec 17). Active Administrator accounts only: others → `403`,
+ * no token → `401`.
  */
 export function createAdminRouter(guards: AuthGuards, deps: AdminDependencies): Router {
   const router = Router();
   const admin = guards.admin;
 
   router.get("/admin/shops", ...admin, async (req, res) => {
-    const query = parseOrBadRequest(listQuerySchema, req.query);
+    const query = parseOrBadRequest(adminShopListQuerySchema, { ...req.query });
     res.status(200).json(
       await deps.queries.list({
         ...(query.status === undefined ? {} : { status: query.status }),
         ...(query.openChangeRequest === undefined ? {} : { openChangeRequest: query.openChangeRequest === "true" }),
-        limit: query.limit ?? 50,
+        ...(query.q === undefined ? {} : { search: query.q }),
+        page: query.page,
+        pageSize: query.pageSize,
       }),
     );
   });

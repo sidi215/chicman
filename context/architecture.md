@@ -66,7 +66,7 @@
 
 - `apps/api/src/modules/favorites/` — The customer's favorites (`/api/v1/customers/me/favorites`, spec 14): one `Favorite` row per user and product (unique pair), at most 200. `PUT` and `DELETE` by product ID are idempotent. Each read shows the product's current state through `productVisibility` and the availability rule, with the catalog's public summary (`toPublicProductSummary`). A product that is no longer public is `UNAVAILABLE`, with no price, shop, or link. Favorites keep no snapshot and never write the cart.
 
-- `apps/api/src/modules/admin/` — Administrative operations, seller approvals, marketplace monitoring, and platform management.
+- `apps/api/src/modules/admin/` — Administrative operations, seller approvals, marketplace monitoring, and platform management. Built: shop administration (spec 06) with list search and pagination (spec 17). Order and delivery oversight routes live with their modules (`/admin/orders`, spec 11, with reference search; payment notes, spec 13). User oversight, product moderation, and statistics wait for O4; categories for O10.
 
 - `apps/api/src/workers/` — Background processing for notifications, search indexing, and asynchronous tasks. Current jobs: phone-change history retention and notification retention (spec 15, O6.3; each every 24 h), shop logo cleanup and reconciliation (every 5 min), and product image cleanup and reconciliation (every 5 min), each behind its own PostgreSQL advisory lock. Shop order expiry and seller response reminders (spec 11) and the automatic closure of failed deliveries (spec 12, `DELIVERY_FAILED_AUTO_CLOSE_DAYS`) run every 5 minutes, each behind its own lock, and are idempotent.
 

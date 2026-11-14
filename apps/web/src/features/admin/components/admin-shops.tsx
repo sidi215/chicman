@@ -1,104 +1,56 @@
 "use client"
 
-import type { AdminShopDetailResponse, AdminShopListResponse, ShopStatus } from "@chicman/shared"
+import type { AdminShopDetailResponse, AdminShopListResponse } from "@chicman/shared"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { useCallback, useEffect, useId, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useState, type FormEvent } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Chip } from "@/components/ui/chip"
-import { useAuth } from "@/features/auth/auth-provider"
+import { Input } from "@/components/ui/input"
 import { FormMessage } from "@/features/auth/components/form-field"
 import { TextLink } from "@/features/auth/components/text-link"
 import { formatDateTime } from "@/features/shop/messages"
 import { useLocale } from "@/lib/locale-provider"
-import { apiRequest } from "@/lib/api-client"
 
-import {
-  availableDecisions,
-  buildDecision,
-  interpretAdminResult,
-  reasonFieldFor,
-  type AdminOutcome,
-  type DecisionFormResult,
-  type ShopDecisionAction,
-} from "../admin-shops"
-import { useAdminMessages, type AdminMessages } from "../messages"
+import { ADMIN_SHOP_FILTERS, adminShopHref, adminShopListPath, adminShopOrdersHref, pageCount, type AdminShopFilter } from "../admin-dashboard"
+import { availableDecisions, buildDecision, reasonFieldFor, type AdminOutcome, type ShopDecisionAction } from "../admin-shops"
+import { useAdminMessages } from "../messages"
+import { AdminPage as Shell, errorText, Pagination, postJson, ReasonForm, useAdminApi } from "./admin-shared"
 
-type Filter = ShopStatus | "changes"
-const FILTERS: Filter[] = ["PENDING", "changes", "APPROVED", "SUSPENDED", "REJECTED"]
-
-function filterQuery(filter: Filter): string {
-  return filter === "changes" ? "openChangeRequest=true" : `status=${filter}`
-}
-
-function errorText(state: AdminOutcome<unknown>["state"], t: AdminMessages): string {
-  switch (state) {
-    case "forbidden":
-      return t.forbidden
-    case "own-shop":
-      return t.ownShop
-    case "not-found":
-      return t.notFound
-    case "conflict":
-      return t.conflict
-    case "invalid":
-      return t.invalid
-    case "unavailable":
-      return t.unavailable
-    default:
-      return t.generic
-  }
-}
-
-/** Calls an admin endpoint with the session token. The API enforces the ADMIN role. */
-function useAdminApi() {
-  const router = useRouter()
-  const { status, getAccessToken, signOut } = useAuth()
-  useEffect(() => {
-    if (status === "signed-out" || status === "not-configured") router.replace("/login")
-  }, [status, router])
-  const call = useCallback(
-    async <T,>(path: string, init?: RequestInit): Promise<AdminOutcome<T>> => {
-      const token = await getAccessToken()
-      if (!token) return { state: "signed-out" }
-      const outcome = interpretAdminResult(await apiRequest<T>(path, token, init))
-      if (outcome.state === "signed-out") void signOut()
-      return outcome
-    },
-    [getAccessToken, signOut]
-  )
-  return { status, call }
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="flex flex-1 flex-col items-center gap-6 bg-page px-4 py-6">
-      {children}
-    </main>
-  )
-}
-
-/** `/admin/shops`: the review list. */
+/** `/admin/shops`: the review queue (oldest change first), by status, searchable by name or city, paginated. */
 export function AdminShopList() {
   const locale = useLocale()
   const t = useAdminMessages()
   const { status, call } = useAdminApi()
-  const [filter, setFilter] = useState<Filter>("PENDING")
+  const [filter, setFilter] = useState<AdminShopFilter>("PENDING")
+  const [draft, setDraft] = useState("")
+  const [search, setSearch] = useState("")
+  const [page, setPage] = useState(1)
   const [outcome, setOutcome] = useState<AdminOutcome<AdminShopListResponse> | null>(null)
 
   useEffect(() => {
     if (status !== "signed-in") return
     let cancelled = false
-    void call<AdminShopListResponse>(`/admin/shops?${filterQuery(filter)}`).then((result) => {
-      if (!cancelled) setOutcome(result)
+    void call<AdminShopListResponse>(adminShopListPath(filter, search, page)).then((result) => {
+      if (!cancelled && result.state !== "stale") setOutcome(result)
     })
     return () => {
       cancelled = true
+      setOutcome(null)
     }
-  }, [status, filter, call])
+  }, [status, filter, search, page, call])
+
+  const choose = (next: AdminShopFilter) => {
+    setFilter(next)
+    setPage(1)
+  }
+  const onSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSearch(draft)
+    setPage(1)
+  }
 
   return (
     <Shell>
@@ -108,17 +60,23 @@ export function AdminShopList() {
           <CardDescription>{t.listSubtitle}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          <form role="search" className="flex flex-wrap gap-2" onSubmit={onSearch}>
+            <Input
+              type="search"
+              aria-label={t.searchShops}
+              placeholder={t.searchShops}
+              value={draft}
+              maxLength={100}
+              onChange={(event) => setDraft(event.target.value)}
+              className="min-w-0 flex-1 basis-48"
+            />
+            <Button type="submit" variant="outline">
+              {t.search}
+            </Button>
+          </form>
           <div className="flex flex-wrap gap-2" role="group" aria-label={t.listTitle}>
-            {FILTERS.map((candidate) => (
-              <Chip
-                key={candidate}
-                pressed={candidate === filter}
-                onPressedChange={() => {
-                  if (candidate === filter) return
-                  setOutcome(null)
-                  setFilter(candidate)
-                }}
-              >
+            {ADMIN_SHOP_FILTERS.map((candidate) => (
+              <Chip key={candidate} pressed={candidate === filter} onPressedChange={() => candidate !== filter && choose(candidate)}>
                 {t.filters[candidate]}
               </Chip>
             ))}
@@ -126,18 +84,26 @@ export function AdminShopList() {
           {outcome === null ? <FormMessage tone="info">{t.loading}</FormMessage> : null}
           {outcome !== null && outcome.state !== "ok" ? <FormMessage tone="error">{errorText(outcome.state, t)}</FormMessage> : null}
           {outcome?.state === "ok" && outcome.data.shops.length === 0 ? <FormMessage tone="info">{t.empty}</FormMessage> : null}
+          {outcome?.state === "ok" && outcome.data.total > 0 ? (
+            <p className="type-body-small text-muted-foreground">{t.resultCount.replace("{count}", String(outcome.data.total))}</p>
+          ) : null}
           {outcome?.state === "ok" ? (
             <ul className="flex flex-col divide-y divide-border">
               {outcome.data.shops.map((shop) => (
                 <li key={shop.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                  <div className="flex flex-col gap-1">
-                    <p className="type-title-small">{shop.shopName}</p>
-                    <p className="type-body-small text-muted-foreground">{`${shop.city} · ${formatDateTime(shop.updatedAt, locale)}`}</p>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <p dir="auto" className="type-title-small break-words">
+                      {shop.shopName}
+                    </p>
+                    <p className="type-body-small text-muted-foreground">
+                      <span dir="auto">{shop.city}</span>
+                      {` · ${formatDateTime(shop.updatedAt, locale)}`}
+                    </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline">{t.status[shop.status]}</Badge>
                     {shop.hasOpenChangeRequest ? <Badge variant="warning">{t.openChangeRequest}</Badge> : null}
-                    <Link className="type-label-large underline-offset-4 hover:underline" href={`/admin/shops/${shop.id}`}>
+                    <Link className="type-label-large underline-offset-4 hover:underline" href={adminShopHref(shop.id)}>
                       {t.open}
                     </Link>
                   </div>
@@ -145,102 +111,10 @@ export function AdminShopList() {
               ))}
             </ul>
           ) : null}
+          {outcome?.state === "ok" ? <Pagination page={page} pages={pageCount(outcome.data.total, outcome.data.pageSize)} onPage={setPage} t={t} /> : null}
         </CardContent>
       </Card>
     </Shell>
-  )
-}
-
-function TextArea({ label, hint, error, value, onChange }: { label: string; hint?: string; error?: string | undefined; value: string; onChange: (value: string) => void }) {
-  const id = useId()
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="type-label-large">
-        {label}
-      </label>
-      {hint ? <p className="type-body-small text-muted-foreground">{hint}</p> : null}
-      <textarea
-        id={id}
-        rows={3}
-        value={value}
-        aria-invalid={error ? true : undefined}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-2xl border border-input bg-surface px-4 py-3 type-body-medium outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 aria-invalid:border-destructive"
-      />
-      {error ? <p className="type-body-small text-error-text">{error}</p> : null}
-    </div>
-  )
-}
-
-/** One decision form: exactly one reason of the right kind, plus an optional internal note. */
-function DecisionForm({
-  t,
-  label,
-  reasonKind,
-  build,
-  submit,
-}: {
-  t: AdminMessages
-  label: string
-  reasonKind: "applicantReason" | "internalReason"
-  build: (reason: string, note: string) => DecisionFormResult
-  submit: (body: unknown) => Promise<AdminOutcome<unknown>>
-}) {
-  const [open, setOpen] = useState(false)
-  const [reason, setReason] = useState("")
-  const [note, setNote] = useState("")
-  const [errors, setErrors] = useState<Partial<Record<"reason" | "internalNote", string>>>({})
-  const [notice, setNotice] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
-
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (pending) return
-    const result = build(reason, note)
-    if (!result.ok) {
-      return setErrors({
-        reason: result.errors.reason && t.errors[result.errors.reason],
-        internalNote: result.errors.internalNote && t.errors[result.errors.internalNote],
-      })
-    }
-    setErrors({})
-    setPending(true)
-    try {
-      const outcome = await submit(result.body)
-      setNotice(outcome.state === "ok" ? null : errorText(outcome.state, t))
-    } finally {
-      setPending(false)
-    }
-  }
-
-  if (!open) {
-    return (
-      <Button variant={reasonKind === "applicantReason" ? "destructive" : "outline"} onClick={() => setOpen(true)}>
-        {label}
-      </Button>
-    )
-  }
-  return (
-    <form className="flex flex-col gap-3 rounded-2xl border border-border p-4" onSubmit={onSubmit} noValidate aria-label={label}>
-      <p className="type-title-small">{label}</p>
-      <TextArea
-        label={reasonKind === "applicantReason" ? t.applicantReason : t.internalReason}
-        hint={reasonKind === "applicantReason" ? t.applicantReasonHint : t.internalReasonHint}
-        value={reason}
-        onChange={setReason}
-        error={errors.reason}
-      />
-      <TextArea label={t.internalNote} hint={t.internalReasonHint} value={note} onChange={setNote} error={errors.internalNote} />
-      {notice ? <FormMessage tone="error">{notice}</FormMessage> : null}
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={pending}>
-          {pending ? t.sending : t.confirm}
-        </Button>
-        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-          {t.cancel}
-        </Button>
-      </div>
-    </form>
   )
 }
 
@@ -253,14 +127,15 @@ export function AdminShopDetail({ shopId }: { shopId: string }) {
   const [notice, setNotice] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    setOutcome(await call<AdminShopDetailResponse>(`/admin/shops/${encodeURIComponent(shopId)}`))
+    const result = await call<AdminShopDetailResponse>(`/admin/shops/${encodeURIComponent(shopId)}`)
+    if (result.state !== "stale") setOutcome(result)
   }, [call, shopId])
 
   useEffect(() => {
     if (status !== "signed-in") return
     let cancelled = false
     void call<AdminShopDetailResponse>(`/admin/shops/${encodeURIComponent(shopId)}`).then((result) => {
-      if (!cancelled) setOutcome(result)
+      if (!cancelled && result.state !== "stale") setOutcome(result)
     })
     return () => {
       cancelled = true
@@ -268,8 +143,8 @@ export function AdminShopDetail({ shopId }: { shopId: string }) {
   }, [status, call, shopId])
 
   const post = useCallback(
-    async (path: string, body: unknown): Promise<AdminOutcome<unknown>> => {
-      const result = await call<unknown>(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+    async (path: string, body: unknown) => {
+      const result = await call<unknown>(path, postJson(body))
       if (result.state === "ok") setNotice(t.decided)
       if (result.state === "ok" || result.state === "conflict") await load()
       return result
@@ -328,6 +203,7 @@ export function AdminShopDetail({ shopId }: { shopId: string }) {
               </div>
             ))}
           </dl>
+          <TextLink href={adminShopOrdersHref(shop.id)}>{t.shopOrdersLink}</TextLink>
         </CardContent>
       </Card>
 
@@ -339,11 +215,13 @@ export function AdminShopDetail({ shopId }: { shopId: string }) {
           {notice ? <FormMessage tone="info">{notice}</FormMessage> : null}
           {decisions.length === 0 ? <FormMessage tone="info">{t.noDecision}</FormMessage> : null}
           {decisions.map((action: ShopDecisionAction) => (
-            <DecisionForm
+            <ReasonForm
               key={`${action}-${shop.status}`}
               t={t}
               label={t.actions[action]}
-              reasonKind={reasonFieldFor(action)}
+              reasonLabel={reasonFieldFor(action) === "applicantReason" ? t.applicantReason : t.internalReason}
+              reasonHint={reasonFieldFor(action) === "applicantReason" ? t.applicantReasonHint : t.internalReasonHint}
+              destructive={action === "reject"}
               build={(reason, note) => buildDecision(action, reason, note)}
               submit={(body) => post(`/admin/shops/${shop.id}/${action}`, body)}
             />
@@ -365,11 +243,12 @@ export function AdminShopDetail({ shopId }: { shopId: string }) {
               <p className="type-body-medium">{`${t.fields.city} : ${shop.city} → ${openRequest.proposedCity}`}</p>
             ) : null}
             {(["approve", "reject"] as const).map((action) => (
-              <DecisionForm
+              <ReasonForm
                 key={`${openRequest.id}-${action}`}
                 t={t}
                 label={action === "approve" ? t.approveChange : t.rejectChange}
-                reasonKind="internalReason"
+                reasonLabel={t.internalReason}
+                reasonHint={t.internalReasonHint}
                 build={(reason, note) => buildDecision("change-request", reason, note)}
                 submit={(body) => post(`/admin/shops/${shop.id}/change-requests/${openRequest.id}/${action}`, body)}
               />
