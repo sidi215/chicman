@@ -13,7 +13,6 @@ import { MapPin } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState } from "react"
 
-import { BrandLogo } from "@/components/brand/brand-logo"
 import { Button } from "@/components/ui/button"
 import { Chip } from "@/components/ui/chip"
 import { FormMessage } from "@/features/auth/components/form-field"
@@ -73,8 +72,7 @@ export function SellerOrderList() {
   }
 
   return (
-    <main className="flex flex-1 flex-col items-center gap-6 bg-page px-4 py-10">
-      <BrandLogo label={t.brand} />
+    <main className="flex flex-1 flex-col items-center gap-6 bg-page py-6">
       <div className="flex w-full max-w-3xl flex-col gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="type-headline-small">{t.shopOrders}</h1>
@@ -293,8 +291,7 @@ export function SellerOrderDetail({ shopOrderId }: { shopOrderId: string }) {
   const order = view.state === "ready" ? view.order : null
 
   return (
-    <main className="flex flex-1 flex-col items-center gap-6 bg-page px-4 py-10">
-      <BrandLogo label={t.brand} />
+    <main className="flex flex-1 flex-col items-center gap-6 bg-page py-6">
       <div className="flex w-full max-w-3xl flex-col gap-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="flex flex-col gap-1">

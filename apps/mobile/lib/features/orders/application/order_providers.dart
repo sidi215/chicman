@@ -67,11 +67,8 @@ Future<OrderOutcome<T>> _send<T>(
 }
 
 /// The account, not the session object: a refreshed token changes nothing.
-(bool, String?) _watchAccount(Ref ref) => ref.watch(
-  authSessionProvider.select(
-    (session) => (session.isLoading, session.value?.userId),
-  ),
-);
+// Buyer accounts only (AT-1): waits for the type; others read as signed out.
+(bool, String?) _watchAccount(Ref ref) => ref.watch(buyerSessionProvider);
 
 /// The customer's orders, newest first (spec 11). Answers to requests made
 /// for a previous account are dropped, as in `CartController`.

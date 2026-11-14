@@ -22,7 +22,7 @@ class ProfileFormValues {
   factory ProfileFormValues.of(CustomerAccount account) => ProfileFormValues(
     fullName: account.fullName ?? '',
     preferredLocale: account.preferredLocale,
-    phone: account.phone,
+    phone: account.phone ?? '',
   );
 
   final String fullName;
@@ -41,7 +41,7 @@ enum ProfileFieldError {
 class ProfileFormResult {
   const ProfileFormResult._(this.changes, this.fullNameError, this.phoneError);
 
-  /// The `PATCH /customers/me` body: only `fullName`, `preferredLocale`,
+  /// The `PATCH /accounts/me` body: only `fullName`, `preferredLocale`,
   /// `phone`, and only those that differ from the stored profile.
   final Map<String, String> changes;
   final ProfileFieldError? fullNameError;

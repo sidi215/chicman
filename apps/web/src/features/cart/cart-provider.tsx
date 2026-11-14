@@ -3,6 +3,7 @@
 import type { Cart, CartItemAddInput } from "@chicman/shared"
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 
+import { useAccount } from "@/features/auth/account-provider"
 import { useAuth } from "@/features/auth/auth-provider"
 import { apiRequest } from "@/lib/api-client"
 
@@ -41,7 +42,12 @@ const CartContext = createContext<CartContextValue | null>(null)
  * since a refusal usually means the product changed since it was shown.
  */
 export function CartProvider({ children }: { children: ReactNode }) {
-  const { status, getAccessToken, signOut } = useAuth()
+  const { status: authStatus, getAccessToken, signOut } = useAuth()
+  const { account: signedIn } = useAccount()
+  // Buyer accounts only (AT-1): for a Seller or an Administrator the cart behaves as for a guest and is never read.
+  // Waits for the account type: nothing is read before it is known, so no other type ever calls these routes.
+  const status =
+    authStatus !== "signed-in" ? authStatus : signedIn.state === "loading" ? "loading" : signedIn.state === "active" && signedIn.accountType !== "BUYER" ? "signed-out" : authStatus
   const [loaded, setLoaded] = useState<CartState>({ kind: "loading" })
 
   const send = useCallback(

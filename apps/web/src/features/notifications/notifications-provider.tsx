@@ -1,8 +1,9 @@
 "use client"
 
 import { usePathname } from "next/navigation"
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { createContext, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 
+import { useAccount } from "@/features/auth/account-provider"
 import { useAuth } from "@/features/auth/auth-provider"
 import { apiRequest } from "@/lib/api-client"
 
@@ -32,8 +33,12 @@ const NotificationsContext = createContext<NotificationsContextValue | null>(nul
  * nothing is pushed to the browser.
  */
 export function NotificationsProvider({ children }: { children: ReactNode }) {
-  const { status, getAccessToken, signOut } = useAuth()
-  const pathname = usePathname()
+  const { status: authStatus, getAccessToken, signOut } = useAuth()
+  const { account: signedIn } = useAccount()
+  // Buyers and Sellers have an inbox; Administrators do not (AT-1, O6.1): for them nothing is read.
+  // Waits for the account type: nothing is read before it is known, so no other type ever calls these routes.
+  const status =
+    authStatus !== "signed-in" ? authStatus : signedIn.state === "loading" ? "loading" : signedIn.state === "active" && signedIn.accountType === "ADMIN" ? "signed-out" : authStatus
   const [unread, setUnreadState] = useState(0)
   // Moves on when the session ends.
   const account = useRef(0)
@@ -71,7 +76,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     }
   }, [status, refresh])
 
-  // On sign-in and on each page change.
+  // On sign-in; page changes are read by `PageChangeRefresh`.
   useEffect(() => {
     if (status !== "signed-in") return
     let cancelled = false
@@ -81,13 +86,33 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [status, call, pathname])
+  }, [status, call])
 
   const value = useMemo<NotificationsContextValue>(
     () => ({ unread: status === "signed-in" ? unread : 0, refresh, setUnread: setUnreadState, call }),
     [status, unread, refresh, call]
   )
-  return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>
+  return (
+    <NotificationsContext.Provider value={value}>
+      {/* Reads the URL, so it sits in its own Suspense boundary and pages stay prerenderable. */}
+      <Suspense fallback={null}>
+        <PageChangeRefresh active={status === "signed-in"} refresh={refresh} />
+      </Suspense>
+      {children}
+    </NotificationsContext.Provider>
+  )
+}
+
+/** Reads the count again on each page change after the first. */
+function PageChangeRefresh({ active, refresh }: { active: boolean; refresh: () => Promise<void> }) {
+  const pathname = usePathname()
+  const shown = useRef(pathname)
+  useEffect(() => {
+    if (pathname === shown.current) return
+    shown.current = pathname
+    if (active) void refresh()
+  }, [pathname, active, refresh])
+  return null
 }
 
 export function useNotifications(): NotificationsContextValue {

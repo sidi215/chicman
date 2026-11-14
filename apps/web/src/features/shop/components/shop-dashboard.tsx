@@ -4,7 +4,6 @@ import type { OwnerShopResponse, ShopStatus } from "@chicman/shared"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useId, useState, type ComponentProps, type FormEvent } from "react"
 
-import { BrandLogo } from "@/components/brand/brand-logo"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -152,8 +151,7 @@ export function ShopDashboard() {
   )
 
   return (
-    <main className="flex flex-1 flex-col items-center gap-6 bg-page px-4 py-10">
-      <BrandLogo label={t.brand} />
+    <main className="flex flex-1 flex-col items-center gap-6 bg-page py-6">
       {view.state === "loading" || status !== "signed-in" ? <FormMessage tone="info">{t.loading}</FormMessage> : null}
       {view.state === "unavailable" || view.state === "error" ? (
         <Card className="w-full max-w-xl rounded-3xl p-6">
@@ -263,7 +261,7 @@ export function TextAreaField({
 }
 
 /** The text fields of the shop, limited to `fields`. */
-function ShopFields({
+export function ShopFields({
   t,
   fields,
   values,

@@ -2,15 +2,21 @@ import {
   API_ERROR_CODES,
   FULL_NAME_MAX_LENGTH,
   normalizePhoneNumber,
-  type CustomerProfile,
-  type CustomerProfileResponse,
-  type CustomerProfileUpdateRequest,
+  type AccountProfile,
+  type AccountProfileResponse,
   type Locale,
 } from "@chicman/shared"
 
 import type { ApiResult } from "@/lib/api-client"
 
 /** What the profile settings form edits (the spec 04 allowlist, nothing else). */
+/** `PATCH /accounts/me` body: at least one field (spec 04). */
+export interface ProfileChanges {
+  fullName?: string
+  preferredLocale?: Locale
+  phone?: string
+}
+
 export interface ProfileFormValues {
   fullName: string
   preferredLocale: Locale
@@ -27,14 +33,14 @@ export type ProfileFieldErrors = Partial<Record<ProfileField, ProfileErrorKey>>
  * carry anything else.
  */
 export type ProfileFormResult =
-  | { ok: true; changes: CustomerProfileUpdateRequest }
+  | { ok: true; changes: ProfileChanges }
   | { ok: false; errors: ProfileFieldErrors }
 
 // Same rule as the API (`customer.schemas.ts`).
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/
 
-export function profileFormValues(profile: CustomerProfile): ProfileFormValues {
-  return { fullName: profile.fullName ?? "", preferredLocale: profile.preferredLocale, phone: profile.phone }
+export function profileFormValues(profile: AccountProfile): ProfileFormValues {
+  return { fullName: profile.fullName ?? "", preferredLocale: profile.preferredLocale, phone: profile.phone ?? "" }
 }
 
 /**
@@ -42,9 +48,9 @@ export function profileFormValues(profile: CustomerProfile): ProfileFormValues {
  * from the stored profile. The phone is compared after E.164 normalization,
  * so re-entering the same number in another format is not a change.
  */
-export function buildProfileUpdate(values: ProfileFormValues, current: CustomerProfile): ProfileFormResult {
+export function buildProfileUpdate(values: ProfileFormValues, current: AccountProfile): ProfileFormResult {
   const errors: ProfileFieldErrors = {}
-  const changes: CustomerProfileUpdateRequest = {}
+  const changes: ProfileChanges = {}
 
   const fullName = values.fullName.normalize("NFC").trim()
   if (fullName === "") {
@@ -60,20 +66,23 @@ export function buildProfileUpdate(values: ProfileFormValues, current: CustomerP
 
   if (values.preferredLocale !== current.preferredLocale) changes.preferredLocale = values.preferredLocale
 
-  const phone = normalizePhoneNumber(values.phone)
-  if (phone === null) errors.phone = "invalidPhone"
-  else if (phone !== current.phone) changes.phone = phone
+  // An administrator may have no phone (AT-1, Q3): leaving it empty is then no change. Once set, it cannot be cleared.
+  if (!(current.phone === null && values.phone.trim() === "")) {
+    const phone = normalizePhoneNumber(values.phone)
+    if (phone === null) errors.phone = "invalidPhone"
+    else if (phone !== current.phone) changes.phone = phone
+  }
 
   return Object.keys(errors).length > 0 ? { ok: false, errors } : { ok: true, changes }
 }
 
-export function hasChanges(changes: CustomerProfileUpdateRequest): boolean {
+export function hasChanges(changes: ProfileChanges): boolean {
   return Object.keys(changes).length > 0
 }
 
 /** What the settings screen does with a `GET` or `PATCH /customers/me` response. */
 export type ProfileOutcome =
-  | { state: "ok"; account: CustomerProfileResponse }
+  | { state: "ok"; account: AccountProfileResponse }
   | { state: "invalid-phone" }
   | { state: "invalid" }
   | { state: "not-bootstrapped" }
@@ -82,7 +91,7 @@ export type ProfileOutcome =
   | { state: "rate-limited" }
   | { state: "error" }
 
-export function interpretProfileResult(result: ApiResult<CustomerProfileResponse>): ProfileOutcome {
+export function interpretProfileResult(result: ApiResult<AccountProfileResponse>): ProfileOutcome {
   switch (result.kind) {
     case "ok":
       return { state: "ok", account: result.data }

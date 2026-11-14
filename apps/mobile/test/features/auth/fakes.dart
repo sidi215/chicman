@@ -19,6 +19,9 @@ class FakeAuthRepository implements AuthRepository {
   final captchaTokens = <String?>[];
   AuthFailure? signInFailure;
   AuthFailure? registerFailure;
+
+  /// The identity ID a successful sign-up returns (AT-1 registration intent).
+  String? registeredUserId = 'new-identity';
   AuthFailure? verifyFailure;
   String token = 'access-token';
 
@@ -37,14 +40,17 @@ class FakeAuthRepository implements AuthRepository {
   Future<String?> accessToken() async => _session == null ? null : token;
 
   @override
-  Future<AuthResult> register(
+  Future<RegisterResult> register(
     String email,
     String password, {
     String? captchaToken,
   }) async {
     calls.add('register $email');
     captchaTokens.add(captchaToken);
-    return registerFailure;
+    return (
+      failure: registerFailure,
+      userId: registerFailure == null ? registeredUserId : null,
+    );
   }
 
   @override

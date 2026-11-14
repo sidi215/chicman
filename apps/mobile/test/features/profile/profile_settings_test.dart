@@ -30,7 +30,7 @@ Map<String, Object?> _account({
   String phone = '+22222123456',
 }) => {
   'userId': 'u1',
-  'roles': ['CUSTOMER'],
+  'accountType': 'BUYER',
   'profile': {
     'id': 'p1',
     'fullName': fullName,
@@ -47,11 +47,11 @@ ApiClient _api(List<http.Request> requests, {(int, Object?)? patch}) {
       200,
       {
         'userId': 'u1',
-        'roles': ['CUSTOMER'],
+        'accountType': 'BUYER',
       },
     ),
-    'GET /customers/me': (_) => (200, stored),
-    'PATCH /customers/me': (request) {
+    'GET /accounts/me': (_) => (200, stored),
+    'PATCH /accounts/me': (request) {
       if (patch != null) return patch;
       final body = jsonDecode(request.body) as Map<String, Object?>;
       final profile = {...stored['profile']! as Map<String, Object?>, ...body};

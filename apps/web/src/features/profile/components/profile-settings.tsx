@@ -2,10 +2,12 @@
 
 import { Toggle } from "@base-ui/react/toggle"
 import { ToggleGroup } from "@base-ui/react/toggle-group"
-import { LOCALES, type CustomerProfile, type CustomerProfileResponse, type Locale } from "@chicman/shared"
+import { LOCALES, type AccountProfile, type AccountProfileResponse, type Locale } from "@chicman/shared"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 
+import { ACCOUNT_HOME, ACCOUNT_PATH, ACCOUNT_SETUP_HREF } from "@/features/auth/account"
+import { useAccount } from "@/features/auth/account-provider"
 import { BrandLogo } from "@/components/brand/brand-logo"
 import { ThemeSelector } from "@/components/theme/theme-selector"
 import { Button } from "@/components/ui/button"
@@ -33,7 +35,7 @@ type LoadState = "loading" | "ready" | "unavailable" | "error"
 
 /**
  * Customer profile settings (spec 04): `fullName`, `preferredLocale`, and the
- * unverified contact `phone` through `PATCH /customers/me`, plus the
+ * unverified contact `phone` through `PATCH /accounts/me` (every account type, AT-1), plus the
  * device-local theme selector (never sent to the API).
  */
 export function ProfileSettings() {
@@ -42,11 +44,14 @@ export function ProfileSettings() {
   const { status, session, getAccessToken, signOut } = useAuth()
   const pageLocale = useLocale()
   const [loadState, setLoadState] = useState<LoadState>("loading")
-  const [profile, setProfile] = useState<CustomerProfile | null>(null)
+  const [profile, setProfile] = useState<AccountProfile | null>(null)
   const [values, setValues] = useState<ProfileFormValues | null>(null)
   const [fieldErrors, setFieldErrors] = useState<ProfileFieldErrors>({})
   const [notice, setNotice] = useState<Notice>(null)
   const [pending, setPending] = useState(false)
+  // Every account type has this page (AT-1, Q2): "back" leads to the account's own area.
+  const { account } = useAccount()
+  const home = account.state === "active" ? ACCOUNT_HOME[account.accountType] : "/account"
 
   useEffect(() => {
     if (status === "signed-out" || status === "not-configured") router.replace("/login")
@@ -55,7 +60,7 @@ export function ProfileSettings() {
   const fetchProfile = useCallback(async (): Promise<ProfileOutcome> => {
     const token = await getAccessToken()
     if (!token) return { state: "signed-out" }
-    return interpretProfileResult(await apiRequest<CustomerProfileResponse>("/customers/me", token))
+    return interpretProfileResult(await apiRequest<AccountProfileResponse>(ACCOUNT_PATH, token))
   }, [getAccessToken])
 
   const applyLoad = useCallback(
@@ -66,8 +71,8 @@ export function ProfileSettings() {
           setValues(profileFormValues(outcome.account.profile))
           return setLoadState("ready")
         case "not-bootstrapped":
-          // Account setup (phone) happens on the account screen first.
-          return router.replace("/account")
+          // Account setup happens first (AT-1).
+          return router.replace(ACCOUNT_SETUP_HREF)
         case "signed-out":
           return void signOut()
         case "unavailable":
@@ -105,7 +110,7 @@ export function ProfileSettings() {
       const token = await getAccessToken()
       if (!token) return void (await signOut())
       const outcome = interpretProfileResult(
-        await apiRequest<CustomerProfileResponse>("/customers/me", token, {
+        await apiRequest<AccountProfileResponse>(ACCOUNT_PATH, token, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(result.changes),
@@ -124,7 +129,7 @@ export function ProfileSettings() {
         case "invalid":
           return setNotice({ tone: "error", text: t.invalid })
         case "not-bootstrapped":
-          return router.replace("/account")
+          return router.replace(ACCOUNT_SETUP_HREF)
         case "signed-out":
           return void (await signOut())
         case "unavailable":
@@ -203,7 +208,7 @@ export function ProfileSettings() {
             <ThemeSelector className="self-start" />
             <p className="type-body-small text-muted-foreground">{t.appearanceHint}</p>
           </section>
-          <TextLink href="/account">{t.backToAccount}</TextLink>
+          <TextLink href={home}>{t.backToAccount}</TextLink>
         </CardContent>
       </Card>
     </main>

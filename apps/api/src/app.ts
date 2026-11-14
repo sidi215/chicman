@@ -9,7 +9,7 @@ import { createAddressRouter, type AddressDependencies } from "./modules/address
 import { createAdminRouter, type AdminDependencies } from "./modules/admin/index.js";
 import { createCartRouter, type CartDependencies } from "./modules/cart/index.js";
 import { createCheckoutRouter, type CheckoutDependencies } from "./modules/checkout/index.js";
-import { createCustomerRouter, type CustomerDependencies } from "./modules/customers/index.js";
+import { createAccountRouter, type AccountDependencies } from "./modules/accounts/index.js";
 import { createDeliveryRouter, type DeliveryDependencies } from "./modules/delivery/index.js";
 import { createFavoriteRouter, type FavoriteDependencies } from "./modules/favorites/index.js";
 import { createNotificationRouter, type NotificationDependencies } from "./modules/notifications/index.js";
@@ -22,7 +22,7 @@ export interface AppOptions {
   corsOrigins: string[];
   auth: AuthDependencies;
   /** Customer account bootstrap and profile (spec 04). */
-  customers?: CustomerDependencies;
+  accounts?: AccountDependencies;
   /** Customer delivery addresses (spec 05). */
   addresses?: AddressDependencies;
   /** Owner shop routes (spec 06). */
@@ -53,7 +53,7 @@ export interface AppOptions {
   routers?: (guards: AuthGuards) => Router[];
 }
 
-export function createApp({ corsOrigins, auth, customers, addresses, shops, admin, products, catalog, cart, checkout, orders, delivery, payments, favorites, notifications, trustProxyHops, routers }: AppOptions): Express {
+export function createApp({ corsOrigins, auth, accounts, addresses, shops, admin, products, catalog, cart, checkout, orders, delivery, payments, favorites, notifications, trustProxyHops, routers }: AppOptions): Express {
   const app = express();
   const guards = createAuthGuards(auth);
 
@@ -68,7 +68,7 @@ export function createApp({ corsOrigins, auth, customers, addresses, shops, admi
   });
 
   app.use("/api/v1/auth", createAuthRouter(guards));
-  if (customers !== undefined) app.use("/api/v1", createCustomerRouter(guards, customers));
+  if (accounts !== undefined) app.use("/api/v1", createAccountRouter(guards, accounts));
   if (addresses !== undefined) app.use("/api/v1", createAddressRouter(guards, addresses));
   if (shops !== undefined) app.use("/api/v1", createShopRouter(guards, shops));
   if (admin !== undefined) app.use("/api/v1", createAdminRouter(guards, admin));

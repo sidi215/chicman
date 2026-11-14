@@ -3,14 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_theme.dart';
 import 'features/auth/application/auth_providers.dart';
+import 'features/auth/domain/session_check.dart';
 import 'features/auth/presentation/auth_gate.dart';
+import 'features/auth/presentation/managed_on_web_screen.dart';
 import 'features/catalog/presentation/catalog_messages.dart';
 import 'features/catalog/presentation/storefront_home_screen.dart';
 import 'features/favorites/presentation/favorites_messages.dart';
 import 'features/favorites/presentation/favorites_screen.dart';
 
 /// The app's root: the public storefront, with the account one tap away.
-/// Customers browse without an account (spec 08).
+/// Customers browse without an account (spec 08). Buyers only (AT-1, Q5):
+/// a Seller or Administrator account gets [ManagedOnWebScreen].
 ///
 /// [AuthGate] stays mounted, because it receives confirmation and recovery
 /// links, including the one that launched the app. An incoming link opens the
@@ -42,6 +45,24 @@ class _AppShellState extends ConsumerState<AppShell> {
     });
     final t = CatalogMessages.of(context);
     final favorites = FavoritesMessages.of(context);
+    // AT-1, Q5: the app is for buyers. A Seller or Administrator account sees
+    // only that it is managed on the web; [AuthGate] stays mounted off-screen
+    // so incoming email links are still handled.
+    final nonBuyerType = switch (ref.watch(sessionCheckProvider)) {
+      AsyncData(value: SessionActive(:final session)) when !session.isBuyer =>
+        session.accountType,
+      _ => null,
+    };
+    if (nonBuyerType != null) {
+      return Scaffold(
+        body: Stack(
+          children: [
+            const Offstage(child: AuthGate(visible: false)),
+            ManagedOnWebScreen(accountType: nonBuyerType),
+          ],
+        ),
+      );
+    }
     return Scaffold(
       extendBody: true,
       body: IndexedStack(

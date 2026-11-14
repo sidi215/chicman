@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, beforeEach, describe, it } from "node:test";
 
-import type { Role, ShopStatus } from "@chicman/shared";
+import type { AccountType, ShopStatus } from "@chicman/shared";
 import dotenv from "dotenv";
 import { Router } from "express";
 
@@ -25,12 +25,12 @@ const databaseUrl = process.env["TEST_DATABASE_URL"];
  */
 function fixtureRouter(guards: AuthGuards): Router {
   const router = Router();
-  // Stand-in for the account bootstrap endpoint (spec 04): token only.
+  // Stand-in for account setup (AT-1): token only.
   router.post("/fixtures/bootstrap", ...guards.tokenOnly, (req, res) => {
     res.status(200).json({ hasUser: req.appUser !== null });
   });
-  // A customer-private route.
-  router.get("/fixtures/customer/private", ...guards.user, (_req, res) => {
+  // A buyer-only route (cart, checkout, favorites, addresses, own orders).
+  router.get("/fixtures/customer/private", ...guards.buyer, (_req, res) => {
     res.status(200).json({ ok: true });
   });
   // A normal seller operation (for example product management).
@@ -45,14 +45,14 @@ function fixtureRouter(guards: AuthGuards): Router {
   });
   // Administrator shop decisions (spec 06).
   for (const action of ["approve", "reject", "suspend", "reinstate"]) {
-    router.post(`/fixtures/admin/shops/:shopId/${action}`, ...guards.role("ADMIN"), (_req, res) => {
+    router.post(`/fixtures/admin/shops/:shopId/${action}`, ...guards.admin, (_req, res) => {
       res.status(204).end();
     });
   }
   return router;
 }
 
-describe("role and seller authorization (spec 03, PostgreSQL)", { skip: databaseUrl === undefined ? "TEST_DATABASE_URL is not set" : false }, () => {
+describe("account type and seller authorization (spec 03, AT-1, PostgreSQL)", { skip: databaseUrl === undefined ? "TEST_DATABASE_URL is not set" : false }, () => {
   const jwks = new TestJwksServer();
   let prisma: PrismaClient;
   let app: RunningApp;
@@ -90,11 +90,9 @@ describe("role and seller authorization (spec 03, PostgreSQL)", { skip: database
     token: string;
   }
 
-  async function createActor(roles: Role[], shopStatus?: ShopStatus, extraClaims = {}): Promise<Actor & { shopId?: string }> {
+  async function createActor(accountType: AccountType, shopStatus?: ShopStatus, extraClaims = {}): Promise<Actor & { shopId?: string }> {
     const sub = randomUUID();
-    const user = await prisma.user.create({
-      data: { supabaseUserId: sub, roles: { create: roles.map((role) => ({ role })) } },
-    });
+    const user = await prisma.user.create({ data: { supabaseUserId: sub, accountType } });
     const shop =
       shopStatus === undefined
         ? undefined
@@ -126,30 +124,31 @@ describe("role and seller authorization (spec 03, PostgreSQL)", { skip: database
     });
   });
 
-  describe("roles come from PostgreSQL", () => {
-    it("returns the database roles for the verified sub", async () => {
-      const actor = await createActor(["CUSTOMER", "SELLER"], "APPROVED");
+  describe("account types come from PostgreSQL", () => {
+    it("returns the account type for the verified sub", async () => {
+      const actor = await createActor("SELLER", "APPROVED");
       const response = await call("/auth/session", actor.token);
       assert.equal(response.status, 200);
-      assert.deepEqual(await response.json(), { userId: actor.userId, roles: ["CUSTOMER", "SELLER"] });
+      assert.deepEqual(await response.json(), { userId: actor.userId, accountType: "SELLER" });
     });
 
-    it("a CUSTOMER claiming ADMIN/SELLER in token claims, headers, query, or body is still a CUSTOMER", async () => {
-      const actor = await createActor(["CUSTOMER"], undefined, {
+    it("a Buyer claiming ADMIN or SELLER in token claims, headers, query, or body is still a Buyer", async () => {
+      const actor = await createActor("BUYER", undefined, {
         role: "ADMIN",
         roles: ["ADMIN", "SELLER"],
-        app_metadata: { role: "ADMIN", roles: ["ADMIN"] },
-        user_metadata: { role: "SELLER" },
+        accountType: "ADMIN",
+        app_metadata: { role: "ADMIN", roles: ["ADMIN"], accountType: "ADMIN" },
+        user_metadata: { role: "SELLER", accountType: "SELLER" },
         user_role: "ADMIN",
       });
       const spoof = {
-        headers: { "x-role": "ADMIN", "x-user-role": "SELLER", "x-user-id": randomUUID(), "x-shop-id": randomUUID() },
-        body: JSON.stringify({ role: "ADMIN", roles: ["ADMIN", "SELLER"], userId: randomUUID(), status: "APPROVED" }),
+        headers: { "x-role": "ADMIN", "x-account-type": "ADMIN", "x-user-id": randomUUID(), "x-shop-id": randomUUID() },
+        body: JSON.stringify({ role: "ADMIN", accountType: "ADMIN", roles: ["ADMIN", "SELLER"], userId: randomUUID(), status: "APPROVED" }),
       };
-      const query = "?role=ADMIN&roles=SELLER&userId=x";
+      const query = "?role=ADMIN&accountType=ADMIN&userId=x";
 
       const session = await call(`/auth/session${query}`, actor.token, { headers: spoof.headers });
-      assert.deepEqual(await session.json(), { userId: actor.userId, roles: ["CUSTOMER"] });
+      assert.deepEqual(await session.json(), { userId: actor.userId, accountType: "BUYER" });
 
       for (const action of ["approve", "reject", "suspend", "reinstate"]) {
         const response = await call(`/fixtures/admin/shops/${randomUUID()}/${action}${query}`, actor.token, {
@@ -162,63 +161,87 @@ describe("role and seller authorization (spec 03, PostgreSQL)", { skip: database
       assert.equal(seller.status, 403);
     });
 
-    it("an ADMIN can call administrator routes", async () => {
-      const admin = await createActor(["CUSTOMER", "ADMIN"]);
-      const response = await call(`/fixtures/admin/shops/${randomUUID()}/approve`, admin.token, { method: "POST" });
-      assert.equal(response.status, 204);
+    it("each type reaches only its own routes", async () => {
+      const buyer = await createActor("BUYER");
+      const seller = await createActor("SELLER", "APPROVED");
+      const admin = await createActor("ADMIN");
+      const routes = {
+        buyer: () => "/fixtures/customer/private",
+        seller: () => "/fixtures/seller/products",
+        admin: () => `/fixtures/admin/shops/${randomUUID()}/approve`,
+      };
+      const expected: Record<string, Record<keyof typeof routes, number>> = {
+        BUYER: { buyer: 200, seller: 403, admin: 403 },
+        SELLER: { buyer: 403, seller: 200, admin: 403 },
+        ADMIN: { buyer: 403, seller: 403, admin: 204 },
+      };
+      for (const [type, actor] of [["BUYER", buyer], ["SELLER", seller], ["ADMIN", admin]] as const) {
+        for (const area of ["buyer", "seller", "admin"] as const) {
+          const response = await call(routes[area](), actor.token, area === "admin" ? { method: "POST" } : {});
+          assert.equal(response.status, expected[type]?.[area], `${type} on ${area}`);
+        }
+      }
     });
 
-    it("a role change in PostgreSQL takes effect on the next request with the same token", async () => {
-      const actor = await createActor(["CUSTOMER"]);
-      assert.equal((await call(`/fixtures/admin/shops/x/approve`, actor.token, { method: "POST" })).status, 403);
-      await prisma.userRole.create({ data: { userId: actor.userId, role: "ADMIN" } });
-      assert.equal((await call(`/fixtures/admin/shops/x/approve`, actor.token, { method: "POST" })).status, 204);
+    it("a deactivated administrator is refused on the next request with the same token, and stays ADMIN (Q7)", async () => {
+      const admin = await createActor("ADMIN");
+      assert.equal((await call(`/fixtures/admin/shops/x/approve`, admin.token, { method: "POST" })).status, 204);
+      await prisma.user.update({ where: { id: admin.userId }, data: { adminAccessDeactivatedAt: new Date() } });
+      assert.equal((await call(`/fixtures/admin/shops/x/approve`, admin.token, { method: "POST" })).status, 403);
+      assert.deepEqual(await (await call("/auth/session", admin.token)).json(), { userId: admin.userId, accountType: "ADMIN" });
     });
   });
 
   describe("normal seller operations (requireApprovedSeller)", () => {
-    it("SELLER with an APPROVED shop they own → allowed", async () => {
-      const seller = await createActor(["CUSTOMER", "SELLER"], "APPROVED");
+    it("a Seller with an APPROVED shop they own → allowed", async () => {
+      const seller = await createActor("SELLER", "APPROVED");
       const response = await call("/fixtures/seller/products", seller.token);
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), { shopId: seller.shopId });
     });
 
     for (const status of ["PENDING", "REJECTED", "SUSPENDED"] as const) {
-      it(`SELLER with a ${status} shop → 403`, async () => {
-        const seller = await createActor(["CUSTOMER", "SELLER"], status);
+      it(`a Seller with a ${status} shop → 403`, async () => {
+        const seller = await createActor("SELLER", status);
         assert.equal((await call("/fixtures/seller/products", seller.token)).status, 403);
         assert.equal((await call(`/fixtures/seller/shops/${seller.shopId}/products`, seller.token)).status, 403);
       });
     }
 
-    it("SELLER without a shop → 403", async () => {
-      const seller = await createActor(["CUSTOMER", "SELLER"]);
+    it("a Seller without a shop → 403", async () => {
+      const seller = await createActor("SELLER");
       assert.equal((await call("/fixtures/seller/products", seller.token)).status, 403);
     });
 
-    it("an APPROVED shop owner without the SELLER role → 403", async () => {
-      const owner = await createActor(["CUSTOMER"], "APPROVED");
-      assert.equal((await call("/fixtures/seller/products", owner.token)).status, 403);
+    it("a Buyer or Administrator owning an APPROVED shop (pre-AT-1 data) → 403", async () => {
+      for (const type of ["BUYER", "ADMIN"] as const) {
+        const owner = await createActor(type);
+        await prisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(`ALTER TABLE "Shop" DISABLE TRIGGER "Shop_owner_is_seller"`);
+          await tx.shop.create({ data: { ownerUserId: owner.userId, status: "APPROVED", ...TEST_SHOP_FIELDS } });
+          await tx.$executeRawUnsafe(`ALTER TABLE "Shop" ENABLE TRIGGER "Shop_owner_is_seller"`);
+        });
+        assert.equal((await call("/fixtures/seller/products", owner.token)).status, 403, type);
+      }
     });
 
     it("a shop suspended in PostgreSQL is blocked on the next request", async () => {
-      const seller = await createActor(["CUSTOMER", "SELLER"], "APPROVED");
+      const seller = await createActor("SELLER", "APPROVED");
       assert.equal((await call("/fixtures/seller/products", seller.token)).status, 200);
       await prisma.shop.update({ where: { ownerUserId: seller.userId }, data: { status: "SUSPENDED" } });
       assert.equal((await call("/fixtures/seller/products", seller.token)).status, 403);
     });
 
-    it("SELLER targeting another seller's shop or its resources → 404", async () => {
-      const seller = await createActor(["CUSTOMER", "SELLER"], "APPROVED");
-      const other = await createActor(["CUSTOMER", "SELLER"], "APPROVED");
+    it("a Seller targeting another seller's shop or its resources → 404", async () => {
+      const seller = await createActor("SELLER", "APPROVED");
+      const other = await createActor("SELLER", "APPROVED");
       assert.equal((await call(`/fixtures/seller/shops/${other.shopId}/products`, seller.token)).status, 404);
       assert.equal((await call(`/fixtures/seller/shops/${seller.shopId}/products`, seller.token)).status, 200);
     });
 
-    it("a body, header, or query claiming status APPROVED, another shop ID, or SELLER does not change the outcome", async () => {
-      const pending = await createActor(["CUSTOMER", "SELLER"], "PENDING");
-      const approved = await createActor(["CUSTOMER", "SELLER"], "APPROVED");
+    it("a body, header, or query claiming status APPROVED or another shop ID does not change the outcome", async () => {
+      const pending = await createActor("SELLER", "PENDING");
+      const approved = await createActor("SELLER", "APPROVED");
       const response = await call(`/fixtures/seller/products?status=APPROVED&shopId=${approved.shopId}`, pending.token, {
         method: "POST",
         headers: { "x-shop-id": approved.shopId ?? "", "x-shop-status": "APPROVED" },
@@ -235,7 +258,7 @@ describe("role and seller authorization (spec 03, PostgreSQL)", { skip: database
 
     it("a shop owner cannot approve, reject, suspend, or reinstate their own shop → 403", async () => {
       for (const status of ["PENDING", "APPROVED", "REJECTED", "SUSPENDED"] as const) {
-        const owner = await createActor(["CUSTOMER", "SELLER"], status);
+        const owner = await createActor("SELLER", status);
         for (const action of ["approve", "reject", "suspend", "reinstate"]) {
           const response = await call(`/fixtures/admin/shops/${owner.shopId}/${action}`, owner.token, {
             method: "POST",
@@ -248,8 +271,8 @@ describe("role and seller authorization (spec 03, PostgreSQL)", { skip: database
       }
     });
 
-    it("CUSTOMER → 403; unauthenticated → 401", async () => {
-      const customer = await createActor(["CUSTOMER"]);
+    it("a Buyer → 403; unauthenticated → 401", async () => {
+      const customer = await createActor("BUYER");
       assert.equal((await call("/fixtures/seller/products", customer.token)).status, 403);
       assert.equal((await call("/fixtures/seller/products", null)).status, 401);
       assert.equal((await call("/fixtures/customer/private", null)).status, 401);
@@ -259,10 +282,9 @@ describe("role and seller authorization (spec 03, PostgreSQL)", { skip: database
 
   describe("database constraints", () => {
     it("rejects a duplicate supabaseUserId and a second shop for the same user", async () => {
-      const actor = await createActor(["CUSTOMER"], "PENDING");
-      await assert.rejects(prisma.user.create({ data: { supabaseUserId: actor.sub } }), { code: "P2002" });
+      const actor = await createActor("SELLER", "PENDING");
+      await assert.rejects(prisma.user.create({ data: { supabaseUserId: actor.sub, accountType: "SELLER" } }), { code: "P2002" });
       await assert.rejects(prisma.shop.create({ data: { ownerUserId: actor.userId, ...TEST_SHOP_FIELDS } }), { code: "P2002" });
-      await assert.rejects(prisma.userRole.create({ data: { userId: actor.userId, role: "CUSTOMER" } }), { code: "P2002" });
     });
   });
 });

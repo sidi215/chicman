@@ -47,11 +47,8 @@ class FavoritesController extends Notifier<FavoritesView> {
   @override
   FavoritesView build() {
     // The account, not the session object: a refreshed token changes nothing.
-    final session = ref.watch(
-      authSessionProvider.select(
-        (session) => (session.isLoading, session.value?.userId),
-      ),
-    );
+    // Buyer accounts only (AT-1): waits for the type; others read as signed out.
+    final session = ref.watch(buyerSessionProvider);
     _generation += 1;
     // A new account never waits behind the previous one's requests.
     _queue = Future<void>.value();

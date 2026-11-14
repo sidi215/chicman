@@ -335,8 +335,10 @@ export class CheckoutService {
   }
 
   private async profile(db: Db, userId: string): Promise<{ fullName: string | null; phone: string }> {
-    // Every bootstrapped user has one (spec 04).
-    return db.customerProfile.findUniqueOrThrow({ where: { userId }, select: { fullName: true, phone: true } });
+    // Checkout is Buyer only, and a Buyer's profile always has a phone (AT-1, Q3; database trigger).
+    const profile = await db.customerProfile.findUniqueOrThrow({ where: { userId }, select: { fullName: true, phone: true } });
+    if (profile.phone === null) throw new Error("a Buyer profile without a phone");
+    return { fullName: profile.fullName, phone: profile.phone };
   }
 
   private addressView(address: AddressRow, profilePhone: string): CheckoutAddress {

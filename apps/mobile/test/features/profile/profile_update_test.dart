@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 const _stored = CustomerAccount(
   userId: 'u1',
-  roles: ['CUSTOMER'],
+  accountType: 'BUYER',
   phone: '+22222123456',
   fullName: 'Aminetou',
 );
@@ -61,7 +61,7 @@ void main() {
       );
       const unnamed = CustomerAccount(
         userId: 'u1',
-        roles: ['CUSTOMER'],
+        accountType: 'BUYER',
         phone: '+22222123456',
       );
       final result = buildProfileUpdate(ProfileFormValues.of(unnamed), unnamed);

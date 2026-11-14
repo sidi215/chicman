@@ -5,6 +5,7 @@ import type { EmailLink } from "./callback"
 import type { AuthErrorKey } from "./messages"
 
 export type AuthActionResult = { ok: true } | { ok: false; error: AuthErrorKey }
+export type RegisterResult = { ok: true; userId: string | null } | { ok: false; error: AuthErrorKey }
 
 const fail = (error: unknown): AuthActionResult => ({ ok: false, error: authErrorKey(error) })
 
@@ -17,15 +18,21 @@ const captcha = (captchaToken: string | undefined) => (captchaToken ? { captchaT
  */
 export function createAuthService(supabase: SupabaseClient, callbackUrl: () => string) {
   return {
-    /** Sends the confirmation email. Never reveals whether the email is registered. */
-    async register(email: string, password: string, captchaToken?: string): Promise<AuthActionResult> {
-      const { error } = await supabase.auth.signUp({
+    /**
+     * Sends the confirmation email. Never reveals whether the email is
+     * registered. `userId` is the new identity's ID, for the registration
+     * intent (AT-1); for an existing address Supabase answers an obfuscated
+     * user or an error, so it may be another ID or `null`, and the intent is
+     * then simply never used.
+     */
+    async register(email: string, password: string, captchaToken?: string): Promise<RegisterResult> {
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: { emailRedirectTo: callbackUrl(), ...captcha(captchaToken) },
       })
-      if (error && !isEnumerationSensitive(error)) return fail(error)
-      return { ok: true }
+      if (error && !isEnumerationSensitive(error)) return { ok: false, error: authErrorKey(error) }
+      return { ok: true, userId: data?.user?.id ?? null }
     },
 
     async resendConfirmation(email: string, captchaToken?: string): Promise<AuthActionResult> {

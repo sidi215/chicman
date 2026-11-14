@@ -52,21 +52,21 @@ const bodyOf = (req: Request): unknown => req.body ?? {};
 export function createOrderRouter(guards: AuthGuards, deps: OrderDependencies): Router {
   const router = Router();
   const writeLimit = rateLimit(deps.rateLimiter, ORDER_WRITE_RATE_LIMIT);
-  const admin = guards.role("ADMIN");
+  const admin = guards.admin;
 
   // Customer
-  router.get("/customers/me/orders", ...guards.user, async (req, res) => {
+  router.get("/customers/me/orders", ...guards.buyer, async (req, res) => {
     const user = requireLoadedUser(req);
     const query = parseOrBadRequest(customerOrderListQuerySchema, { ...req.query });
     res.status(200).json(await deps.queries.customerList(user.id, query));
   });
 
-  router.get("/customers/me/orders/:orderId", ...guards.user, async (req, res) => {
+  router.get("/customers/me/orders/:orderId", ...guards.buyer, async (req, res) => {
     const user = requireLoadedUser(req);
     res.status(200).json(await deps.queries.customerOrder(user.id, orderId(req)));
   });
 
-  router.post("/customers/me/orders/:orderId/shop-orders/:shopOrderId/cancel", ...guards.user, writeLimit, async (req, res) => {
+  router.post("/customers/me/orders/:orderId/shop-orders/:shopOrderId/cancel", ...guards.buyer, writeLimit, async (req, res) => {
     const user = requireLoadedUser(req);
     const input = parseOrBadRequest(customerCancellationSchema, bodyOf(req));
     const order = orderId(req);

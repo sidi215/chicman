@@ -3,6 +3,8 @@
 import Link from "next/link"
 import { useState } from "react"
 
+import { useAccountMessages } from "@/features/auth/account-messages"
+import { useAccount } from "@/features/auth/account-provider"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { FormMessage } from "@/features/auth/components/form-field"
 
@@ -20,6 +22,13 @@ export function AddToCart({ productId, variantId, purchasable }: { productId: st
   const { state, addItem } = useCart()
   const [pending, setPending] = useState(false)
   const [result, setResult] = useState<{ added: true } | { failure: CartFailure } | null>(null)
+  const { account } = useAccount()
+  const readOnlyNote = useAccountMessages().readOnlyNote
+
+  // Sellers and Administrators browse read only (AT-1, Q6): no buyer action, a short note instead.
+  if (account.state === "active" && account.accountType !== "BUYER") {
+    return <p className="rounded-2xl bg-muted p-3 type-body-small text-muted-foreground">{readOnlyNote}</p>
+  }
 
   async function onAdd() {
     setPending(true)

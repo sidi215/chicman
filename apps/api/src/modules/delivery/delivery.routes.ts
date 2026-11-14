@@ -44,7 +44,7 @@ const bodyOf = (req: Request): unknown => req.body ?? {};
 export function createDeliveryRouter(guards: AuthGuards, deps: DeliveryDependencies): Router {
   const router = Router();
   const writeLimit = rateLimit(deps.rateLimiter, ORDER_WRITE_RATE_LIMIT);
-  const deliverySeller = [...guards.user, requireDeliverySeller(deps.shopAccess)];
+  const deliverySeller = [...guards.seller, requireDeliverySeller(deps.shopAccess)];
   const base = "/sellers/me/orders/:shopOrderId/delivery";
 
   router.get("/sellers/me/deliveries/in-progress", ...deliverySeller, async (req, res) => {

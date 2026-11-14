@@ -1,4 +1,4 @@
-import type { AuthSessionResponse } from "@chicman/shared"
+import type { AccountSessionResponse } from "@chicman/shared"
 
 import type { ApiResult } from "@/lib/api-client"
 
@@ -8,16 +8,16 @@ import type { ApiResult } from "@/lib/api-client"
  * - `signed-out`: 401 — the token is invalid; the local session is ended.
  * - `unavailable`: 503 AUTH_UNAVAILABLE or a network error — keep the
  *   session and retry later (never a logout).
- * - `not-bootstrapped`: 403 — valid token without an application account (spec 04).
+ * - `not-bootstrapped`: 403 — valid token without an account yet: setup is not done (AT-1).
  */
 export type SessionCheck =
-  | { state: "active"; session: AuthSessionResponse }
+  | { state: "active"; session: AccountSessionResponse }
   | { state: "signed-out" }
   | { state: "unavailable" }
   | { state: "not-bootstrapped" }
   | { state: "error" }
 
-export function interpretSessionCheck(result: ApiResult<AuthSessionResponse>): SessionCheck {
+export function interpretSessionCheck(result: ApiResult<AccountSessionResponse>): SessionCheck {
   switch (result.kind) {
     case "ok":
       return { state: "active", session: result.data }

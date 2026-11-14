@@ -62,13 +62,17 @@ class AuthMessages {
   String get signedInAs => _t['signedInAs']!;
   String get contactPhone => _t['contactPhone']!;
   String get profileSettings => _t['profileSettings']!;
-  String get myShop => _t['myShop']!;
   String get logout => _t['logout']!;
   String get retry => _t['retry']!;
   String get loading => _t['loading']!;
   String get sessionChecking => _t['sessionChecking']!;
   String get sessionActive => _t['sessionActive']!;
-  String get roles => _t['roles']!;
+  String get webOnlyTitle => _t['webOnlyTitle']!;
+  String get webOnlySeller => _t['webOnlySeller']!;
+  String get webOnlyAdmin => _t['webOnlyAdmin']!;
+  String get sellerIntentTitle => _t['sellerIntentTitle']!;
+  String get sellerIntentBody => _t['sellerIntentBody']!;
+  String get typeConflict => _t['typeConflict']!;
   String get authUnavailable => _t['authUnavailable']!;
   String get sessionInvalid => _t['sessionInvalid']!;
   String get captchaLabel => _t['captchaLabel']!;
@@ -139,13 +143,21 @@ class AuthMessages {
       'signedInAs': 'Connecté en tant que',
       'contactPhone': 'Téléphone de contact (non vérifié)',
       'profileSettings': 'Paramètres du profil',
-      'myShop': 'Ma boutique (vendre sur Chicman)',
       'logout': 'Se déconnecter',
       'retry': 'Réessayer',
       'loading': 'Chargement…',
       'sessionChecking': 'Vérification de la session…',
       'sessionActive': 'Session active.',
-      'roles': 'Rôles',
+      'webOnlyTitle': 'Compte géré sur le web',
+      'webOnlySeller':
+          "Votre compte vendeur se gère sur le site web de Chicman. L'application mobile est réservée aux achats.",
+      'webOnlyAdmin':
+          "Votre compte d'administration se gère sur le site web de Chicman. L'application mobile est réservée aux achats.",
+      'sellerIntentTitle': 'Compte vendeur',
+      'sellerIntentBody':
+          'Vous vous êtes inscrit comme vendeur : finalisez votre compte et votre boutique sur le site web de Chicman. Pour acheter, créez un compte acheteur avec une autre adresse e-mail.',
+      'typeConflict':
+          "Cette adresse e-mail a déjà un compte d'un autre type. Pour acheter, créez un compte avec une autre adresse e-mail.",
       'authUnavailable':
           'Le service d\'authentification est momentanément indisponible. Votre session est conservée ; réessayez dans un instant.',
       'sessionInvalid':
@@ -238,13 +250,21 @@ class AuthMessages {
       'signedInAs': 'متصل باسم',
       'contactPhone': 'هاتف التواصل (غير مُتحقق منه)',
       'profileSettings': 'إعدادات الملف الشخصي',
-      'myShop': 'متجري (البيع على شيكمان)',
       'logout': 'تسجيل الخروج',
       'retry': 'إعادة المحاولة',
       'loading': 'جارٍ التحميل…',
       'sessionChecking': 'جارٍ التحقق من الجلسة…',
       'sessionActive': 'الجلسة نشطة.',
-      'roles': 'الأدوار',
+      'webOnlyTitle': 'حساب يُدار عبر الموقع',
+      'webOnlySeller':
+          'يُدار حساب البائع عبر موقع شيكمان على الويب. التطبيق مخصّص للشراء.',
+      'webOnlyAdmin':
+          'يُدار حساب الإدارة عبر موقع شيكمان على الويب. التطبيق مخصّص للشراء.',
+      'sellerIntentTitle': 'حساب بائع',
+      'sellerIntentBody':
+          'سجّلت كبائع: أكمل حسابك ومتجرك عبر موقع شيكمان. للشراء، أنشئ حساب مشترٍ ببريد إلكتروني آخر.',
+      'typeConflict':
+          'لهذا البريد الإلكتروني حساب من نوع آخر. للشراء، أنشئ حسابًا ببريد إلكتروني آخر.',
       'authUnavailable':
           'خدمة المصادقة غير متاحة مؤقتًا. تم الاحتفاظ بجلستك؛ أعد المحاولة بعد قليل.',
       'sessionInvalid': 'جلستك لم تعد صالحة. يرجى تسجيل الدخول مجددًا.',

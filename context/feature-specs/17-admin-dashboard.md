@@ -10,6 +10,8 @@ Provide platform administrators with a secure web workspace to oversee Chicman, 
 - Administrative authorization must be enforced server-side.
 - Do not grant admin privileges through client-side role selection, registration fields, or editable user profiles.
 - Admin accounts must be provisioned through the approved administrative process.
+
+- **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** Administrator is its own account type, created only by the operator script `admin:provision` for a confirmed identity that has no buyer or seller account (replacing `admin:grant`, which added `ADMIN` to a customer). Administrators cannot buy, own a shop, or open the buyer or seller areas, and have no notification inbox. The protected admin layout redirects every other type. An administrator is removed by **deactivating administrative access** (operator script, audited); the account is never converted to another type. The personal phone is optional for administrators. "Never on a shop the administrator owns" stays checked as defense in depth. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
 - The dashboard must respect the existing role and permission model.
 - Administrative capabilities include:
   - Shop application review and decisions.

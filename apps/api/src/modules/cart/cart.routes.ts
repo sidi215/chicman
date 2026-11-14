@@ -26,9 +26,9 @@ const itemId = (req: Request): string => idParam(req.params["itemId"], CART_ERRO
  */
 export function createCartRouter(guards: AuthGuards, deps: CartDependencies): Router {
   const router = Router();
-  const write = [...guards.user, rateLimit(deps.rateLimiter, CART_WRITE_RATE_LIMIT)];
+  const write = [...guards.buyer, rateLimit(deps.rateLimiter, CART_WRITE_RATE_LIMIT)];
 
-  router.get("/customers/me/cart", ...guards.user, async (req, res) => {
+  router.get("/customers/me/cart", ...guards.buyer, async (req, res) => {
     res.status(200).json(await deps.cart.read(requireLoadedUser(req).id));
   });
 

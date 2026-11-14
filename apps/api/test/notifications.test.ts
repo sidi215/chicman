@@ -73,7 +73,7 @@ describe("notifications (spec 15, PostgreSQL)", { skip: databaseUrl === undefine
     await h.prisma.shop.update({ where: { id: shopId }, data: { shopName: "Boutique Alpha", deliveryFee: "100.00" } });
     customer = await h.actor();
     stranger = await h.actor();
-    admin = await h.actor(["CUSTOMER", "ADMIN"]);
+    admin = await h.actor("ADMIN");
   });
 
   const post = (path: string, actor: Actor, body?: unknown) => h.call(path, actor.token, { method: "POST", ...(body === undefined ? {} : { body }) });
@@ -218,7 +218,8 @@ describe("notifications (spec 15, PostgreSQL)", { skip: databaseUrl === undefine
         [0, 1].map(async () =>
           (
             await h.prisma.notification.create({
-              data: { userId: customer.userId, type: "SHOP_ORDER_EXPIRED", payload: { orderReference: "CM-T", shopName: "Boutique Alpha" }, createdAt: same },
+              // Customer audience (AT-1: a Buyer's inbox shows only that audience).
+              data: { userId: customer.userId, type: "SHOP_ORDER_CONFIRMED", payload: { orderReference: "CM-T", shopName: "Boutique Alpha" }, createdAt: same },
             })
           ).id,
         ),

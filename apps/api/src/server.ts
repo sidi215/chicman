@@ -14,7 +14,7 @@ import { AdminShopQueries } from "./modules/admin/index.js";
 import { CartService } from "./modules/cart/index.js";
 import { FavoriteService } from "./modules/favorites/index.js";
 import { CheckoutService } from "./modules/checkout/index.js";
-import { PrismaCustomerRepository } from "./modules/customers/index.js";
+import { PrismaAccountRepository } from "./modules/accounts/index.js";
 import { DeliveryLifecycle, DeliveryQueries } from "./modules/delivery/index.js";
 import { StockService } from "./modules/inventory/index.js";
 import { NotificationService } from "./modules/notifications/index.js";
@@ -75,8 +75,8 @@ const app = createApp({
     users: new PrismaUserRepository(prisma),
     shops: shopAccess,
   },
-  customers: {
-    customers: new PrismaCustomerRepository(prisma),
+  accounts: {
+    accounts: new PrismaAccountRepository(prisma),
     emailConfirmation: createEmailConfirmationChecker(config.supabase),
     rateLimiter,
   },

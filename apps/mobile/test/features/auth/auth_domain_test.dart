@@ -37,13 +37,11 @@ void main() {
   });
 
   group('API session check (spec 03)', () {
-    test('200 → active, with roles from the API', () async {
-      final result = await check(200, {
-        'userId': 'u1',
-        'roles': ['CUSTOMER'],
-      });
+    test('200 → active, with the account type from the API (AT-1)', () async {
+      final result = await check(200, {'userId': 'u1', 'accountType': 'BUYER'});
       expect(result, isA<SessionActive>());
-      expect((result as SessionActive).session.roles, ['CUSTOMER']);
+      expect((result as SessionActive).session.accountType, 'BUYER');
+      expect(result.session.isBuyer, isTrue);
     });
 
     test('401 ends the session', () async {
@@ -95,7 +93,7 @@ void main() {
       final requests = <http.Request>[];
       await fakeApi(
         status: 200,
-        body: {'userId': 'u1', 'roles': <String>[]},
+        body: {'userId': 'u1', 'accountType': 'BUYER'},
         requests: requests,
       ).get(
         '/auth/session',
@@ -266,7 +264,7 @@ void main() {
         interpretSetupResult(
           await fakeApi(status: status, body: body).send(
             'POST',
-            '/customers/me',
+            '/accounts/me/setup',
             accessToken: 't',
             body: {'phone': '+22222123456'},
             decode: CustomerAccount.fromJson,
@@ -274,11 +272,11 @@ void main() {
         );
     final account = {
       'userId': 'u1',
-      'roles': ['CUSTOMER'],
+      'accountType': 'BUYER',
       'profile': {'phone': '+22222123456', 'fullName': null},
     };
 
-    test('maps bootstrap responses', () async {
+    test('maps setup responses', () async {
       expect(await setup(201, account), isA<SetupDone>());
       expect(await setup(200, account), isA<SetupDone>());
       expect(
@@ -294,6 +292,18 @@ void main() {
         isA<SetupEmailNotConfirmed>(),
       );
       expect(await setup(401), isA<SetupSignedOut>());
+      expect(
+        await setup(409, {
+          'error': {'code': 'REGISTRATION_INTENT_REQUIRED'},
+        }),
+        isA<SetupIntentRequired>(),
+      );
+      expect(
+        await setup(409, {
+          'error': {'code': 'ACCOUNT_TYPE_CONFLICT'},
+        }),
+        isA<SetupTypeConflict>(),
+      );
       expect(
         await setup(503, {
           'error': {'code': 'AUTH_UNAVAILABLE'},

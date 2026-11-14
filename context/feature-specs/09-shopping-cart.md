@@ -13,6 +13,8 @@ Customers can manage a cart without immediately placing an order.
 ### 1. Cart ownership
 
 - A cart belongs to one authenticated customer.
+
+- **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** The cart is **Buyer only**: sellers and administrators get `403` and see no cart action. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
 - Customers must be able to browse products without authentication.
 - A customer must authenticate before proceeding to checkout.
 - Do not implement guest-to-account cart merging in this version.

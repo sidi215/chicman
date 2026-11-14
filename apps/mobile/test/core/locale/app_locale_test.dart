@@ -27,7 +27,7 @@ const _session = AuthSession(userId: 'u1', email: 'a@b.mr');
 
 Map<String, Object?> _account(String locale) => {
   'userId': 'u1',
-  'roles': ['CUSTOMER'],
+  'accountType': 'BUYER',
   'profile': {
     'id': 'p1',
     'fullName': 'Aminetou',
@@ -77,7 +77,7 @@ Future<void> _pump(
 }
 
 ApiClient _apiWith(String locale, List<http.Request> requests) => routedApi({
-  'GET /customers/me': (_) => (200, _account(locale)),
+  'GET /accounts/me': (_) => (200, _account(locale)),
 }, requests: requests);
 
 void main() {
@@ -157,7 +157,7 @@ void main() {
     tester,
   ) async {
     final api = routedApi({
-      'GET /customers/me': (_) => (
+      'GET /accounts/me': (_) => (
         403,
         {
           'error': {'code': 'ACCOUNT_NOT_BOOTSTRAPPED'},
@@ -201,7 +201,7 @@ void main() {
       httpClient: MockClient((_) async {
         await release.future;
         return http.Response(
-          '{"userId":"u1","roles":[],"profile":{"id":"p","preferredLocale":"fr","phone":"+22222123456"}}',
+          '{"userId":"u1","accountType":"BUYER","profile":{"id":"p","preferredLocale":"fr","phone":"+22222123456"}}',
           200,
         );
       }),

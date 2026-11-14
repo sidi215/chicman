@@ -83,7 +83,7 @@ describe("cash on delivery (spec 13, PostgreSQL)", { skip: databaseUrl === undef
     ({ owner: otherSeller, shopId: otherShopId } = await h.shopInStatus("APPROVED"));
     await h.prisma.shop.update({ where: { id: otherShopId }, data: { shopName: "Boutique Beta", deliveryFee: "50.00" } });
     customer = await h.actor();
-    admin = await h.actor(["CUSTOMER", "ADMIN"]);
+    admin = await h.actor("ADMIN");
   });
 
   const post = (path: string, actor: Actor, body?: unknown) => h.call(path, actor.token, { method: "POST", ...(body === undefined ? {} : { body }) });
@@ -271,8 +271,8 @@ describe("cash on delivery (spec 13, PostgreSQL)", { skip: databaseUrl === undef
       assert.equal(JSON.stringify(notifications).includes(NOTE), false);
     });
 
-    it("is refused on a shop the administrator owns (403), and writes nothing", async () => {
-      const { owner: adminOwner, shopId: ownShop } = await h.shopInStatus("APPROVED", await h.actor(["CUSTOMER", "SELLER", "ADMIN"]));
+    it("is refused on a shop the administrator owns (pre-AT-1 data; 403), and writes nothing", async () => {
+      const { owner: adminOwner, shopId: ownShop } = await h.legacyShop("APPROVED", await h.actor("ADMIN"));
       await h.prisma.shop.update({ where: { id: ownShop }, data: { deliveryFee: "50.00" } });
       const { id } = await place(ownShop);
       const before = await paymentOf(id);

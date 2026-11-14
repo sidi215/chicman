@@ -7,6 +7,8 @@ Allow authenticated customers to save products they are interested in and manage
 ## Design & Architecture Decisions
 
 - Favorites belong to the authenticated customer.
+
+- **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** Favorites are **Buyer only**: sellers and administrators get `403` and see no heart. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
 - Guests may browse products but cannot persist favorites to an account.
 - A customer can add or remove a product from favorites.
 - A customer cannot create duplicate favorite entries for the same product.

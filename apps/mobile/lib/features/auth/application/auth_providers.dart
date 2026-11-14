@@ -6,6 +6,7 @@ import '../../../core/network/api_client.dart';
 import '../data/auth_repository.dart';
 import '../domain/account_setup.dart';
 import '../domain/email_link.dart';
+import '../domain/registration_intent.dart';
 import '../domain/session_check.dart';
 
 final appConfigProvider = Provider<AppConfig>(
@@ -31,12 +32,15 @@ final authSessionProvider = StreamProvider<AuthSession?>((ref) async* {
   yield* repository.sessionChanges();
 });
 
-/// Verifies the session with the API. A 401 ends the session; a 503
-/// (`AUTH_UNAVAILABLE`) or network error keeps it. Retry with
-/// `ref.invalidate(sessionCheckProvider)`.
-final sessionCheckProvider = FutureProvider.autoDispose<SessionCheck>((
-  ref,
-) async {
+/// Verifies the session with the API, once per signed-in account (a refreshed
+/// token changes nothing), and gives the account type (AT-1). A 401 ends the
+/// session; a 503 (`AUTH_UNAVAILABLE`) or network error keeps it. Retry, or
+/// read it again after setup, with `ref.invalidate(sessionCheckProvider)`.
+final sessionCheckProvider = FutureProvider<SessionCheck>((ref) async {
+  final userId = ref.watch(
+    authSessionProvider.select((session) => session.value?.userId),
+  );
+  if (userId == null) return const SessionSignedOut();
   final repository = ref.watch(authRepositoryProvider);
   if (repository == null) return const SessionCheckError();
   final token = await repository.accessToken();
@@ -49,8 +53,27 @@ final sessionCheckProvider = FutureProvider.autoDispose<SessionCheck>((
   return check;
 });
 
-/// The bootstrapped customer account (`GET /customers/me`), shown on the
-/// account screen. `null` when it cannot be loaded.
+/// What the buyer features (cart, favorites, notifications, orders, checkout)
+/// load for: `(loading, userId)`, like the session they used to watch, but
+/// waiting for the account type (AT-1). A Seller or Administrator account is
+/// treated as signed out, so these features never call the API for it; the
+/// shell shows such accounts the "managed on the web" screen (Q5). A Buyer, or
+/// an identity not set up yet, loads as before.
+final buyerSessionProvider = Provider<(bool, String?)>((ref) {
+  final session = ref.watch(authSessionProvider);
+  if (session.isLoading) return (true, null);
+  final userId = session.value?.userId;
+  if (userId == null) return (false, null);
+  return switch (ref.watch(sessionCheckProvider)) {
+    AsyncData(value: SessionActive(:final session)) =>
+      session.isBuyer ? (false, userId) : (false, null),
+    AsyncData() || AsyncError() => (false, userId),
+    _ => (true, null),
+  };
+});
+
+/// The signed-in account (`GET /accounts/me`), shown on the account screen.
+/// `null` when it cannot be loaded.
 final customerAccountProvider = FutureProvider.autoDispose<CustomerAccount?>((
   ref,
 ) async {
@@ -59,11 +82,7 @@ final customerAccountProvider = FutureProvider.autoDispose<CustomerAccount?>((
   if (token == null) return null;
   final result = await ref
       .read(apiClientProvider)
-      .get(
-        '/customers/me',
-        accessToken: token,
-        decode: CustomerAccount.fromJson,
-      );
+      .get(accountPath, accessToken: token, decode: CustomerAccount.fromJson);
   return result is ApiOk<CustomerAccount> ? result.data : null;
 });
 
@@ -81,11 +100,7 @@ final profileLocaleSyncProvider = Provider<void>((ref) {
     final languageBefore = ref.read(appLocaleProvider);
     final result = await ref
         .read(apiClientProvider)
-        .get(
-          '/customers/me',
-          accessToken: token,
-          decode: CustomerAccount.fromJson,
-        );
+        .get(accountPath, accessToken: token, decode: CustomerAccount.fromJson);
     // A save made during the read is newer than what was read.
     if (result is! ApiOk<CustomerAccount> ||
         ref.read(appLocaleProvider) != languageBefore) {
@@ -105,9 +120,12 @@ final profileLocaleSyncProvider = Provider<void>((ref) {
   }, fireImmediately: true);
 });
 
-/// Account setup: the contact phone (E.164), then bootstrap (spec 04).
+/// Account setup (AT-1): a Buyer account with its contact phone (E.164). The
+/// type comes from the registration intent; the mobile app is buyer only, so
+/// without an intent it records the buyer intent for the signed-in identity
+/// and tries once more. A seller intent is completed on the web.
 ///
-/// Bootstrap accepts only the phone, so a new account starts in the default
+/// Setup takes only the phone, so a new account starts in the default
 /// language. It then saves [languageCode], the language its owner is using, so
 /// the app does not change language on the next launch.
 Future<SetupOutcome> submitAccountSetup(
@@ -117,35 +135,53 @@ Future<SetupOutcome> submitAccountSetup(
 }) async {
   final repository = ref.read(authRepositoryProvider);
   final token = await repository?.accessToken();
-  if (repository == null || token == null) return const SetupSignedOut();
-  final outcome = interpretSetupResult(
-    await ref
-        .read(apiClientProvider)
-        .send(
-          'POST',
-          '/customers/me',
-          accessToken: token,
-          body: {'phone': phone},
-          decode: CustomerAccount.fromJson,
-        ),
+  final userId = repository?.currentSession?.userId;
+  if (repository == null || token == null || userId == null) {
+    return const SetupSignedOut();
+  }
+  final api = ref.read(apiClientProvider);
+  Future<SetupOutcome> attempt() async => interpretSetupResult(
+    await api.send(
+      'POST',
+      accountSetupPath,
+      accessToken: token,
+      body: {'phone': phone},
+      decode: CustomerAccount.fromJson,
+    ),
   );
+  var outcome = await attempt();
+  if (outcome is SetupIntentRequired &&
+      await recordBuyerIntent(api, userId) == IntentOutcome.recorded) {
+    outcome = await attempt();
+  }
   if (outcome is SetupSignedOut) await repository.signOut();
   if (outcome is SetupDone) {
     if (outcome.account.preferredLocale != languageCode) {
-      await ref
-          .read(apiClientProvider)
-          .send(
-            'PATCH',
-            '/customers/me',
-            accessToken: token,
-            body: {'preferredLocale': languageCode},
-            decode: CustomerAccount.fromJson,
-          );
+      await api.send(
+        'PATCH',
+        accountPath,
+        accessToken: token,
+        body: {'preferredLocale': languageCode},
+        decode: CustomerAccount.fromJson,
+      );
     }
     await ref.read(appLocaleProvider.notifier).setLanguage(languageCode);
   }
   return outcome;
 }
+
+/// The identity's own registration intent (`GET /registration-intents/me`),
+/// read by the setup screen: `BUYER`, `SELLER` (completed on the web), or
+/// `null`. Errors read as `null`, so setup still offers the buyer account.
+final ownIntentProvider = FutureProvider.autoDispose<String?>((ref) async {
+  final repository = ref.watch(authRepositoryProvider);
+  final token = await repository?.accessToken();
+  if (token == null) return null;
+  final result = await ref
+      .read(apiClientProvider)
+      .get(ownIntentPath, accessToken: token, decode: decodeIntent);
+  return result is ApiOk<String?> ? result.data : null;
+});
 
 /// The email link waiting to be verified (from App Links / Universal Links).
 /// Each token is handled at most once per app run.

@@ -1,8 +1,7 @@
-import type { Role } from "@chicman/shared";
 import type { RequestHandler } from "express";
 
 import { authenticate } from "../../middleware/authenticate.js";
-import { loadAppUser, requireAppUser, requireRole } from "../../middleware/authorize.js";
+import { loadAppUser, requireAccountType, requireAppUser } from "../../middleware/authorize.js";
 import { requireApprovedSeller } from "../../middleware/require-approved-seller.js";
 import type { ShopAccessRepository } from "../shops/shop-access.repository.js";
 import type { UserRepository } from "../users/user.repository.js";
@@ -15,19 +14,25 @@ export interface AuthDependencies {
 }
 
 /**
- * Middleware chains in the order required by spec 03:
- * verify token → load user and roles from PostgreSQL → role check →
+ * Middleware chains in the order required by spec 03 and AT-1:
+ * verify token → load the account and its type from PostgreSQL → type check →
  * resource or ownership check.
  */
 export interface AuthGuards {
-  /** Verified token, user loaded (may be `null`). Only for account bootstrap (spec 04). */
+  /** Verified token, account loaded (may be `null`). Only for account setup (AT-1). */
   tokenOnly: RequestHandler[];
-  /** Verified token and a bootstrapped application user. */
+  /** Verified token and an account of any type (session, own profile). */
   user: RequestHandler[];
-  /** Bootstrapped user holding at least one of the roles. */
-  role: (...roles: Role[]) => RequestHandler[];
-  /** Normal seller operations: SELLER + owned shop + `Shop.status = APPROVED`. */
+  /** Buyer accounts only: addresses, cart, checkout, favorites, own orders. */
+  buyer: RequestHandler[];
+  /** Seller accounts only, any shop status (the owner shop routes add their status rules). */
+  seller: RequestHandler[];
+  /** Buyer or Seller accounts: the notification inbox (no administrator audience, O6.1). */
+  buyerOrSeller: RequestHandler[];
+  /** Normal seller operations: Seller account + owned shop + `Shop.status = APPROVED`. */
   approvedSeller: RequestHandler[];
+  /** Administrator accounts with active administrative access only. */
+  admin: RequestHandler[];
 }
 
 export function createAuthGuards({ verifier, users, shops }: AuthDependencies): AuthGuards {
@@ -36,7 +41,10 @@ export function createAuthGuards({ verifier, users, shops }: AuthDependencies): 
   return {
     tokenOnly,
     user,
-    role: (...roles) => [...user, requireRole(...roles)],
-    approvedSeller: [...user, requireApprovedSeller(shops)],
+    buyer: [...user, requireAccountType("BUYER")],
+    seller: [...user, requireAccountType("SELLER")],
+    buyerOrSeller: [...user, requireAccountType("BUYER", "SELLER")],
+    approvedSeller: [...user, requireAccountType("SELLER"), requireApprovedSeller(shops)],
+    admin: [...user, requireAccountType("ADMIN")],
   };
 }

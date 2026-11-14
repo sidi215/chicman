@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import type { CustomerProfile } from "@chicman/shared"
+import type { AccountProfile } from "@chicman/shared"
 
 import { classifyResponse } from "../../lib/api-client"
 import { PROFILE_MESSAGES } from "./messages"
@@ -10,7 +10,7 @@ import { buildProfileUpdate, hasChanges, interpretProfileResult, profileFormValu
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
-const stored: CustomerProfile = {
+const stored: AccountProfile = {
   id: "p1",
   fullName: "Aminetou",
   preferredLocale: "fr",

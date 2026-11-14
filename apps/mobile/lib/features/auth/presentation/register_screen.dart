@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../domain/registration_intent.dart';
 import '../../../core/theme/app_theme.dart';
 import '../application/auth_providers.dart';
 import '../domain/auth_failure.dart';
@@ -72,11 +73,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       return;
     }
     setState(() => _pending = true);
-    final failure = await repository.register(
+    final (:failure, :userId) = await repository.register(
       email,
       _password.text,
       captchaToken: _captcha,
     );
+    // The mobile app is buyer only (AT-1, Q5). Not fatal if it fails: setup
+    // records it. Never reveals whether the address exists.
+    if (failure == null && userId != null) {
+      await recordBuyerIntent(ref.read(apiClientProvider), userId);
+    }
     if (!mounted) return;
     _resetCaptcha();
     setState(() {

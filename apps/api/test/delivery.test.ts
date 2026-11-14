@@ -67,7 +67,7 @@ describe("delivery management (spec 12, PostgreSQL)", { skip: databaseUrl === un
     ({ owner: otherSeller, shopId: otherShopId } = await h.shopInStatus("APPROVED"));
     await h.prisma.shop.update({ where: { id: otherShopId }, data: { shopName: "Boutique Beta", deliveryFee: "50.00" } });
     customer = await h.actor();
-    admin = await h.actor(["CUSTOMER", "ADMIN"]);
+    admin = await h.actor("ADMIN");
   });
 
   const post = (path: string, actor: Actor, body?: unknown) => h.call(path, actor.token, { method: "POST", ...(body === undefined ? {} : { body }) });

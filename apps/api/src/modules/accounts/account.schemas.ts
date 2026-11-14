@@ -1,5 +1,10 @@
 import {
   API_ERROR_CODES,
+  buyerAccountSetupSchema,
+  registrationIntentSchema,
+  sellerAccountSetupSchema,
+  type RegistrableAccountType,
+  type RegistrationIntentInput,
   FULL_NAME_MAX_LENGTH,
   LOCALES,
   normalizePhoneNumber,
@@ -8,6 +13,7 @@ import {
 import { z } from "zod";
 
 import { badRequest } from "../../lib/http-error.js";
+import type { SetupRequest } from "./account.repository.js";
 
 /** Control characters are rejected in text fields. */
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/;
@@ -27,10 +33,7 @@ const fullName = z
       .refine((value) => !CONTROL_CHARACTERS.test(value)),
   );
 
-/** `POST /customers/me`: exactly one field, `phone`. */
-const bootstrapSchema = z.strictObject({ phone: rawPhone });
-
-/** `PATCH /customers/me`: the allowlist (spec 04), at least one field. */
+/** `PATCH /accounts/me`: the allowlist (spec 04), at least one field. No account type, role, or ownership field. */
 const updateSchema = z
   .strictObject({
     fullName: fullName.optional(),
@@ -52,11 +55,27 @@ function toE164(input: string): string {
   return phone;
 }
 
-/** Unknown or protected fields and invalid values → `400`, nothing is written. */
-export function parseBootstrapBody(body: unknown): { phone: string } {
-  const result = bootstrapSchema.safeParse(body);
+/**
+ * The setup body for the identity's intended type (AT-1). Unknown or protected
+ * fields (including any account type) and invalid values → `400`; an invalid
+ * personal phone → `400 INVALID_PHONE`. Nothing is written.
+ */
+export function parseSetupBody(accountType: RegistrableAccountType, body: unknown): SetupRequest {
+  if (accountType === "BUYER") {
+    const result = buyerAccountSetupSchema.safeParse(body);
+    if (!result.success) throw badRequest();
+    return { accountType, phone: toE164(result.data.phone) };
+  }
+  const result = sellerAccountSetupSchema.safeParse(body);
   if (!result.success) throw badRequest();
-  return { phone: toE164(result.data.phone) };
+  return { accountType, phone: toE164(result.data.phone), shop: result.data.shop };
+}
+
+/** `POST /registration-intents` body, or `400`. */
+export function parseIntentBody(body: unknown): RegistrationIntentInput {
+  const result = registrationIntentSchema.safeParse(body);
+  if (!result.success) throw badRequest();
+  return result.data;
 }
 
 export function parseProfileUpdate(body: unknown): ProfileChanges {

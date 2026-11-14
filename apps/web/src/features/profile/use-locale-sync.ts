@@ -1,8 +1,9 @@
 "use client"
 
-import type { CustomerProfileResponse } from "@chicman/shared"
+import type { AccountProfileResponse } from "@chicman/shared"
 import { useCallback, useEffect } from "react"
 
+import { ACCOUNT_PATH } from "@/features/auth/account"
 import { useAuth } from "@/features/auth/auth-provider"
 import { apiRequest } from "@/lib/api-client"
 import type { Locale } from "@/lib/locale"
@@ -22,7 +23,7 @@ export function useSaveProfileLocale() {
       const token = await getAccessToken().catch(() => null)
       if (token === null) return
       // `keepalive` lets the request finish if the page leaves first.
-      const save = apiRequest("/customers/me", token, {
+      const save = apiRequest(ACCOUNT_PATH, token, {
         method: "PATCH",
         keepalive: true,
         headers: { "content-type": "application/json" },
@@ -51,7 +52,7 @@ export function useApplyProfileLocale(): void {
     void (async () => {
       const token = await getAccessToken().catch(() => null)
       if (token === null || cancelled) return
-      const result = await apiRequest<CustomerProfileResponse>("/customers/me", token)
+      const result = await apiRequest<AccountProfileResponse>(ACCOUNT_PATH, token)
       // No account yet, or a failure: try again on a later page load.
       if (cancelled || result.kind !== "ok") return
       markLocaleSynced(userId)

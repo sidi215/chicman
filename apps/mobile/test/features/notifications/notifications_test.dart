@@ -61,6 +61,13 @@ class _Server {
 
   late final client = MockClient((request) async {
     final path = request.url.path.replaceFirst('/api/v1', '');
+    // The account type (AT-1): a Buyer. Not one of the requests under test.
+    if (path == '/auth/session') {
+      return http.Response(
+        jsonEncode({'userId': 'u1', 'accountType': 'BUYER'}),
+        200,
+      );
+    }
     final key = '${request.method} $path';
     received.add('$key?${request.url.query}');
     final response = _answer(request, path);

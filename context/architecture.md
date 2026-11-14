@@ -6,7 +6,7 @@
 |---|---|---|
 | Web Framework | Next.js + TypeScript | Customer storefront, seller dashboard, and admin dashboard |
 | Web UI | Tailwind CSS + shadcn/ui | Web interface and reusable components |
-| Mobile Framework | Flutter + Dart | Customer and seller mobile applications |
+| Mobile Framework | Flutter + Dart | Buyer mobile application (AT-1, Q5: sellers and administrators use the web) |
 | Mobile UI | Flutter Material 3 (customized) | Native mobile interface following the shared design system |
 | Backend | Node.js + Express + TypeScript | REST API and centralized marketplace business logic |
 | Authentication | Supabase Auth | Email + password authentication with mandatory email confirmation, email password recovery, and session management for customers, sellers, and administrators |
@@ -28,7 +28,7 @@
 
 - `apps/web/` — Next.js application responsible for the customer storefront, seller dashboard, and administrator dashboard. All routes live under `app/[locale]/`, and `src/proxy.ts` maps public URLs onto them (see Web Localization).
 
-- `apps/mobile/` — Flutter application responsible for mobile customer and seller experiences. It opens on the public storefront; the account is a dock destination (`lib/app_shell.dart`). Seller product management on mobile is a future feature that reuses the existing `/api/v1/sellers/me/products` routes.
+- `apps/mobile/` — Flutter application for buyers only (AT-1, Q5; formerly "customer and seller experiences"): a Seller or Administrator account sees a "managed on the web" screen. It opens on the public storefront; the account is a dock destination (`lib/app_shell.dart`). Seller product management on mobile is a future feature that reuses the existing `/api/v1/sellers/me/products` routes.
 
 - `apps/api/` — Node.js + Express backend responsible for REST endpoints, request validation, authentication verification, authorization, and marketplace business logic.
 
@@ -133,6 +133,8 @@ The app follows the profile's `preferredLocale` (`core/locale/app_locale_control
   - `SELLER`
   - `ADMIN`
 
+- **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** **Superseded by account types:** `User.accountType` (`BUYER`, `SELLER`, `ADMIN`), set once at creation by the buyer setup, the seller setup (which also creates the `PENDING` shop), or the operator's administrator provisioning, and immutable (database trigger). Guards check the type instead of a role set: buyer routes (addresses, cart, checkout, favorites, own orders) Buyer only; shop and seller routes Seller only, with the shop-status rules below unchanged (including D8); administrative routes Administrator only. No role is granted on approval. `UserRole` stops being written. Database protection (implemented): triggers so only a Seller owns a shop (also on a transfer), only a Buyer has a cart, favorites, addresses, or orders, the personal phone is required except for Administrators, and the type never changes; they run only when their column is written, so pre-AT-1 rows stay as they are. API guards: `buyer`, `seller`, `buyerOrSeller`, `approvedSeller`, `admin` (which also refuses a deactivated administrator), plus `user` for the session and `/accounts/me`. The self-administration check and O2 stay as defense in depth. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
+
 - **Users hold a set of roles** (`UserRole`: `userId` + `role`, composite primary key), so one user can be both `CUSTOMER` and `SELLER`. Every bootstrapped user holds `CUSTOMER`. Roles are granted only by server-side operations: bootstrap grants `CUSTOMER`, and an administrator's initial shop approval grants `SELLER`. No client input adds or removes a role.
 
 - **Shop status (authoritative):** `Shop.status` in PostgreSQL is the only source of a shop's approval state:
@@ -143,6 +145,8 @@ The app follows the profile's `preferredLocale` (`core/locale/app_locale_control
 
   Allowed transitions: `PENDING` → `APPROVED` / `REJECTED` (admin), `REJECTED` → `PENDING` (owner), `APPROVED` → `SUSPENDED` (admin), `SUSPENDED` → `APPROVED` (admin). Any other transition is rejected server-side. Only administrators approve, reject, suspend, or reinstate. An administrator cannot perform administrative decisions on a shop they own, even when their account has the ADMIN role. (Checked server-side inside each decision transaction; the same applies to change-request decisions and to the shop's administrative history.) Client-provided status values are never trusted.
 - **Becoming a seller (`SELLER` role transitions):** any bootstrapped user may create a shop (apply) without holding `SELLER`. Applying does not grant it.
+
+  - *AT-1:* superseded. A shop is created only by seller registration; approval grants nothing (see the AT-1 note above).
   - **Initial approval** (`PENDING` → `APPROVED`, including approval of a resubmitted application): grants `SELLER` if not already held, in the same transaction as the status change and the recorded decision. The shop becomes eligible for normal seller operations.
   - **Resubmission** (`REJECTED` → `PENDING`, by the owner): no role change. It never grants `SELLER`; only a later approval does.
   - **Suspension** (`APPROVED` → `SUSPENDED`): `SELLER` is retained, not revoked; normal seller operations are blocked because the shop is not `APPROVED`.

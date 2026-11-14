@@ -124,7 +124,7 @@ class _ProfileFormState extends ConsumerState<ProfileForm> {
   late final _fullName = TextEditingController(
     text: widget.account.fullName ?? '',
   );
-  late final _phone = TextEditingController(text: widget.account.phone);
+  late final _phone = TextEditingController(text: widget.account.phone ?? '');
   late String _locale = widget.account.preferredLocale;
   ProfileFieldError? _fullNameError;
   ProfileFieldError? _phoneError;
@@ -167,7 +167,7 @@ class _ProfileFormState extends ConsumerState<ProfileForm> {
         case ProfileSaved(:final account):
           _stored = account;
           _fullName.text = account.fullName ?? '';
-          _phone.text = account.phone;
+          _phone.text = account.phone ?? '';
           _locale = account.preferredLocale;
           _notice = ((t) => t.saved, false);
         case ProfileInvalidPhone():

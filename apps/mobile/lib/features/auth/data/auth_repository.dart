@@ -18,6 +18,12 @@ class AuthSession {
 /// Outcome of an auth action: `null` on success, otherwise the failure.
 typedef AuthResult = AuthFailure?;
 
+/// Outcome of a sign-up: the failure, or on success the new identity's ID
+/// for the registration intent (AT-1). For an existing address Supabase
+/// answers an obfuscated user or an error, so the ID may be another one or
+/// `null`; the intent is then never used.
+typedef RegisterResult = ({AuthFailure? failure, String? userId});
+
 /// Customer authentication (spec 03): email + password, mandatory email
 /// confirmation, email recovery. The phone is never sent to Supabase Auth.
 abstract interface class AuthRepository {
@@ -30,7 +36,7 @@ abstract interface class AuthRepository {
   Future<String?> accessToken();
 
   /// Sends the confirmation email. Never reveals whether the email exists.
-  Future<AuthResult> register(
+  Future<RegisterResult> register(
     String email,
     String password, {
     String? captchaToken,
@@ -110,19 +116,23 @@ class SupabaseAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<AuthResult> register(
+  Future<RegisterResult> register(
     String email,
     String password, {
     String? captchaToken,
-  }) => _run(
-    () => _auth.signUp(
-      email: email,
-      password: password,
-      emailRedirectTo: callbackUrl,
-      captchaToken: captchaToken,
-    ),
-    hideEnumeration: true,
-  );
+  }) async {
+    String? userId;
+    final failure = await _run(() async {
+      final response = await _auth.signUp(
+        email: email,
+        password: password,
+        emailRedirectTo: callbackUrl,
+        captchaToken: captchaToken,
+      );
+      userId = response.user?.id;
+    }, hideEnumeration: true);
+    return (failure: failure, userId: failure == null ? userId : null);
+  }
 
   @override
   Future<AuthResult> resendConfirmation(String email, {String? captchaToken}) =>

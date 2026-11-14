@@ -10,10 +10,10 @@ import { Redis } from "ioredis";
 import { createPrismaClient, type PrismaClient } from "../src/lib/prisma.js";
 import { FallbackRateLimiter, RedisRateLimiter, type RateLimiter } from "../src/lib/rate-limiter.js";
 import {
-  BOOTSTRAP_RATE_LIMIT,
   PROFILE_UPDATE_RATE_LIMIT,
-  PrismaCustomerRepository,
-} from "../src/modules/customers/index.js";
+  PrismaAccountRepository,
+  SETUP_RATE_LIMIT as BOOTSTRAP_RATE_LIMIT,
+} from "../src/modules/accounts/index.js";
 import { PrismaShopAccessRepository } from "../src/modules/shops/shop-access.repository.js";
 import { PrismaUserRepository } from "../src/modules/users/user.repository.js";
 import { createTestKeyStore, createTestVerifier, startApp, type RunningApp } from "./helpers/app.js";
@@ -102,8 +102,8 @@ describe("API rate limits against Redis and PostgreSQL (spec 03/04)", { skip }, 
         users: new PrismaUserRepository(prisma),
         shops: new PrismaShopAccessRepository(prisma),
       },
-      customers: {
-        customers: new PrismaCustomerRepository(prisma),
+      accounts: {
+        accounts: new PrismaAccountRepository(prisma),
         emailConfirmation: new FakeEmailConfirmation(),
         rateLimiter,
       },
@@ -117,14 +117,18 @@ describe("API rate limits against Redis and PostgreSQL (spec 03/04)", { skip }, 
     new RedisRateLimiter(client, `${prefix}${namespace}:`);
 
   async function call(app: RunningApp, method: string, sub: string, body: unknown) {
-    const response = await fetch(`${app.baseUrl}/api/v1/customers/me`, {
+    const response = await fetch(`${app.baseUrl}/api/v1${method === "POST" ? "/accounts/me/setup" : "/accounts/me"}`, {
       method,
       headers: { authorization: `Bearer ${await signToken(key, { sub })}`, "content-type": "application/json" },
       body: JSON.stringify(body),
     });
     return { status: response.status, retryAfter: response.headers.get("retry-after"), text: await response.text() };
   }
-  const bootstrap = (app: RunningApp, sub: string) => call(app, "POST", sub, { phone: "22334455" });
+  // Account setup (AT-1). The Buyer intent is written directly: these tests limit setup, not intents.
+  const bootstrap = async (app: RunningApp, sub: string) => {
+    await prisma.registrationIntent.createMany({ data: [{ supabaseUserId: sub, accountType: "BUYER" }], skipDuplicates: true });
+    return call(app, "POST", sub, { phone: "22334455" });
+  };
   const patch = (app: RunningApp, sub: string, n: number) =>
     call(app, "PATCH", sub, { fullName: `Name ${n}` });
 

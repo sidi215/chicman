@@ -12,3 +12,4 @@ export { LogoService, type LogoServiceFaults } from "./logo/logo.service.js";
 export { runLogoCleanup, type LogoCleanupResult } from "./logo/logo-cleanup.js";
 export { S3ObjectStorage, type ObjectStorage, type StagedObject } from "./logo/object-storage.js";
 export { normalizeLogo, type LogoNormalization } from "./logo/logo-normalizer.js";
+export { applyShopTransfer, planShopTransfer, type ShopTransferApplyOutcome, type ShopTransferInput, type ShopTransferPlan, type ShopTransferPlanOutcome, type ShopTransferRefusal } from "./shop-transfer.js";

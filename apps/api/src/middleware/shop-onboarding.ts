@@ -24,12 +24,12 @@ export function requireOwnedShop(shops: ShopAccessRepository): RequestHandler {
   };
 }
 
-/** `403` unless the owner's shop status (and role, for `APPROVED`) allows the operation. */
+/** `403` unless the owner's account type and shop status allow the operation. */
 export function requireShopOperation(operation: ShopOwnerOperation): RequestHandler {
   return (req, _res, next) => {
     const user = requireLoadedUser(req);
     if (req.ownedShop === undefined) throw notFound(SHOP_ERROR_CODES.shopNotFound);
-    assertShopOperationAllowed(operation, req.ownedShop.status, user.roles);
+    assertShopOperationAllowed(operation, req.ownedShop.status, user.accountType);
     next();
   };
 }

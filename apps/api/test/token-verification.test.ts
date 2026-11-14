@@ -43,7 +43,7 @@ describe("access-token verification (spec 03)", () => {
     const response = await session({ authorization: `Bearer ${await signToken(key, { sub })}` });
     assert.equal(response.status, 200);
     assert.equal(users.lookups.at(-1), sub);
-    assert.deepEqual(await response.json(), { userId: `user-for-${sub}`, roles: ["CUSTOMER"] });
+    assert.deepEqual(await response.json(), { userId: `user-for-${sub}`, accountType: "BUYER" });
   });
 
   it("accepts a valid RS256 token", async () => {

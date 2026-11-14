@@ -12,6 +12,8 @@ This feature covers product browsing and product details. It does not cover shop
 
 ## Design & Architecture Decisions
 
+> **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** The public catalog stays open to everyone. Signed-in **Sellers and Administrators browse it read only** (owner decision Q6): add-to-cart and the favorite heart are hidden for them, and the API refuses their buyer operations. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
+
 ### 1. Public storefront
 
 The storefront is publicly accessible.

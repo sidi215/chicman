@@ -1,19 +1,32 @@
 import '../../../core/network/api_client.dart';
 
+/// Account types (AT-1, `context/account-types-audit.md`). The type comes
+/// from the API, which reads it from PostgreSQL; the app only routes with it.
+abstract final class AccountTypes {
+  static const buyer = 'BUYER';
+  static const seller = 'SELLER';
+  static const admin = 'ADMIN';
+}
+
 /// `GET /api/v1/auth/session` response.
 class ApiSession {
-  const ApiSession({required this.userId, required this.roles});
+  const ApiSession({required this.userId, required this.accountType});
 
   factory ApiSession.fromJson(Object? json) {
     final map = json! as Map<String, Object?>;
     return ApiSession(
       userId: map['userId']! as String,
-      roles: [for (final role in map['roles']! as List) role as String],
+      accountType: map['accountType']! as String,
     );
   }
 
   final String userId;
-  final List<String> roles;
+
+  /// `BUYER`, `SELLER`, or `ADMIN` ([AccountTypes]).
+  final String accountType;
+
+  /// The mobile app is for buyers only (AT-1, Q5).
+  bool get isBuyer => accountType == AccountTypes.buyer;
 }
 
 /// What the app does with the API session check (spec 03).
@@ -37,7 +50,7 @@ final class SessionUnavailable extends SessionCheck {
   const SessionUnavailable();
 }
 
-/// 403: valid token without an application account yet (spec 04).
+/// 403: valid token without an account yet: setup is not done (AT-1).
 final class SessionNotBootstrapped extends SessionCheck {
   const SessionNotBootstrapped();
 }

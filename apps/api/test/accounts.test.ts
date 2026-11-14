@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 
 import { createPrismaClient, type PrismaClient } from "../src/lib/prisma.js";
 import { MemoryRateLimiter } from "../src/lib/rate-limiter.js";
-import { PrismaCustomerRepository, type RepositoryFaults } from "../src/modules/customers/index.js";
+import { PrismaAccountRepository, provisionAdministrator, type RepositoryFaults } from "../src/modules/accounts/index.js";
 import { PrismaShopAccessRepository } from "../src/modules/shops/shop-access.repository.js";
 import { PrismaUserRepository } from "../src/modules/users/user.repository.js";
 import { phoneChangeRetentionCutoff, purgeExpiredPhoneChanges } from "../src/workers/phone-change-retention.js";
@@ -14,12 +14,12 @@ import { createTestKeyStore, createTestVerifier, startApp, type RunningApp } fro
 import { FakeEmailConfirmation } from "./helpers/customers.js";
 import { TestJwksServer } from "./helpers/jwks-server.js";
 import { createTestKey, signToken, type TestKey } from "./helpers/keys.js";
-import { resetDatabase } from "./helpers/database.js";
+import { resetDatabase, TEST_SHOP_FIELDS } from "./helpers/database.js";
 
 dotenv.config({ quiet: true });
 const databaseUrl = process.env["TEST_DATABASE_URL"];
 
-describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)", { skip: databaseUrl === undefined ? "TEST_DATABASE_URL is not set" : false }, () => {
+describe("registration intents, account setup, profile, and phone history (AT-1, spec 04, PostgreSQL)", { skip: databaseUrl === undefined ? "TEST_DATABASE_URL is not set" : false }, () => {
   const jwks = new TestJwksServer();
   const faults: RepositoryFaults = {};
   const emailConfirmation = new FakeEmailConfirmation();
@@ -39,8 +39,8 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
         users: new PrismaUserRepository(prisma),
         shops: new PrismaShopAccessRepository(prisma),
       },
-      customers: {
-        customers: new PrismaCustomerRepository(prisma, faults),
+      accounts: {
+        accounts: new PrismaAccountRepository(prisma, faults),
         emailConfirmation,
         // Generous limits here; rate limiting has its own tests.
         rateLimiter: { hit: async () => ({ allowed: true, retryAfterSeconds: 1 }) },
@@ -72,7 +72,22 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
     const text = await response.text();
     return { status: response.status, body: text.length > 0 ? (JSON.parse(text) as Record<string, unknown>) : null };
   };
-  const bootstrap = (sub: string, body: unknown = { phone: "22 33 44 55" }) => call("POST", "/customers/me", sub, body);
+  /** `POST /registration-intents`: no session, as right after a Supabase sign-up. */
+  const intent = async (supabaseUserId: string, accountType: string, extra: Record<string, unknown> = {}) => {
+    const response = await fetch(`${app.baseUrl}/api/v1/registration-intents`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ supabaseUserId, accountType, ...extra }),
+    });
+    const text = await response.text();
+    return { status: response.status, body: text.length > 0 ? (JSON.parse(text) as Record<string, unknown>) : null };
+  };
+  const setup = (sub: string, body: unknown) => call("POST", "/accounts/me/setup", sub, body);
+  /** Buyer registration: the intent, then setup (AT-1, section 5.1). */
+  const bootstrap = async (sub: string, body: unknown = { phone: "22 33 44 55" }) => {
+    await intent(sub, "BUYER");
+    return setup(sub, body);
+  };
   const counts = async () => ({
     users: await prisma.user.count(),
     profiles: await prisma.customerProfile.count(),
@@ -82,19 +97,21 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
   describe("bootstrap", () => {
     it("pre-bootstrap: a valid token gets 403 on protected routes other than bootstrap", async () => {
       const sub = randomUUID();
-      assert.equal((await call("GET", "/customers/me", sub)).status, 403);
-      assert.equal((await call("PATCH", "/customers/me", sub, { fullName: "A" })).status, 403);
+      assert.equal((await call("GET", "/accounts/me", sub)).status, 403);
+      assert.equal((await call("PATCH", "/accounts/me", sub, { fullName: "A" })).status, 403);
       assert.equal((await call("GET", "/auth/session", sub)).status, 403);
       assert.deepEqual(await counts(), { users: 0, profiles: 0, history: 0 });
     });
 
-    it("first bootstrap creates one User with CUSTOMER, one profile, and an ACCOUNT_SETUP entry → 201", async () => {
+    it("buyer setup creates one Buyer account, one profile, and an ACCOUNT_SETUP entry → 201", async () => {
       const sub = randomUUID();
       const response = await bootstrap(sub);
       assert.equal(response.status, 201);
       const profile = response.body?.["profile"] as Record<string, unknown>;
       assert.equal(profile["phone"], "+22222334455");
-      assert.deepEqual(response.body?.["roles"], ["CUSTOMER"]);
+      assert.equal(response.body?.["accountType"], "BUYER");
+      assert.equal("roles" in (response.body ?? {}), false);
+      assert.notEqual((await prisma.registrationIntent.findUniqueOrThrow({ where: { supabaseUserId: sub } })).consumedAt, null);
       assert.ok(!("phoneVerified" in profile) && !("verified" in profile));
       assert.deepEqual(await counts(), { users: 1, profiles: 1, history: 1 });
       const entry = await prisma.customerPhoneChange.findFirstOrThrow();
@@ -103,8 +120,9 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
       assert.equal(entry.newPhone, "+22222334455");
       assert.equal(entry.actorUserId, response.body?.["userId"]);
       assert.equal(emailConfirmation.calls.at(-1)?.supabaseUserId, sub);
-      // The session check now succeeds.
-      assert.equal((await call("GET", "/auth/session", sub)).status, 200);
+      // The session check now succeeds, with the type.
+      const session = await call("GET", "/auth/session", sub);
+      assert.deepEqual(session.body, { userId: response.body?.["userId"], accountType: "BUYER" });
     });
 
     it("repeated bootstrap reuses both records → 200, keeps the stored phone, writes no new rows", async () => {
@@ -136,8 +154,9 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
     it("ignores client-supplied confirmation status and identity: only the server-side check counts", async () => {
       const sub = randomUUID();
       emailConfirmation.unconfirmed.add(sub);
+      // The confirmation check runs first (setup needs the intent before it can read the body).
       const response = await bootstrap(sub, { phone: "22334455", emailConfirmed: true });
-      assert.equal(response.status, 400); // unknown field is rejected outright
+      assert.equal(response.status, 403);
       const plain = await bootstrap(sub);
       assert.equal(plain.status, 403);
       assert.deepEqual(await counts(), { users: 0, profiles: 0, history: 0 });
@@ -151,6 +170,8 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
         [{ phone: "not a phone" }, "INVALID_PHONE"],
         [{ phone: 22334455 }, "BAD_REQUEST"],
         [{ phone: "22334455", role: "ADMIN" }, "BAD_REQUEST"],
+        [{ phone: "22334455", accountType: "SELLER" }, "BAD_REQUEST"],
+        [{ phone: "22334455", shop: TEST_SHOP_FIELDS }, "BAD_REQUEST"],
         [{ phone: "22334455", userId: randomUUID() }, "BAD_REQUEST"],
         [{ phone: "22334455", phoneVerified: true }, "BAD_REQUEST"],
       ];
@@ -162,21 +183,10 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
       assert.deepEqual(await counts(), { users: 0, profiles: 0, history: 0 });
     });
 
-    it("repairs an existing User without a profile, keeping its roles", async () => {
+    it("concurrent setup requests produce exactly one account and one profile", async () => {
       const sub = randomUUID();
-      const user = await prisma.user.create({
-        data: { supabaseUserId: sub, roles: { create: [{ role: "CUSTOMER" }, { role: "SELLER" }] } },
-      });
-      const response = await bootstrap(sub);
-      assert.equal(response.status, 201);
-      assert.equal(response.body?.["userId"], user.id);
-      assert.deepEqual(response.body?.["roles"], ["CUSTOMER", "SELLER"]);
-      assert.deepEqual(await counts(), { users: 1, profiles: 1, history: 1 });
-    });
-
-    it("concurrent bootstrap requests produce exactly one User and one profile", async () => {
-      const sub = randomUUID();
-      const responses = await Promise.all(Array.from({ length: 8 }, () => bootstrap(sub)));
+      await intent(sub, "BUYER");
+      const responses = await Promise.all(Array.from({ length: 8 }, () => setup(sub, { phone: "22 33 44 55" })));
       assert.ok(responses.every((r) => r.status === 201 || r.status === 200), JSON.stringify(responses.map((r) => r.status)));
       assert.equal(responses.filter((r) => r.status === 201).length, 1);
       assert.deepEqual(await counts(), { users: 1, profiles: 1, history: 1 });
@@ -196,15 +206,123 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
 
     it("the database rejects duplicate supabaseUserId and CustomerProfile.userId", async () => {
       const sub = randomUUID();
-      const user = await prisma.user.create({ data: { supabaseUserId: sub } });
-      await assert.rejects(prisma.user.create({ data: { supabaseUserId: sub } }), { code: "P2002" });
+      const user = await prisma.user.create({ data: { supabaseUserId: sub, accountType: "BUYER" } });
+      await assert.rejects(prisma.user.create({ data: { supabaseUserId: sub, accountType: "SELLER" } }), { code: "P2002" });
       await prisma.customerProfile.create({ data: { userId: user.id, phone: "+22222334455" } });
       await assert.rejects(prisma.customerProfile.create({ data: { userId: user.id, phone: "+22222334456" } }), { code: "P2002" });
     });
 
     it("the database rejects a non-E.164 phone", async () => {
-      const user = await prisma.user.create({ data: { supabaseUserId: randomUUID() } });
+      const user = await prisma.user.create({ data: { supabaseUserId: randomUUID(), accountType: "BUYER" } });
       await assert.rejects(prisma.customerProfile.create({ data: { userId: user.id, phone: "22334455" } }));
+    });
+  });
+
+  describe("registration intents (AT-1, section 5.3)", () => {
+    it("records BUYER or SELLER once per identity, without a session; a different value → 409", async () => {
+      const sub = randomUUID();
+      assert.equal((await intent(sub, "SELLER")).status, 204);
+      assert.equal((await intent(sub, "SELLER")).status, 204);
+      const other = await intent(sub, "BUYER");
+      assert.equal(other.status, 409);
+      assert.deepEqual(other.body, { error: { code: "REGISTRATION_INTENT_CONFLICT" } });
+      assert.equal((await prisma.registrationIntent.findUniqueOrThrow({ where: { supabaseUserId: sub } })).accountType, "SELLER");
+    });
+
+    it("never records ADMIN, an invalid identity, or extra fields → 400", async () => {
+      for (const [sub, type, extra] of [
+        [randomUUID(), "ADMIN", {}],
+        ["not-a-uuid", "BUYER", {}],
+        [randomUUID(), "BUYER", { roles: ["ADMIN"] }],
+        [randomUUID(), "BUYER", { accountType: "ADMIN", status: "APPROVED" }],
+      ] as const) {
+        assert.equal((await intent(sub, type, extra)).status, 400, `${type} ${JSON.stringify(extra)}`);
+      }
+      assert.equal(await prisma.registrationIntent.count(), 0);
+    });
+
+    it("lets a verified identity read only its own intent, before setup", async () => {
+      const sub = randomUUID();
+      assert.deepEqual((await call("GET", "/registration-intents/me", sub)).body, { accountType: null });
+      await intent(sub, "SELLER");
+      await intent(randomUUID(), "BUYER");
+      assert.deepEqual((await call("GET", "/registration-intents/me", sub)).body, { accountType: "SELLER" });
+      const anonymous = await fetch(`${app.baseUrl}/api/v1/registration-intents/me`);
+      assert.equal(anonymous.status, 401);
+    });
+
+    it("answers the same for an identity that already has an account", async () => {
+      const sub = randomUUID();
+      await bootstrap(sub);
+      assert.equal((await intent(sub, "BUYER")).status, 204);
+      assert.equal((await intent(randomUUID(), "BUYER")).status, 204);
+    });
+
+    it("concurrent buyer and seller intents for one identity: exactly one wins", async () => {
+      const sub = randomUUID();
+      const statuses = (await Promise.all([intent(sub, "BUYER"), intent(sub, "SELLER"), intent(sub, "BUYER"), intent(sub, "SELLER")])).map((r) => r.status);
+      const kept = (await prisma.registrationIntent.findUniqueOrThrow({ where: { supabaseUserId: sub } })).accountType;
+      assert.equal(statuses.filter((status) => status === 204).length, 2, JSON.stringify(statuses));
+      assert.equal(statuses.filter((status) => status === 409).length, 2, kept);
+    });
+  });
+
+  describe("account setup by intent (AT-1, section 5)", () => {
+    it("without an intent → 409 REGISTRATION_INTENT_REQUIRED, nothing written", async () => {
+      const response = await setup(randomUUID(), { phone: "22334455" });
+      assert.equal(response.status, 409);
+      assert.deepEqual(response.body, { error: { code: "REGISTRATION_INTENT_REQUIRED" } });
+      assert.deepEqual(await counts(), { users: 0, profiles: 0, history: 0 });
+    });
+
+    it("seller setup creates a Seller account, its profile, and a PENDING shop with its submission record → 201", async () => {
+      const sub = randomUUID();
+      await intent(sub, "SELLER");
+      const response = await setup(sub, { phone: "22 33 44 55", shop: TEST_SHOP_FIELDS });
+      assert.equal(response.status, 201);
+      assert.equal(response.body?.["accountType"], "SELLER");
+      const shop = await prisma.shop.findUniqueOrThrow({ where: { ownerUserId: response.body?.["userId"] as string }, include: { statusEvents: true } });
+      assert.equal(shop.status, "PENDING");
+      assert.equal(shop.shopName, TEST_SHOP_FIELDS.shopName);
+      assert.deepEqual(shop.statusEvents.map((event) => [event.fromStatus, event.toStatus, event.decisionType]), [[null, "PENDING", null]]);
+      assert.deepEqual(await counts(), { users: 1, profiles: 1, history: 1 });
+      // Repeated setup returns the same account.
+      const again = await setup(sub, { phone: "22 33 44 55", shop: TEST_SHOP_FIELDS });
+      assert.equal(again.status, 200);
+      assert.equal(await prisma.shop.count(), 1);
+    });
+
+    it("validates the body for the intended type only; the body never chooses the type", async () => {
+      const seller = randomUUID();
+      await intent(seller, "SELLER");
+      for (const body of [{ phone: "22334455" }, { phone: "22334455", shop: { ...TEST_SHOP_FIELDS, shopName: "" } }, { phone: "22334455", shop: { ...TEST_SHOP_FIELDS, status: "APPROVED" } }]) {
+        assert.equal((await setup(seller, body)).status, 400, JSON.stringify(body));
+      }
+      const buyer = randomUUID();
+      await intent(buyer, "BUYER");
+      assert.equal((await setup(buyer, { phone: "22334455", shop: TEST_SHOP_FIELDS })).status, 400);
+      assert.deepEqual(await counts(), { users: 0, profiles: 0, history: 0 });
+      assert.equal(await prisma.shop.count(), 0);
+    });
+
+    it("an existing account whose intent names another type → 409 ACCOUNT_TYPE_CONFLICT, nothing changes", async () => {
+      const sub = randomUUID();
+      assert.equal((await provisionAdministrator(prisma, sub)).state, "provisioned");
+      await prisma.registrationIntent.create({ data: { supabaseUserId: sub, accountType: "BUYER" } });
+      const response = await setup(sub, { phone: "22334455" });
+      assert.equal(response.status, 409);
+      assert.deepEqual(response.body, { error: { code: "ACCOUNT_TYPE_CONFLICT" } });
+      assert.equal((await prisma.user.findUniqueOrThrow({ where: { supabaseUserId: sub } })).accountType, "ADMIN");
+    });
+
+    it("a provisioned administrator without an intent gets its own account back (phone optional)", async () => {
+      const sub = randomUUID();
+      await provisionAdministrator(prisma, sub);
+      const response = await setup(sub, {});
+      assert.equal(response.status, 200);
+      assert.equal(response.body?.["accountType"], "ADMIN");
+      assert.equal((response.body?.["profile"] as Record<string, unknown>)["phone"], null);
+      assert.equal((await call("GET", "/accounts/me", sub)).status, 200);
     });
   });
 
@@ -212,7 +330,7 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
     it("returns the user's own profile", async () => {
       const sub = randomUUID();
       await bootstrap(sub);
-      const response = await call("GET", "/customers/me", sub);
+      const response = await call("GET", "/accounts/me", sub);
       assert.equal(response.status, 200);
       const profile = response.body?.["profile"] as Record<string, unknown>;
       assert.deepEqual(Object.keys(profile).sort(), ["createdAt", "fullName", "id", "phone", "preferredLocale", "updatedAt"]);
@@ -222,7 +340,7 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
     it("updates fullName, preferredLocale, and phone", async () => {
       const sub = randomUUID();
       await bootstrap(sub);
-      const response = await call("PATCH", "/customers/me", sub, {
+      const response = await call("PATCH", "/accounts/me", sub, {
         fullName: "  Aïcha Mint Ahmed  ",
         preferredLocale: "ar",
         phone: "+222 36 11 22 33",
@@ -240,9 +358,9 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
       const sub = randomUUID();
       await bootstrap(sub);
       const before = await prisma.customerProfile.findFirstOrThrow();
-      for (const field of ["supabaseUserId", "userId", "id", "email", "phoneVerified", "role", "roles", "shopId", "createdAt", "updatedAt"]) {
+      for (const field of ["supabaseUserId", "userId", "id", "email", "phoneVerified", "role", "roles", "accountType", "adminAccessDeactivatedAt", "shopId", "createdAt", "updatedAt"]) {
         for (const body of [{ [field]: "x" }, { fullName: "Changed", [field]: "x" }]) {
-          const response = await call("PATCH", "/customers/me", sub, body);
+          const response = await call("PATCH", "/accounts/me", sub, body);
           assert.equal(response.status, 400, JSON.stringify(body));
         }
       }
@@ -255,7 +373,7 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
       const sub = randomUUID();
       await bootstrap(sub);
       for (const body of [{}, { fullName: "   " }, { fullName: "a".repeat(101) }, { fullName: "bad\u0007" }, { preferredLocale: "en" }, { phone: "" }, { phone: null }, { phone: "123" }]) {
-        assert.equal((await call("PATCH", "/customers/me", sub, body)).status, 400, JSON.stringify(body));
+        assert.equal((await call("PATCH", "/accounts/me", sub, body)).status, 400, JSON.stringify(body));
       }
     });
 
@@ -264,9 +382,9 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
       const bob = randomUUID();
       await bootstrap(alice);
       await bootstrap(bob, { phone: "36000000" });
-      const response = await call("PATCH", "/customers/me", bob, { fullName: "Bob" });
+      const response = await call("PATCH", "/accounts/me", bob, { fullName: "Bob" });
       assert.equal(response.status, 200);
-      const aliceProfile = await call("GET", "/customers/me", alice);
+      const aliceProfile = await call("GET", "/accounts/me", alice);
       assert.equal((aliceProfile.body?.["profile"] as Record<string, unknown>)["fullName"], null);
     });
   });
@@ -276,7 +394,7 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
       const sub = randomUUID();
       const setup = await bootstrap(sub);
       const started = Date.now();
-      await call("PATCH", "/customers/me", sub, { phone: "36112233" });
+      await call("PATCH", "/accounts/me", sub, { phone: "36112233" });
       const entries = await prisma.customerPhoneChange.findMany({ orderBy: { createdAt: "asc" } });
       assert.equal(entries.length, 2);
       const update = entries[1];
@@ -291,7 +409,7 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
       const sub = randomUUID();
       await bootstrap(sub);
       const before = await prisma.customerProfile.findFirstOrThrow();
-      assert.equal((await call("PATCH", "/customers/me", sub, { phone: "+222 22 33 44 55" })).status, 200);
+      assert.equal((await call("PATCH", "/accounts/me", sub, { phone: "+222 22 33 44 55" })).status, 200);
       assert.equal(await prisma.customerPhoneChange.count(), 1);
       assert.deepEqual(await prisma.customerProfile.findFirstOrThrow(), before);
     });
@@ -302,7 +420,7 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
       faults.afterPhoneUpdated = () => {
         throw new Error("injected");
       };
-      assert.equal((await call("PATCH", "/customers/me", sub, { phone: "36112233" })).status, 500);
+      assert.equal((await call("PATCH", "/accounts/me", sub, { phone: "36112233" })).status, 500);
       assert.equal((await prisma.customerProfile.findFirstOrThrow()).phone, "+22222334455");
       assert.equal(await prisma.customerPhoneChange.count(), 1);
     });
@@ -311,7 +429,7 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
       const sub = randomUUID();
       await bootstrap(sub);
       const phones = ["36000001", "36000002", "36000003", "36000004", "36000005", "36000006"];
-      await Promise.all(phones.map((phone) => call("PATCH", "/customers/me", sub, { phone })));
+      await Promise.all(phones.map((phone) => call("PATCH", "/accounts/me", sub, { phone })));
       const entries = await prisma.customerPhoneChange.findMany({ orderBy: { createdAt: "asc" } });
       assert.equal(entries.length, 1 + phones.length);
       // Each entry's previous value is the previous entry's new value.
@@ -324,8 +442,8 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
     it("no API response exposes the history", async () => {
       const sub = randomUUID();
       await bootstrap(sub);
-      await call("PATCH", "/customers/me", sub, { phone: "36112233" });
-      for (const response of [await call("GET", "/customers/me", sub), await call("GET", "/auth/session", sub)]) {
+      await call("PATCH", "/accounts/me", sub, { phone: "36112233" });
+      for (const response of [await call("GET", "/accounts/me", sub), await call("GET", "/auth/session", sub)]) {
         const text = JSON.stringify(response.body);
         assert.ok(!text.includes("+22222334455"), "previous phone must not be exposed");
         assert.ok(!/history|phoneChanges|previousPhone/i.test(text));
@@ -335,7 +453,7 @@ describe("customer bootstrap, profile, and phone history (spec 04, PostgreSQL)",
     it("retention deletes entries older than 12 months, keeps newer ones and the profile phone, and is idempotent", async () => {
       const sub = randomUUID();
       await bootstrap(sub);
-      await call("PATCH", "/customers/me", sub, { phone: "36112233" });
+      await call("PATCH", "/accounts/me", sub, { phone: "36112233" });
       const now = new Date("2027-06-15T12:00:00Z");
       const cutoff = phoneChangeRetentionCutoff(now);
       assert.equal(cutoff.toISOString(), "2026-06-15T12:00:00.000Z");

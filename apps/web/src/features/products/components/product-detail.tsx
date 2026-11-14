@@ -4,7 +4,6 @@ import type { ProductVariantView, SellerProductDetail } from "@chicman/shared"
 import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useId, useState, type FormEvent } from "react"
 
-import { BrandLogo } from "@/components/brand/brand-logo"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -75,8 +74,7 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
   )
 
   return (
-    <main className="flex flex-1 flex-col items-center gap-6 bg-page px-4 py-10">
-      <BrandLogo label={t.brand} />
+    <main className="flex flex-1 flex-col items-center gap-6 bg-page py-6">
       {view.state === "loading" || status !== "signed-in" ? <FormMessage tone="info">{t.loading}</FormMessage> : null}
       {view.state === "failed" ? (
         <Card className="w-full max-w-xl rounded-3xl p-6">

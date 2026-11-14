@@ -9,7 +9,6 @@ import '../../addresses/presentation/address_messages.dart';
 import '../../addresses/presentation/address_screens.dart';
 import '../../orders/presentation/order_messages.dart';
 import '../../orders/presentation/order_screens.dart';
-import '../../shop/presentation/shop_screen.dart';
 import '../application/auth_providers.dart';
 import '../data/auth_repository.dart';
 import '../domain/account_setup.dart';
@@ -18,8 +17,11 @@ import '../domain/phone_number.dart';
 import '../domain/session_check.dart';
 import 'auth_messages.dart';
 import 'auth_scaffold.dart';
+import 'managed_on_web_screen.dart';
 
-/// Signed-in area: API session check, account setup when needed, logout.
+/// Signed-in area (AT-1, buyer only): API session check, account setup when
+/// needed, logout. A Seller or Administrator account is managed on the web;
+/// the shell shows it [ManagedOnWebScreen] instead of the buyer screens.
 class AccountScreen extends ConsumerWidget {
   const AccountScreen({super.key, required this.session});
 
@@ -32,14 +34,11 @@ class AccountScreen extends ConsumerWidget {
     final email = session.email;
 
     final List<Widget> status = switch (check) {
-      AsyncData(value: SessionActive(:final session)) => [
-        AuthMessageText(
-          '${t.sessionActive} ${t.roles} : ${session.roles.join(', ')}',
-        ),
-        const _ContactPhone(),
-        const _DeliveryAddresses(),
-      ],
-      AsyncData(value: SessionNotBootstrapped()) => [const AccountSetupForm()],
+      AsyncData(value: SessionActive(:final session)) =>
+        session.isBuyer
+            ? [const _ContactPhone(), const _DeliveryAddresses()]
+            : [AuthMessageText(webOnlyText(t, session.accountType))],
+      AsyncData(value: SessionNotBootstrapped()) => [const _SetupStep()],
       AsyncData(value: SessionUnavailable()) => [
         AuthMessageText(t.authUnavailable, isError: true),
       ],
@@ -101,7 +100,7 @@ class _ContactPhone extends ConsumerWidget {
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
-        AuthMessageText('${t.contactPhone} : ${account.phone}'),
+        AuthMessageText('${t.contactPhone} : ${account.phone ?? ''}'),
         OutlinedButton(
           key: const Key('account-profile-settings'),
           onPressed: () => Navigator.of(context).push(
@@ -118,20 +117,41 @@ class _ContactPhone extends ConsumerWidget {
           ),
           child: Text(OrderMessages.of(context).myOrders),
         ),
-        OutlinedButton(
-          key: const Key('account-shop'),
-          onPressed: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute<void>(builder: (_) => const ShopScreen())),
-          child: Text(t.myShop),
-        ),
       ],
     );
   }
 }
 
-/// Account setup after email confirmation (spec 03/04): the required contact
-/// phone, then bootstrap. One request in flight; the server is idempotent.
+/// Setup by registration intent (AT-1): a seller intent is completed on the
+/// web (the app is buyer only, Q5); otherwise the buyer setup form.
+class _SetupStep extends ConsumerWidget {
+  const _SetupStep();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = AuthMessages.of(context);
+    return switch (ref.watch(ownIntentProvider)) {
+      AsyncData(value: AccountTypes.seller) => Column(
+        key: const Key('setup-seller-intent'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            t.sellerIntentTitle,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSpacing.s1),
+          AuthMessageText(t.sellerIntentBody),
+        ],
+      ),
+      AsyncData() || AsyncError() => const AccountSetupForm(),
+      _ => AuthMessageText(t.sessionChecking),
+    };
+  }
+}
+
+/// Account setup after email confirmation (spec 03/04, AT-1): the required
+/// contact phone, then a Buyer account. One request in flight; the server is
+/// idempotent.
 class AccountSetupForm extends ConsumerStatefulWidget {
   const AccountSetupForm({super.key});
 
@@ -181,6 +201,10 @@ class _AccountSetupFormState extends ConsumerState<AccountSetupForm> {
           );
         case SetupInvalidPhone():
           _phoneError = AuthFailure.invalidPhone;
+        case SetupTypeConflict():
+          _formError = t.typeConflict;
+        case SetupIntentRequired():
+          _formError = t.error(AuthFailure.generic);
         case SetupEmailNotConfirmed():
           _formError = t.error(AuthFailure.emailNotConfirmed);
         case SetupUnavailable():

@@ -45,11 +45,7 @@ class CheckoutController extends Notifier<CheckoutView> {
 
   @override
   CheckoutView build() {
-    final session = ref.watch(
-      authSessionProvider.select(
-        (session) => (session.isLoading, session.value?.userId),
-      ),
-    );
+    final session = ref.watch(buyerSessionProvider);
     _generation += 1;
     _addressId = null;
     _attemptKey = null;

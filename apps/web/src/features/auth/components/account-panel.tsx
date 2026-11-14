@@ -1,6 +1,6 @@
 "use client"
 
-import type { CustomerAddressListResponse, CustomerProfileResponse } from "@chicman/shared"
+import type { AccountProfileResponse, CustomerAddressListResponse } from "@chicman/shared"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useState } from "react"
 
@@ -8,92 +8,79 @@ import { Button } from "@/components/ui/button"
 import { dismissAddressPrompt, isAddressPromptDismissed } from "@/features/addresses/address-form"
 import { apiRequest } from "@/lib/api-client"
 
+import { ACCOUNT_PATH } from "../account"
 import { useAuth } from "../auth-provider"
-import type { SessionCheck } from "../session-check"
 import { useAuthMessages } from "../use-auth-messages"
-import { AccountSetupForm } from "./account-setup-form"
 import { AuthShell } from "./auth-shell"
 import { FormMessage } from "./form-field"
 import { TextLink } from "./text-link"
 
-/** Signed-in area: API session check, account setup when needed, logout. */
+type View = { state: "loading" } | { state: "ready"; account: AccountProfileResponse } | { state: "failed" }
+
+/**
+ * `/account`: the Buyer's home (AT-1). Rendered inside `AccountGate area="buyer"`,
+ * which has already checked the session and sent every other type, and an
+ * identity without an account, where they belong.
+ */
 export function AccountPanel() {
   const t = useAuthMessages()
   const router = useRouter()
-  const { status, session, checkSession, getAccessToken, signOut } = useAuth()
-  const [check, setCheck] = useState<SessionCheck | null>(null)
-  const [account, setAccount] = useState<CustomerProfileResponse | null>(null)
-  const [pending, setPending] = useState(false)
+  const { session, getAccessToken, signOut } = useAuth()
+  const [view, setView] = useState<View>({ state: "loading" })
   // Number of saved delivery addresses (spec 05), or null while unknown.
   const [addressCount, setAddressCount] = useState<number | null>(null)
   const [promptDismissed, setPromptDismissed] = useState(true)
+  const [reloads, setReloads] = useState(0)
 
-  useEffect(() => {
-    if (status === "signed-out" || status === "not-configured") router.replace("/login")
-  }, [status, router])
-
-  const loadAccount = useCallback(async () => {
+  // Reads everything first; the effect then sets the state in one place.
+  const load = useCallback(async (): Promise<{ view: View; addressCount: number | null; promptDismissed: boolean } | null> => {
     const token = await getAccessToken()
-    if (!token) return
-    const result = await apiRequest<CustomerProfileResponse>("/customers/me", token)
-    if (result.kind === "ok") setAccount(result.data)
+    if (!token) return null
+    const result = await apiRequest<AccountProfileResponse>(ACCOUNT_PATH, token)
+    if (result.kind === "unauthorized") {
+      void signOut()
+      return null
+    }
     const addresses = await apiRequest<CustomerAddressListResponse>("/customers/me/addresses", token)
-    if (addresses.kind === "ok") setAddressCount(addresses.data.addresses.length)
-    setPromptDismissed(isAddressPromptDismissed(typeof window === "undefined" ? null : window.localStorage))
-  }, [getAccessToken])
-
-  const runCheck = useCallback(async () => {
-    setPending(true)
-    const result = await checkSession()
-    setCheck(result)
-    if (result.state === "active") await loadAccount()
-    setPending(false)
-  }, [checkSession, loadAccount])
+    return {
+      view: result.kind === "ok" ? { state: "ready", account: result.data } : { state: "failed" },
+      addressCount: addresses.kind === "ok" ? addresses.data.addresses.length : null,
+      promptDismissed: isAddressPromptDismissed(typeof window === "undefined" ? null : window.localStorage),
+    }
+  }, [getAccessToken, signOut])
 
   useEffect(() => {
-    if (status !== "signed-in") return
     let cancelled = false
-    void checkSession().then(async (result) => {
-      if (cancelled) return
-      setCheck(result)
-      if (result.state === "active") await loadAccount()
+    void load().then((loaded) => {
+      if (cancelled || loaded === null) return
+      setView(loaded.view)
+      setAddressCount(loaded.addressCount)
+      setPromptDismissed(loaded.promptDismissed)
     })
     return () => {
       cancelled = true
     }
-  }, [status, checkSession, loadAccount])
-
-  if (status !== "signed-in") {
-    return (
-      <AuthShell brand={t.brand} title={t.accountTitle}>
-        <FormMessage tone="info">{t.loading}</FormMessage>
-      </AuthShell>
-    )
-  }
+  }, [load, reloads])
 
   const email = session?.user.email
-  const roles = account?.roles ?? (check?.state === "active" ? check.session.roles : null)
 
   return (
     <AuthShell brand={t.brand} title={t.accountTitle} description={email ? `${t.signedInAs} ${email}` : undefined}>
-      {check === null ? <FormMessage tone="info">{t.sessionChecking}</FormMessage> : null}
-      {check?.state === "not-bootstrapped" && account === null ? (
-        <AccountSetupForm
-          onDone={(created) => {
-            setAccount(created)
-            setCheck({ state: "active", session: { userId: created.userId, roles: created.roles } })
-            // Spec 05: offer the delivery location right after account setup (skippable).
-            router.push("/account/addresses/new?onboarding=1")
-          }}
-        />
-      ) : null}
-      {roles ? <FormMessage tone="info">{`${t.sessionActive} ${t.roles} : ${roles.join(", ")}`}</FormMessage> : null}
-      {account ? (
+      {view.state === "loading" ? <FormMessage tone="info">{t.loading}</FormMessage> : null}
+      {view.state === "failed" ? (
         <>
-          {account.profile.fullName ? <p className="type-title-medium">{account.profile.fullName}</p> : null}
+          <FormMessage tone="error">{t.errors.generic}</FormMessage>
+          <Button variant="outline" onClick={() => setReloads((count) => count + 1)}>
+            {t.retry}
+          </Button>
+        </>
+      ) : null}
+      {view.state === "ready" ? (
+        <>
+          {view.account.profile.fullName ? <p className="type-title-medium">{view.account.profile.fullName}</p> : null}
           <p className="type-body-medium">
             <span className="text-muted-foreground">{t.contactPhone} : </span>
-            <span dir="ltr">{account.profile.phone}</span>
+            <span dir="ltr">{view.account.profile.phone}</span>
           </p>
           <TextLink href="/account/profile">{t.profileSettings}</TextLink>
           <TextLink href="/account/orders">{t.myOrders}</TextLink>
@@ -118,23 +105,9 @@ export function AccountPanel() {
               </div>
             </section>
           ) : null}
-          <TextLink href="/seller/shop">{t.myShop}</TextLink>
-          {/* Navigation only: the API enforces the approved-seller rule. */}
-          {account.roles.includes("SELLER") ? <TextLink href="/seller/products">{t.myProducts}</TextLink> : null}
-          {account.roles.includes("SELLER") ? <TextLink href="/seller/orders">{t.shopOrders}</TextLink> : null}
-          {/* Navigation only: the API enforces the ADMIN role. */}
-          {account.roles.includes("ADMIN") ? <TextLink href="/admin/shops">{t.adminShops}</TextLink> : null}
         </>
       ) : null}
-      {check?.state === "unavailable" ? <FormMessage tone="error">{t.authUnavailable}</FormMessage> : null}
-      {check?.state === "signed-out" ? <FormMessage tone="error">{t.sessionInvalid}</FormMessage> : null}
-      {check?.state === "error" ? <FormMessage tone="error">{t.errors.generic}</FormMessage> : null}
       <div className="flex flex-wrap gap-2">
-        {check?.state === "unavailable" || check?.state === "error" ? (
-          <Button variant="outline" disabled={pending} onClick={runCheck}>
-            {t.retry}
-          </Button>
-        ) : null}
         <Button variant="secondary" onClick={() => void signOut()}>
           {t.logout}
         </Button>

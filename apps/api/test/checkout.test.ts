@@ -152,12 +152,21 @@ describe("checkout (spec 10, PostgreSQL)", { skip: databaseUrl === undefined ? "
     return { actor: owner, shop };
   }
 
-  /** A shop the customer owns, approved, with a fee (O2). */
+  /**
+   * A shop the customer owns, approved, with a fee (O2). Only possible in data
+   * from before AT-1 (a Buyer owns no shop): O2 stays as defense in depth.
+   */
   async function ownShop(): Promise<{ shopId: string }> {
-    const owned = await h.shopInStatus("APPROVED", customer);
-    await h.prisma.userRole.create({ data: { userId: customer.userId, role: "SELLER" } });
+    const owned = await h.legacyShop("APPROVED", customer);
     await h.prisma.shop.update({ where: { id: owned.shopId }, data: { deliveryFee: "10.00" } });
     return { shopId: owned.shopId };
+  }
+
+  /** A published product in the customer's own (legacy) shop: made by a seller, then moved there. */
+  async function ownProduct(ownShopId: string, spec: Spec = {}): Promise<SellerProductDetail> {
+    const made = await product(spec);
+    await h.prisma.product.update({ where: { id: made.id }, data: { shopId: ownShopId } });
+    return made;
   }
 
   async function add(productId: string, quantity: number, variantId?: string, actor: Actor = customer): Promise<void> {
@@ -319,7 +328,7 @@ describe("checkout (spec 10, PostgreSQL)", { skip: databaseUrl === undefined ? "
 
     it("flags a shop the customer owns (O2)", async () => {
       const owner = await ownShop();
-      const own = await product({ actor: customer, shop: owner.shopId, name: "Mon produit" });
+      const own = await ownProduct(owner.shopId, { name: "Mon produit" });
       await add(own.id, 1);
       assert.deepEqual((await summary()).problems, [{ code: "OWN_SHOP", shopId: owner.shopId }]);
     });
@@ -484,7 +493,7 @@ describe("checkout (spec 10, PostgreSQL)", { skip: databaseUrl === undefined ? "
       const elsewhere = await product();
       await add(elsewhere.id, 1);
       const owner = await ownShop();
-      const own = await product({ actor: customer, shop: owner.shopId, name: "Mon produit", price: "200.00" });
+      const own = await ownProduct(owner.shopId, { name: "Mon produit", price: "200.00" });
       await add(own.id, 1);
       // A client that skips the summary and sends correct figures is still refused.
       await expectBlocked({

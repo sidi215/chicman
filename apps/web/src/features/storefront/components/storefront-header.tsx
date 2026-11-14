@@ -1,7 +1,7 @@
 "use client"
 
 import { PRODUCT_CATEGORIES, type ProductCategory } from "@chicman/shared"
-import { UserRound } from "lucide-react"
+import { ShieldCheck, Store, UserRound } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import { Suspense } from "react"
@@ -9,6 +9,9 @@ import { Suspense } from "react"
 import { BrandLogo } from "@/components/brand/brand-logo"
 import { ThemeSelector } from "@/components/theme/theme-selector"
 import { buttonVariants } from "@/components/ui/button"
+import { ACCOUNT_HOME } from "@/features/auth/account"
+import { useAccountMessages } from "@/features/auth/account-messages"
+import { useAccount } from "@/features/auth/account-provider"
 import { useAuth } from "@/features/auth/auth-provider"
 import { CartLink } from "@/features/cart/components/cart-link"
 import { FavoritesLink } from "@/features/favorites/components/favorites-link"
@@ -62,15 +65,24 @@ function CurrentCategoryLinks() {
   return <CategoryLinks active={filtersFromParams(params).category ?? "all"} />
 }
 
-/** Guests can browse everything: the account is only offered, never required. */
+/**
+ * Guests can browse everything: the account is only offered, never required.
+ * A signed-in account gets the entry to its own area (AT-1): a Seller its
+ * dashboard, an Administrator the administration, a Buyer its account.
+ */
 function AccountAction() {
   const t = useStorefrontMessages()
+  const at = useAccountMessages()
   const { status } = useAuth()
+  const { account } = useAccount()
   if (status === "signed-in") {
+    const type = account.state === "active" ? account.accountType : null
+    const label = type === "SELLER" ? at.sellerArea : type === "ADMIN" ? at.adminArea : t.account
+    const Icon = type === "SELLER" ? Store : type === "ADMIN" ? ShieldCheck : UserRound
     return (
-      <Link href="/account" className={buttonVariants({ variant: "outline", size: "sm" })}>
-        <UserRound aria-hidden />
-        {t.account}
+      <Link href={type === null ? "/account" : ACCOUNT_HOME[type]} className={buttonVariants({ variant: "outline", size: "sm" })}>
+        <Icon aria-hidden />
+        {label}
       </Link>
     )
   }
@@ -82,6 +94,28 @@ function AccountAction() {
       <Link href="/login" className={buttonVariants({ size: "sm" })}>
         {t.login}
       </Link>
+    </>
+  )
+}
+
+/**
+ * Buyer actions (AT-1, Q6): Sellers and Administrators browse read only, so
+ * they get no bell, favorites, or cart. Guests keep the cart and favorites
+ * links, which invite them to sign in; everyone but a Seller or an
+ * Administrator gets the public "Vendre sur Chicman" link (Q10).
+ */
+function BuyerActions() {
+  const at = useAccountMessages()
+  const { account } = useAccount()
+  if (account.state === "active" && account.accountType !== "BUYER") return null
+  return (
+    <>
+      <Link href="/register/seller" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+        {at.sellOnChicman}
+      </Link>
+      <NotificationsLink href={NOTIFICATIONS_HREF} />
+      <FavoritesLink />
+      <CartLink />
     </>
   )
 }
@@ -102,9 +136,7 @@ export function StorefrontHeader() {
           </div>
           <div className="flex items-center gap-2">
             <LanguageSwitch />
-            <NotificationsLink href={NOTIFICATIONS_HREF} />
-            <FavoritesLink />
-            <CartLink />
+            <BuyerActions />
             <AccountAction />
           </div>
         </div>

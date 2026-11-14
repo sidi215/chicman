@@ -1,11 +1,13 @@
 import '../../../core/network/api_client.dart';
 
-/// `GET/POST/PATCH /api/v1/customers/me` response (spec 04). The phone is
-/// unverified contact information.
+/// `POST /api/v1/accounts/me/setup` and `GET`/`PATCH /api/v1/accounts/me`
+/// response (AT-1; spec 04): the account's type and its personal profile. The
+/// phone is unverified contact information; it is always set for a Buyer and
+/// may be `null` only for an Administrator (Q3).
 class CustomerAccount {
   const CustomerAccount({
     required this.userId,
-    required this.roles,
+    required this.accountType,
     required this.phone,
     this.fullName,
     this.preferredLocale = 'fr',
@@ -16,23 +18,25 @@ class CustomerAccount {
     final profile = map['profile']! as Map<String, Object?>;
     return CustomerAccount(
       userId: map['userId']! as String,
-      roles: [for (final role in map['roles']! as List) role as String],
-      phone: profile['phone']! as String,
+      accountType: map['accountType']! as String,
+      phone: profile['phone'] as String?,
       fullName: profile['fullName'] as String?,
       preferredLocale: profile['preferredLocale'] as String? ?? 'fr',
     );
   }
 
   final String userId;
-  final List<String> roles;
-  final String phone;
+
+  /// `BUYER`, `SELLER`, or `ADMIN`.
+  final String accountType;
+  final String? phone;
   final String? fullName;
 
   /// `fr` or `ar` (spec 04).
   final String preferredLocale;
 }
 
-/// What the account-setup screen does with the bootstrap response.
+/// What the account-setup screen does with the setup response.
 sealed class SetupOutcome {
   const SetupOutcome();
 }
@@ -44,6 +48,16 @@ final class SetupDone extends SetupOutcome {
 
 final class SetupInvalidPhone extends SetupOutcome {
   const SetupInvalidPhone();
+}
+
+/// No registration intent was recorded: the screen records one and retries.
+final class SetupIntentRequired extends SetupOutcome {
+  const SetupIntentRequired();
+}
+
+/// The identity already has an account of another type (AT-1).
+final class SetupTypeConflict extends SetupOutcome {
+  const SetupTypeConflict();
 }
 
 final class SetupEmailNotConfirmed extends SetupOutcome {
@@ -75,6 +89,10 @@ SetupOutcome interpretSetupResult(
   ApiForbidden(code: 'EMAIL_NOT_CONFIRMED') => const SetupEmailNotConfirmed(),
   ApiForbidden() => const SetupError(),
   ApiError(statusCode: 400, code: 'INVALID_PHONE') => const SetupInvalidPhone(),
+  ApiError(statusCode: 409, code: 'REGISTRATION_INTENT_REQUIRED') =>
+    const SetupIntentRequired(),
+  ApiError(statusCode: 409, code: 'ACCOUNT_TYPE_CONFLICT') =>
+    const SetupTypeConflict(),
   ApiError(statusCode: 429) => const SetupRateLimited(),
   ApiError(statusCode: 503) => const SetupUnavailable(),
   ApiError() => const SetupError(),

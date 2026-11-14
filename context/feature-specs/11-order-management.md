@@ -12,6 +12,8 @@ Business rules come from `context/business-decisions-features-10-18.md` (D1, D4,
 
 ### 1. Ownership
 
+> **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** Customer order routes become **Buyer only**, seller routes **Seller only** (status rules unchanged), administrator routes **Administrator only**. "Not their own shop" stays checked although an administrator can no longer own a shop. Historical orders of reclassified accounts are kept unchanged. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
+
 This feature owns:
 
 - the order records and their creation function (called by checkout, spec 10);

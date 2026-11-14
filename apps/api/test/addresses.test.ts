@@ -262,12 +262,16 @@ describe("customer addresses (spec 05, PostgreSQL)", { skip: databaseUrl === und
       assert.equal((await h.call("/customers/me/addresses", customer.token)).status, 403);
     });
 
-    it("roles add nothing: a seller and an admin manage only their own addresses; shops are unaffected", async () => {
+    it("addresses are Buyer only (AT-1): sellers and administrators get 403 on every route; shops are unaffected", async () => {
       const { owner, shopId } = await h.shopInStatus("APPROVED");
-      const admin = await h.actor(["CUSTOMER", "ADMIN"]);
-      const sellerAddress = await created(owner);
-      assert.equal((await h.call(`/customers/me/addresses/${sellerAddress.id}`, admin.token)).status, 404);
-      assert.deepEqual(await list(admin), []);
+      const admin = await h.actor("ADMIN");
+      const buyerAddress = await created(customer);
+      for (const actor of [owner, admin]) {
+        assert.equal((await h.call("/customers/me/addresses", actor.token)).status, 403);
+        assert.equal((await h.call(`/customers/me/addresses/${buyerAddress.id}`, actor.token)).status, 403);
+        assert.equal((await h.call("/customers/me/addresses", actor.token, { method: "POST", body: {} })).status, 403);
+      }
+      assert.equal(await h.prisma.customerAddress.count(), 1);
       // The shop's business address (spec 06) is separate and unchanged.
       const shop = await h.prisma.shop.findUniqueOrThrow({ where: { id: shopId } });
       assert.equal(shop.address, TEST_SHOP_FIELDS.address);
