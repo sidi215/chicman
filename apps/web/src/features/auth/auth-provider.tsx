@@ -1,6 +1,6 @@
 "use client"
 
-import type { AuthSessionResponse } from "@chicman/shared"
+import type { AccountSessionResponse } from "@chicman/shared"
 import type { Session } from "@supabase/supabase-js"
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 
@@ -61,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!supabase) return { state: "error" }
     const token = await getAccessToken()
     if (!token) return { state: "signed-out" }
-    const check = interpretSessionCheck(await apiRequest<AuthSessionResponse>("/auth/session", token))
+    const check = interpretSessionCheck(await apiRequest<AccountSessionResponse>("/auth/session", token))
     if (shouldEndSession(check)) await signOut()
     return check
   }, [supabase, signOut, getAccessToken])

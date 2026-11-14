@@ -111,7 +111,7 @@ describe("order management (spec 11, PostgreSQL)", { skip: databaseUrl === undef
     ({ owner: otherSeller, shopId: otherShopId } = await h.shopInStatus("APPROVED"));
     await h.prisma.shop.update({ where: { id: otherShopId }, data: { shopName: "Boutique Beta", deliveryFee: "50.00", contactPhone: "+22237000000" } });
     customer = await h.actor();
-    admin = await h.actor(["CUSTOMER", "ADMIN"]);
+    admin = await h.actor("ADMIN");
   });
 
   const post = (path: string, actor: Actor, body?: unknown) => h.call(path, actor.token, { method: "POST", ...(body === undefined ? {} : { body }) });
@@ -635,9 +635,9 @@ describe("order management (spec 11, PostgreSQL)", { skip: databaseUrl === undef
       assert.deepEqual(await snapshot(), before);
     });
 
-    it("is refused on the administrator's own shop (403) and writes nothing", async () => {
-      const adminSeller = await h.actor(["CUSTOMER", "SELLER", "ADMIN"]);
-      const { shopId: ownShop } = await h.shopInStatus("APPROVED", adminSeller);
+    it("is refused on the administrator's own shop (pre-AT-1 data; 403) and writes nothing", async () => {
+      const adminSeller = await h.actor("ADMIN");
+      const { shopId: ownShop } = await h.legacyShop("APPROVED", adminSeller);
       const { id } = await simpleOrder({ shop: ownShop });
       const before = await snapshot();
       await expectError(await post(`${adminPath(id)}/cancel`, adminSeller, { internalReason: INTERNAL_REASON }), 403, "SHOP_SELF_ADMINISTRATION_FORBIDDEN");
@@ -693,7 +693,7 @@ describe("order management (spec 11, PostgreSQL)", { skip: databaseUrl === undef
         await h.reset();
         ({ owner: seller, shopId } = await h.shopInStatus("APPROVED"));
         customer = await h.actor();
-        admin = await h.actor(["CUSTOMER", "ADMIN"]);
+        admin = await h.actor("ADMIN");
         const { id, orderId, productId } = await simpleOrder({ quantity: 3, placedAt: pastDeadline() });
         assert.equal(await stockOf(productId), 7);
         const response =

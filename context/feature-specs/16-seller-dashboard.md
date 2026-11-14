@@ -30,6 +30,8 @@ Provide approved sellers with a web workspace to manage their shop operations, p
 - Do not introduce financial analytics, seller payouts, advertising, advanced reports, or multi-shop management in the MVP.
 - Reuse existing design tokens, components, localization, and responsive behavior.
 
+> **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** The seller area becomes **Seller accounts only**: buyers and administrators are redirected to their own area, so the "no shop yet → become a seller" state and the account page's "Ma boutique" link for buyers go away (a Seller always has a shop from registration). The status-dependent areas and restricted states built here are unchanged. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
+
 ## Implementation Details
 
 Inspect existing web routes and implemented features before deciding what to create.
@@ -55,14 +57,27 @@ Requirements:
 
 ## Verification Checklist
 
-- [ ] Approved sellers can access their dashboard.
-- [ ] Customers and unauthorized users cannot access seller operations.
-- [ ] Pending, rejected, and suspended shops receive the correct restricted experience; a suspended shop sees and can finish only its in-progress deliveries.
-- [ ] An approved shop without a delivery fee sees the prompt to set one.
-- [ ] Sellers can access only their own shop data.
-- [ ] Product, order, delivery, COD, and notification sections use existing feature APIs.
+- [x] Approved sellers can access their dashboard.
+- [x] Customers and unauthorized users cannot access seller operations.
+- [x] Pending, rejected, and suspended shops receive the correct restricted experience; a suspended shop sees and can finish only its in-progress deliveries.
+- [x] An approved shop without a delivery fee sees the prompt to set one.
+- [x] Sellers can access only their own shop data.
+- [x] Product, order, delivery, COD, and notification sections use existing feature APIs.
 - [ ] Dashboard summaries match persisted data.
-- [ ] Loading, empty, and error states are implemented.
-- [ ] Responsive layout works at supported screen sizes.
-- [ ] French and Arabic RTL layouts work correctly.
-- [ ] Web tests cover access control and important seller workflows.
+- [x] Loading, empty, and error states are implemented.
+- [x] Responsive layout works at supported screen sizes.
+- [x] French and Arabic RTL layouts work correctly.
+- [x] Web tests cover access control and important seller workflows.
+
+## Implementation Notes (2026-11-11)
+
+**Web only; no API, shared-contract, or Flutter change.** Every figure comes from an existing endpoint, so no endpoint was added.
+
+- **Shell** (`apps/web/src/app/[locale]/seller/layout.tsx`, `features/seller/`): `SellerShopProvider` reads `GET /sellers/me/shop` (spec 06) on sign-in and again on each page change; `SellerShell` shows a header (wordmark, "Espace vendeur", theme selector, language switch, storefront link, notification bell) and the navigation the status allows: a sidebar from `md` up, a horizontally scrolling pill row below. Guests go to `/login`; a `403` on the shop read goes to `/account`, as on the shop page.
+- **Areas by status** (`seller-dashboard.ts`, `sellerAreas`): approved → overview, shop, products, orders, deliveries, payments, notifications; pending, rejected, or no shop yet → overview, shop, notifications; suspended → overview, shop, deliveries, notifications (D8). The layout always renders the page (Next.js validates every segment for instant navigation, so a layout must not drop `{children}`); the seven pages a status can close (products, new product, product, orders, order, deliveries, payments) wrap their content in `SellerAreaGate`, which shows a loading state while the shop is read and, outside these areas, a restricted state (`sellerGate`) that says why in general terms and links to the application or the deliveries; it never shows an administrative reason. While the shop cannot be read (outage) the page itself is shown and its own API calls decide. **The API remains the only control.**
+- **Overview** (`/seller`, `SellerOverview`): name, status badge, and the status help text from spec 06. Approved: the missing-fee prompt (D2) and eight tiles, each a link to its area: orders awaiting a decision and confirmed orders (`GET /sellers/me/orders?status=…&pageSize=1`, its `total`), deliveries in progress (`GET /sellers/me/deliveries/in-progress`), published products and drafts (`GET /sellers/me/products?status=…&pageSize=1`), amounts to collect and collected this month (`GET /sellers/me/payments/summary`, the current UTC month as on `/seller/payments`), and unread notifications (the bell's count). Each tile loads on its own (skeleton, then the value or "—" with one retry). No products at all → an "add a product" prompt. No shop → the invitation to apply. Suspended → the in-progress deliveries list with its actions, hidden when empty (the list was extracted from `/seller/deliveries` as `InProgressDeliveryList`, so the logic exists once).
+- **Existing pages:** unchanged behavior; their own wordmark was removed (the shell header carries it). `NotificationsAreaBar` was removed (the bell is in the header). The account page's "Ma boutique" link now opens `/seller`.
+- **Build fix (pre-existing):** `NotificationsProvider` read `usePathname()` outside `<Suspense>`, which made `next build` fail on `/seller/orders/[shopOrderId]` (it failed on the committed code too). The page-change refresh now sits in a small component inside `<Suspense>`; the behavior is the same.
+- **Tests:** web 260/260 (+16 in `features/seller/seller-dashboard.test.ts`: areas per status, path parsing with and without a locale, the gate for every status, the delivery-fee rule, the summary queries checked against the API's own schemas, French/Arabic message parity). The seller workflows themselves keep their tests in `orders` and `products`. Typecheck, lint, and the production build pass.
+- **Browser check (dev server, stubbed session and API):** approved with and without a fee (FR, 1280 px), suspended on `/seller/orders` (restricted, four-item navigation), suspended overview with no deliveries (list hidden), pending on `/seller/products` and no shop on `/seller/payments` (restricted), Arabic RTL at 390 px with no horizontal page scroll. **Not verified:** a real sign-in with persisted data, and a suspended shop with real deliveries in progress.
+

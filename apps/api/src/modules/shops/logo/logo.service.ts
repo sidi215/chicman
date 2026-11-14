@@ -9,7 +9,7 @@ import {
   type LogoCompleteResponse,
   type LogoUploadRequestInput,
   type LogoUploadResponse,
-  type Role,
+  type AccountType,
   type ShopStatus,
 } from "@chicman/shared";
 
@@ -28,7 +28,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** The owner's shop as resolved by the onboarding guard. */
 export interface LogoOwner {
   userId: string;
-  roles: Role[];
+  accountType: AccountType;
   shopId: string;
 }
 
@@ -263,7 +263,7 @@ export class LogoService {
       if (completed !== 1) throw new StaleAttemptError();
 
       const shop = await lockShopById(tx, owner.shopId);
-      if (shop === null || !isShopOperationAllowed("logo", shop.status as ShopStatus, owner.roles)) {
+      if (shop === null || !isShopOperationAllowed("logo", shop.status as ShopStatus, owner.accountType)) {
         throw new ShopNotEligibleError();
       }
 

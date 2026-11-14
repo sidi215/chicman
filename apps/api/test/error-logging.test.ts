@@ -9,7 +9,7 @@ import { Redis } from "ioredis";
 import { createPrismaClient, type PrismaClient } from "../src/lib/prisma.js";
 import { FallbackRateLimiter, RedisRateLimiter } from "../src/lib/rate-limiter.js";
 import { SupabaseEmailConfirmationChecker } from "../src/modules/auth/index.js";
-import { PrismaCustomerRepository } from "../src/modules/customers/index.js";
+import { PrismaAccountRepository } from "../src/modules/accounts/index.js";
 import { PrismaShopAccessRepository } from "../src/modules/shops/shop-access.repository.js";
 import { PrismaUserRepository } from "../src/modules/users/user.repository.js";
 import {
@@ -128,15 +128,15 @@ describe("error logging (spec 03, Abuse Protection and Sessions)", () => {
     const app = await startApp({
       corsOrigins: [],
       auth: { verifier: verifier(), users: new PrismaUserRepository(prisma), shops: new PrismaShopAccessRepository(prisma) },
-      customers: {
-        customers: new PrismaCustomerRepository(prisma),
+      accounts: {
+        accounts: new PrismaAccountRepository(prisma),
         emailConfirmation: new FakeEmailConfirmation(),
         rateLimiter: { hit: async () => ({ allowed: true, retryAfterSeconds: 1 }) },
       },
     });
     apps.push(app);
     const token = await signToken(key, { sub: randomUUID() });
-    const response = await fetch(`${app.baseUrl}/api/v1/customers/me`, {
+    const response = await fetch(`${app.baseUrl}/api/v1/accounts/me/setup`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ phone: SECRET.phone }),
@@ -211,15 +211,21 @@ describe("error logging (spec 03, Abuse Protection and Sessions)", () => {
     const app = await startApp({
       corsOrigins: [],
       auth: { verifier: verifier(), users: new FakeUserRepository(), shops: new FakeShopRepository() },
-      customers: {
-        customers: { bootstrap: async () => { throw new Error("not used"); }, findByUserId: async () => null, update: async () => null },
+      accounts: {
+        accounts: {
+          recordIntent: async () => { throw new Error("not used"); },
+          findIntent: async () => { throw new Error("not used"); },
+          setup: async () => { throw new Error("not used"); },
+          findByUserId: async () => null,
+          update: async () => null,
+        },
         emailConfirmation: new FakeEmailConfirmation(),
         rateLimiter: limiter,
       },
     });
     apps.push(app);
     const token = await signToken(key);
-    const response = await fetch(`${app.baseUrl}/api/v1/customers/me`, {
+    const response = await fetch(`${app.baseUrl}/api/v1/accounts/me`, {
       method: "PATCH",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ fullName: "x" }),

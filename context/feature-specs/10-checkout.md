@@ -31,6 +31,8 @@ Checkout calls the order-creation function of Feature 11 and the payment-creatio
 - Customers must register or log in before checkout.
 - Guest checkout is not supported.
 - Every checkout must be associated with an authenticated customer.
+
+- **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** Checkout is **Buyer only**. O2 (no purchase from one's own shop) becomes unreachable, because a Buyer owns no shop, and is **kept** as defense in depth. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
 - The backend must derive customer identity from the verified authentication context.
 
 ### 2. Delivery address and recipient (D11)

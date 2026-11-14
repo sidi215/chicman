@@ -1,10 +1,13 @@
 "use client"
 
+import type { RegistrableAccountType } from "@chicman/shared"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, type FormEvent } from "react"
 
 import { Button } from "@/components/ui/button"
 
+import { recordRegistrationIntent } from "../account"
+import { useAccountMessages } from "../account-messages"
 import { useAuth } from "../auth-provider"
 import type { AuthErrorKey } from "../messages"
 import { captchaBlocks, useCaptcha } from "../turnstile"
@@ -15,24 +18,44 @@ import { FormField, FormMessage } from "./form-field"
 import { TextLink } from "./text-link"
 
 /**
- * Sign-up: email and password only (spec 03). The phone number is collected
- * later, at account setup, after the email is confirmed.
+ * Sign-up: email and password only (spec 03), for a buyer (`/register`) or a
+ * seller (`/register/seller`, web only, AT-1). Right after the sign-up the
+ * chosen type is recorded as the server-side registration intent, so it
+ * survives the confirmation link opened on another device. The phone (and for
+ * a seller, the shop) is collected at account setup, after confirmation.
  */
-export function RegisterForm() {
+export function RegisterForm({ accountType = "BUYER" }: { accountType?: RegistrableAccountType }) {
   const router = useRouter()
   const { status, service } = useAuth()
   const [sentTo, setSentTo] = useState<string | null>(null)
 
+  // A signed-in buyer goes to their account; selling needs a separate account (Q12), explained below.
   useEffect(() => {
-    if (status === "signed-in") router.replace("/account")
-  }, [status, router])
+    if (status === "signed-in" && accountType === "BUYER") router.replace("/account")
+  }, [status, router, accountType])
 
+  if (status === "signed-in" && accountType === "SELLER") return <SignedInSeller />
   if (sentTo !== null) return <CheckEmail email={sentTo} onChangeEmail={() => setSentTo(null)} />
-  return <SignUpDetails onSent={setSentTo} serviceReady={service !== null} />
+  return <SignUpDetails accountType={accountType} onSent={setSentTo} serviceReady={service !== null} />
 }
 
-function SignUpDetails({ onSent, serviceReady }: { onSent: (email: string) => void; serviceReady: boolean }) {
+/** Opened while signed in: another account type needs another email address (Q12). */
+function SignedInSeller() {
+  const t = useAccountMessages()
+  const { signOut } = useAuth()
+  return (
+    <AuthShell brand={t.brand} title={t.signedInTitle} description={t.signedInSellerBody}>
+      <Button variant="outline" onClick={() => void signOut()}>
+        {t.signOut}
+      </Button>
+    </AuthShell>
+  )
+}
+
+function SignUpDetails({ accountType, onSent, serviceReady }: { accountType: RegistrableAccountType; onSent: (email: string) => void; serviceReady: boolean }) {
   const t = useAuthMessages()
+  const at = useAccountMessages()
+  const seller = accountType === "SELLER"
   const { status, service } = useAuth()
   const captcha = useCaptcha("signup", { label: t.captchaLabel, loading: t.captchaLoading, failed: t.errors.captchaFailed, retry: t.retry })
   const [email, setEmail] = useState("")
@@ -55,6 +78,8 @@ function SignUpDetails({ onSent, serviceReady }: { onSent: (email: string) => vo
     if (captchaBlocks(captcha)) return setFormError("captchaRequired")
     setPending(true)
     const outcome = await service.register(result.value.email, result.value.password, captcha.token)
+    // Not fatal if it fails: the setup screen asks for the type again. Never reveals whether the address exists.
+    if (outcome.ok && outcome.userId !== null) await recordRegistrationIntent(outcome.userId, accountType)
     setPending(false)
     captcha.reset()
     if (outcome.ok) onSent(result.value.email)
@@ -62,7 +87,8 @@ function SignUpDetails({ onSent, serviceReady }: { onSent: (email: string) => vo
   }
 
   return (
-    <AuthShell brand={t.brand} title={t.registerTitle} description={t.registerSubtitle}>
+    <AuthShell brand={t.brand} title={seller ? at.sellerRegisterTitle : t.registerTitle} description={seller ? at.sellerRegisterSubtitle : t.registerSubtitle}>
+      {seller ? <p className="type-body-small text-muted-foreground">{at.sellerRegisterNote}</p> : null}
       {status === "not-configured" ? <FormMessage tone="error">{t.errors.notConfigured}</FormMessage> : null}
       <form className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
         <FormField
@@ -101,6 +127,7 @@ function SignUpDetails({ onSent, serviceReady }: { onSent: (email: string) => vo
       <p className="type-body-medium text-muted-foreground">
         {t.haveAccount} <TextLink href="/login">{t.toLogin}</TextLink>
       </p>
+      <TextLink href={seller ? "/register" : "/register/seller"}>{seller ? at.toBuyerRegister : at.toSellerRegister}</TextLink>
     </AuthShell>
   )
 }

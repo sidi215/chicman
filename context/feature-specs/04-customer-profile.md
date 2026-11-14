@@ -7,6 +7,8 @@ Allow authenticated customers to view and manage their personal profile informat
 ## Design & Architecture Decisions
 
 - Each customer has one profile associated with their Supabase Auth user ID.
+
+- **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** Bootstrap no longer grants `CUSTOMER` to everyone: the buyer setup creates a `BUYER` account and the seller setup a `SELLER` account (with its `PENDING` shop), each with its profile; administrators get theirs from operator provisioning. Every account type has a personal profile (one table). The personal phone is required for Buyers and Sellers and optional for Administrators (database check). Profile routes move to `/accounts/me` for every type. No profile field can change the account type. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
 - PostgreSQL stores customer profile information.
 - The backend controls profile access and updates.
 - Customers can only access their own profiles.

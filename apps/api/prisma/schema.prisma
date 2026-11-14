@@ -21,6 +21,17 @@ enum Role {
   ADMIN
 }
 
+// Account types (AT-1, context/account-types-audit.md): every account has
+// exactly one, fixed at creation, never changed (database trigger). Database
+// triggers also keep shops with Seller accounts and carts, favorites,
+// addresses, and orders with Buyer accounts (migration
+// `account_types_contract`); rows from before AT-1 are left as they are.
+enum AccountType {
+  BUYER
+  SELLER
+  ADMIN
+}
+
 // Authoritative shop approval state (architecture.md, Auth and Access Model).
 enum ShopStatus {
   PENDING
@@ -34,6 +45,11 @@ enum ShopStatus {
 model User {
   id                        String                 @id @default(uuid()) @db.Uuid
   supabaseUserId            String                 @unique @db.Uuid
+  // AT-1. Set once at creation (trigger `User_accountType_immutable`).
+  accountType               AccountType
+  // AT-1 (Q7): an administrator's access is deactivated, never converted.
+  // Only an ADMIN account may carry it (CHECK in the migration).
+  adminAccessDeactivatedAt  DateTime?              @db.Timestamptz(3)
   createdAt                 DateTime               @default(now()) @db.Timestamptz(3)
   updatedAt                 DateTime               @updatedAt @db.Timestamptz(3)
   roles                     UserRole[]
@@ -51,6 +67,42 @@ model User {
   cart                      Cart?
   orders                    Order[]
   favorites                 Favorite[]
+  adminAccessEvents         AdminAccessEvent[]
+  shopsTransferredFrom      ShopOwnershipEvent[]   @relation("ShopOwnershipFrom")
+  shopsTransferredTo        ShopOwnershipEvent[]   @relation("ShopOwnershipTo")
+}
+
+// What happened to an administrator's access (AT-1, Q7). Append-only.
+enum AdminAccessAction {
+  DEACTIVATED
+}
+
+// Audit of administrator deactivations, written by the operator script with
+// the deactivation itself. No actor user: operators act outside the app.
+model AdminAccessEvent {
+  id           String            @id @default(uuid()) @db.Uuid
+  userId       String            @db.Uuid
+  action       AdminAccessAction
+  reason       String            @db.VarChar(500)
+  operatorNote String?           @db.VarChar(1000)
+  createdAt    DateTime          @default(now()) @db.Timestamptz(3)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+}
+
+// The account type chosen at public registration (AT-1, section 5.3), kept
+// server-side so it survives email confirmation on another device. Keyed by
+// the Supabase identity (no application User exists yet), write-once, only
+// BUYER or SELLER (CHECK in the migration). Consumed by account setup;
+// unconsumed rows are deleted after 30 days.
+model RegistrationIntent {
+  supabaseUserId String      @id @db.Uuid
+  accountType    AccountType
+  createdAt      DateTime    @default(now()) @db.Timestamptz(3)
+  consumedAt     DateTime?   @db.Timestamptz(3)
+
+  @@index([createdAt])
 }
 
 // A user holds a set of roles (for example CUSTOMER and SELLER).
@@ -68,33 +120,52 @@ model UserRole {
 // Application fields are plain text (NFC, trimmed) validated by the API;
 // phones are E.164 business contacts, separate from the customer phone.
 model Shop {
-  id             String                 @id @default(uuid()) @db.Uuid
+  id              String                 @id @default(uuid()) @db.Uuid
   // One shop per user (initial release), enforced by the database.
-  ownerUserId    String                 @unique @db.Uuid
-  status         ShopStatus             @default(PENDING)
-  shopName       String                 @db.VarChar(100)
-  description    String                 @db.VarChar(2000)
-  contactPhone   String                 @db.VarChar(16)
-  city           String                 @db.VarChar(100)
-  address        String                 @db.VarChar(300)
-  whatsappPhone  String?                @db.VarChar(16)
+  ownerUserId     String                 @unique @db.Uuid
+  status          ShopStatus             @default(PENDING)
+  shopName        String                 @db.VarChar(100)
+  description     String                 @db.VarChar(2000)
+  contactPhone    String                 @db.VarChar(16)
+  city            String                 @db.VarChar(100)
+  address         String                 @db.VarChar(300)
+  whatsappPhone   String?                @db.VarChar(16)
   // Public media URL of the shop's ACTIVE ShopLogoObject; set only by the
   // verified logo upload flow (or cleared by the owner).
-  logoUrl        String?                @db.VarChar(2048)
+  logoUrl         String?                @db.VarChar(2048)
   // Flat delivery fee in MRU, charged once per shop order (D2). `null` until the
   // seller sets it; once set it can change but not be cleared. Orders keep a copy.
-  deliveryFee    Decimal?               @db.Decimal(12, 2)
-  createdAt      DateTime               @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime               @updatedAt @db.Timestamptz(3)
-  owner          User                   @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
-  statusEvents   ShopStatusEvent[]
-  fieldChanges   ShopFieldChangeEvent[]
-  changeRequests ShopChangeRequest[]
-  logoUploads    ShopLogoUpload[]
-  logoObjects    ShopLogoObject[]
-  products       Product[]
-  cartItems      CartItem[]
-  shopOrders     ShopOrder[]
+  deliveryFee     Decimal?               @db.Decimal(12, 2)
+  createdAt       DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime               @updatedAt @db.Timestamptz(3)
+  owner           User                   @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
+  statusEvents    ShopStatusEvent[]
+  fieldChanges    ShopFieldChangeEvent[]
+  changeRequests  ShopChangeRequest[]
+  logoUploads     ShopLogoUpload[]
+  logoObjects     ShopLogoObject[]
+  products        Product[]
+  cartItems       CartItem[]
+  shopOrders      ShopOrder[]
+  ownershipEvents ShopOwnershipEvent[]
+}
+
+// An approved operator transfer of a shop to another Seller account (AT-1,
+// Q8). Append-only; written in the transfer's transaction. Nothing else about
+// the shop changes.
+model ShopOwnershipEvent {
+  id           String   @id @default(uuid()) @db.Uuid
+  shopId       String   @db.Uuid
+  fromUserId   String   @db.Uuid
+  toUserId     String   @db.Uuid
+  reason       String   @db.VarChar(500)
+  operatorNote String?  @db.VarChar(1000)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  from         User     @relation("ShopOwnershipFrom", fields: [fromUserId], references: [id], onDelete: Restrict)
+  to           User     @relation("ShopOwnershipTo", fields: [toUserId], references: [id], onDelete: Restrict)
+
+  @@index([shopId, createdAt])
 }
 
 // Which administrative decision produced a shop status (feature 06). Not a status.
@@ -316,7 +387,9 @@ model CustomerProfile {
   userId          String                @unique @db.Uuid
   fullName        String?               @db.VarChar(100)
   preferredLocale Locale                @default(fr)
-  phone           String                @db.VarChar(16)
+  // Required for Buyer and Seller accounts, optional for Administrators
+  // (AT-1, Q3; trigger `CustomerProfile_phone_by_account_type`).
+  phone           String?               @db.VarChar(16)
   createdAt       DateTime              @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime              @updatedAt @db.Timestamptz(3)
   user            User                  @relation(fields: [userId], references: [id], onDelete: Restrict)

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { Role, ShopStatus } from "@chicman/shared";
+import type { AccountType, ShopStatus } from "@chicman/shared";
 
 import { MemoryRateLimiter, type RateLimiter } from "../../src/lib/rate-limiter.js";
 import { createPrismaClient, type PrismaClient } from "../../src/lib/prisma.js";
@@ -27,7 +27,9 @@ import {
   type StagedObject,
 } from "../../src/modules/shops/index.js";
 import { PrismaUserRepository } from "../../src/modules/users/user.repository.js";
+import { PrismaAccountRepository } from "../../src/modules/accounts/index.js";
 import { createTestKeyStore, createTestVerifier, startApp, type RunningApp } from "./app.js";
+import { FakeEmailConfirmation } from "./customers.js";
 import { resetDatabase, TEST_SHOP_FIELDS } from "./database.js";
 import { TestJwksServer } from "./jwks-server.js";
 import { createTestKey, signToken, type TestKey } from "./keys.js";
@@ -157,6 +159,11 @@ export class ShopHarness {
         users: new PrismaUserRepository(this.prisma),
         shops: shopAccess,
       },
+      accounts: {
+        accounts: new PrismaAccountRepository(this.prisma),
+        emailConfirmation: new FakeEmailConfirmation(),
+        rateLimiter: new MemoryRateLimiter(),
+      },
       addresses: { addresses: new AddressService(this.prisma, this.faults.address), rateLimiter: new MemoryRateLimiter() },
       shops: {
         shops: new ShopService(this.prisma, this.faults.shop),
@@ -252,15 +259,11 @@ export class ShopHarness {
     await resetDatabase(this.prisma);
   }
 
-  /** A bootstrapped user (User + CustomerProfile) with the given roles. */
-  async actor(roles: Role[] = ["CUSTOMER"], extraClaims: Record<string, unknown> = {}): Promise<Actor> {
+  /** A set-up account (User + profile) of the given type (AT-1). */
+  async actor(accountType: AccountType = "BUYER", extraClaims: Record<string, unknown> = {}): Promise<Actor> {
     const sub = randomUUID();
     const user = await this.prisma.user.create({
-      data: {
-        supabaseUserId: sub,
-        roles: { create: roles.map((role) => ({ role })) },
-        customerProfile: { create: { phone: "+22222000000" } },
-      },
+      data: { supabaseUserId: sub, accountType, customerProfile: { create: { phone: "+22222000000" } } },
     });
     return { sub, userId: user.id, token: await signToken(this.key, { sub, extraClaims }) };
   }
@@ -270,12 +273,28 @@ export class ShopHarness {
     return { ...actor, token: await signToken(this.key, { sub: actor.sub, extraClaims: { session_id: randomUUID() } }) };
   }
 
-  /** A shop inserted directly in a given status (with SELLER when approved or suspended). */
+  /** A shop inserted directly in a given status, owned by a Seller account (AT-1). */
   async shopInStatus(status: ShopStatus, owner?: Actor): Promise<{ owner: Actor; shopId: string }> {
-    const roles: Role[] = status === "APPROVED" || status === "SUSPENDED" ? ["CUSTOMER", "SELLER"] : ["CUSTOMER"];
-    const actor = owner ?? (await this.actor(roles));
+    const actor = owner ?? (await this.actor("SELLER"));
     const shop = await this.prisma.shop.create({ data: { ownerUserId: actor.userId, status, ...TEST_SHOP_FIELDS } });
     return { owner: actor, shopId: shop.id };
+  }
+
+  /**
+   * A shop owned by an account that is not a Seller: the state rows from
+   * before AT-1 can be in (development account A owns a shop as an
+   * Administrator). The owner trigger is disabled for this one insert only,
+   * inside its transaction, the way such rows came to exist; the defense in
+   * depth checks (self-administration, O2) are tested against it.
+   */
+  async legacyShop(status: ShopStatus, owner: Actor): Promise<{ owner: Actor; shopId: string }> {
+    const shopId = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`ALTER TABLE "Shop" DISABLE TRIGGER "Shop_owner_is_seller"`);
+      const shop = await tx.shop.create({ data: { ownerUserId: owner.userId, status, ...TEST_SHOP_FIELDS }, select: { id: true } });
+      await tx.$executeRawUnsafe(`ALTER TABLE "Shop" ENABLE TRIGGER "Shop_owner_is_seller"`);
+      return shop.id;
+    });
+    return { owner, shopId };
   }
 
   call(path: string, token: string | null, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) {

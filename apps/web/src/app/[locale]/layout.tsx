@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { locale as rootLocale } from "next/root-params";
 
 import { ThemeInit } from "@/components/theme/theme-init";
+import { AccountProvider } from "@/features/auth/account-provider";
 import { AuthProvider } from "@/features/auth/auth-provider";
 import { LocaleSync } from "@/features/profile/components/locale-sync";
 import { siteUrl } from "@/features/storefront/seo";
@@ -46,8 +47,10 @@ export default async function RootLayout({ children }: LayoutProps<"/[locale]">)
         <LocaleProvider locale={locale}>
           <DirectionProvider direction={direction}>
             <AuthProvider>
-              <LocaleSync />
-              {children}
+              <AccountProvider>
+                <LocaleSync />
+                {children}
+              </AccountProvider>
             </AuthProvider>
           </DirectionProvider>
         </LocaleProvider>

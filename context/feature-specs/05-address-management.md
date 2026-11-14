@@ -51,6 +51,8 @@ Confirmed by the project owner:
 
 Implementation details (decided with the implementation; open to revision):
 
+- **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** Addresses are a **Buyer-only** feature: sellers and administrators get `403`. Existing addresses of accounts reclassified as Seller or Administrator are kept, unreachable. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
+
 - **Ownership:** an address belongs to the authenticated user (`CustomerAddress.userId`, set from the verified identity, never from the request). Owner routes take only the address ID, looked up together with the user; another customer's address → `404`. Bootstrapped users only (`403` before account setup).
 - **Confirmation:** the client shows the pin and the details and asks the customer to confirm. Every create, and every update that changes the location, must carry `locationConfirmed: true`; otherwise `400`, nothing is written. The server records `locationConfirmedAt`.
 - **GPS versus manual pin:** `locationSource` is `GPS` only while the pin is exactly where the device position put it; any move of the map by the customer makes it `MANUAL` (and drops `accuracyMeters`). Zooming alone keeps the center, so it keeps `GPS`. The pin is the map's fixed center: the customer moves the map under it (same on web and mobile).

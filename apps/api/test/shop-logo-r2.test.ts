@@ -71,10 +71,10 @@ describe("shop logo upload against Cloudflare R2 (spec 06)", { skip }, () => {
   const cleanup = () => runLogoCleanup({ prisma, storage, timing, mediaPublicBaseUrl: config.mediaPublicBaseUrl });
 
   async function ownerShop() {
-    const user = await prisma.user.create({ data: { supabaseUserId: randomUUID(), roles: { create: [{ role: "CUSTOMER" }] } } });
+    const user = await prisma.user.create({ data: { supabaseUserId: randomUUID(), accountType: "SELLER" } });
     const shop = await prisma.shop.create({ data: { ownerUserId: user.id, ...TEST_SHOP_FIELDS } });
     shopIds.push(shop.id);
-    return { userId: user.id, roles: ["CUSTOMER" as const], shopId: shop.id };
+    return { userId: user.id, accountType: "SELLER" as const, shopId: shop.id };
   }
 
   /** Requests an upload and PUTs `body` exactly like a browser would. */

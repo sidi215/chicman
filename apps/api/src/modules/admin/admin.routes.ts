@@ -45,7 +45,7 @@ function parseDecision(action: ShopDecisionAction, body: unknown): ShopDecisionI
  */
 export function createAdminRouter(guards: AuthGuards, deps: AdminDependencies): Router {
   const router = Router();
-  const admin = guards.role("ADMIN");
+  const admin = guards.admin;
 
   router.get("/admin/shops", ...admin, async (req, res) => {
     const query = parseOrBadRequest(listQuerySchema, req.query);

@@ -4,6 +4,7 @@ import { Heart } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 
+import { useAccount } from "@/features/auth/account-provider"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -21,6 +22,10 @@ export function FavoriteButton({ productId, name, className }: { productId: stri
   const { state, ids, pendingIds, add, remove } = useFavorites()
   const [failure, setFailure] = useState<FavoriteFailure | null>(null)
   const classes = cn(buttonVariants({ variant: "outline", size: "icon-sm" }), "shadow-sm", className)
+  const { account } = useAccount()
+
+  // Sellers and Administrators browse read only (AT-1, Q6): no heart.
+  if (account.state === "active" && account.accountType !== "BUYER") return null
 
   if (state.kind === "guest" || state.kind === "needs-setup") {
     return (

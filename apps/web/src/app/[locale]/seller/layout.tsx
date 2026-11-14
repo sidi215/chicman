@@ -1,16 +1,20 @@
 import type { ReactNode } from "react"
 
-import { NotificationsAreaBar } from "@/features/notifications/components/area-bar"
 import { NotificationsProvider } from "@/features/notifications/notifications-provider"
+import { SellerShell } from "@/features/seller/components/seller-shell"
+import { SellerShopProvider } from "@/features/seller/seller-shop-provider"
 
-/** The seller area: every page shows the notification bell (spec 15). */
+/**
+ * The seller area (spec 16): header with the notification bell (spec 15), the
+ * navigation the shop status allows, and the restricted states. The API
+ * authorizes every request on its own.
+ */
 export default function SellerLayout({ children }: { children: ReactNode }) {
   return (
     <NotificationsProvider>
-      <div className="flex flex-1 flex-col bg-page">
-        <NotificationsAreaBar href="/seller/notifications" />
-        {children}
-      </div>
+      <SellerShopProvider>
+        <SellerShell>{children}</SellerShell>
+      </SellerShopProvider>
     </NotificationsProvider>
   )
 }

@@ -76,6 +76,30 @@ export function diffFields(
 }
 
 /**
+ * Submits a shop application (spec 06, rule 1): the shop as `PENDING` and its
+ * submission record, inside the caller's transaction. Used by seller account
+ * setup (AT-1) and by `ShopService.create`. The owner must be a Seller account
+ * (database trigger); a second shop for the owner is a unique violation.
+ */
+export async function insertShopApplication(tx: Prisma.TransactionClient, userId: string, input: ShopCreateInput): Promise<string> {
+  const shop = await tx.shop.create({
+    data: {
+      ownerUserId: userId,
+      status: "PENDING",
+      shopName: input.shopName,
+      description: input.description,
+      contactPhone: input.contactPhone,
+      city: input.city,
+      address: input.address,
+      whatsappPhone: input.whatsappPhone ?? null,
+    },
+    select: { id: true },
+  });
+  await tx.shopStatusEvent.create({ data: { shopId: shop.id, fromStatus: null, toStatus: "PENDING", actorUserId: userId } });
+  return shop.id;
+}
+
+/**
  * Owner shop operations (spec 06, rules 1–5 and 8). The shop is always
  * resolved from the authenticated user; the owner is always that user.
  */
@@ -100,23 +124,8 @@ export class ShopService {
   async create(userId: string, input: ShopCreateInput): Promise<OwnerShopResponse> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const shop = await tx.shop.create({
-          data: {
-            ownerUserId: userId,
-            status: "PENDING",
-            shopName: input.shopName,
-            description: input.description,
-            contactPhone: input.contactPhone,
-            city: input.city,
-            address: input.address,
-            whatsappPhone: input.whatsappPhone ?? null,
-          },
-          select: { id: true },
-        });
-        await tx.shopStatusEvent.create({
-          data: { shopId: shop.id, fromStatus: null, toStatus: "PENDING", actorUserId: userId },
-        });
-        return loadOwnerShopView(tx, shop.id);
+        const shopId = await insertShopApplication(tx, userId, input);
+        return loadOwnerShopView(tx, shopId);
       });
     } catch (error) {
       if (isUniqueViolation(error)) throw new HttpError(409, SHOP_ERROR_CODES.shopAlreadyExists);
@@ -134,7 +143,7 @@ export class ShopService {
     return this.prisma.$transaction(async (tx) => {
       const shop = await lockShopByOwner(tx, user.id);
       if (shop === null) throw shopNotFound();
-      assertShopOperationAllowed("edit", shop.status, user.roles);
+      assertShopOperationAllowed("edit", shop.status, user.accountType);
       if (shop.status === "APPROVED" && (input.shopName !== undefined || input.city !== undefined)) {
         throw badRequest(SHOP_ERROR_CODES.reviewFieldNotEditable);
       }
@@ -208,7 +217,7 @@ export class ShopService {
       return await this.prisma.$transaction(async (tx) => {
         const shop = await lockShopByOwner(tx, user.id);
         if (shop === null) throw shopNotFound();
-        assertShopOperationAllowed("changeRequest", shop.status, user.roles);
+        assertShopOperationAllowed("changeRequest", shop.status, user.accountType);
         await tx.shopChangeRequest.create({
           data: {
             shopId: shop.id,

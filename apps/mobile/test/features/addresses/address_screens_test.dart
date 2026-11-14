@@ -54,14 +54,14 @@ ApiClient _api(
     200,
     {
       'userId': 'u1',
-      'roles': ['CUSTOMER'],
+      'accountType': 'BUYER',
     },
   ),
-  'GET /customers/me': (_) => (
+  'GET /accounts/me': (_) => (
     200,
     {
       'userId': 'u1',
-      'roles': ['CUSTOMER'],
+      'accountType': 'BUYER',
       'profile': {
         'id': 'p1',
         'fullName': 'Aminetou',

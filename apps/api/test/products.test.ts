@@ -122,8 +122,8 @@ describe("product management (spec 07, PostgreSQL)", { skip: databaseUrl === und
     });
 
     for (const status of ["PENDING", "REJECTED", "SUSPENDED"] as const) {
-      it(`a ${status} shop owner cannot manage products, even holding SELLER`, async () => {
-        const owner = await h.actor(["CUSTOMER", "SELLER"]);
+      it(`a ${status} shop's Seller account cannot manage products`, async () => {
+        const owner = await h.actor("SELLER");
         await h.shopInStatus(status, owner);
         assert.equal((await h.call(base, owner.token)).status, 403);
         assert.equal((await post(base, owner, body)).status, 403);
@@ -131,11 +131,13 @@ describe("product management (spec 07, PostgreSQL)", { skip: databaseUrl === und
       });
     }
 
-    it("an approved shop without the SELLER role, and SELLER without a shop, are refused", async () => {
-      const noRole = await h.actor(["CUSTOMER"]);
-      await h.shopInStatus("APPROVED", noRole);
-      assert.equal((await post(base, noRole, body)).status, 403);
-      const noShop = await h.actor(["CUSTOMER", "SELLER"]);
+    it("a non-Seller owning an approved shop (pre-AT-1 data), and a Seller without a shop, are refused", async () => {
+      for (const type of ["BUYER", "ADMIN"] as const) {
+        const legacyOwner = await h.actor(type);
+        await h.legacyShop("APPROVED", legacyOwner);
+        assert.equal((await post(base, legacyOwner, body)).status, 403);
+      }
+      const noShop = await h.actor("SELLER");
       assert.equal((await post(base, noShop, body)).status, 403);
     });
 

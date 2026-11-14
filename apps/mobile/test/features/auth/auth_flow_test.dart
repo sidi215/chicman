@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:chicman/app_shell.dart';
 import 'package:chicman/core/config/app_config.dart';
 import 'package:chicman/core/network/api_client.dart';
 import 'package:chicman/core/storage/shared_preferences_provider.dart';
@@ -25,19 +26,16 @@ const _config = AppConfig(
   siteUrl: 'https://$_host',
 );
 
-const _activeSession = {
-  'userId': 'u1',
-  'roles': ['CUSTOMER'],
-};
+const _activeSession = {'userId': 'u1', 'accountType': 'BUYER'};
 const _account = {
   'userId': 'u1',
-  'roles': ['CUSTOMER'],
+  'accountType': 'BUYER',
   'profile': {'id': 'p1', 'phone': '+22222123456', 'fullName': null},
 };
 
 ApiClient _bootstrappedApi() => routedApi({
   'GET /auth/session': (_) => (200, _activeSession),
-  'GET /customers/me': (_) => (200, _account),
+  'GET /accounts/me': (_) => (200, _account),
 });
 
 Future<void> pumpApp(
@@ -45,6 +43,7 @@ Future<void> pumpApp(
   required AuthRepository? repository,
   ApiClient? api,
   Stream<Uri>? links,
+  Widget home = const AuthGate(),
 }) async {
   await tester.binding.setSurfaceSize(const Size(500, 1400));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -58,7 +57,7 @@ Future<void> pumpApp(
         incomingLinksProvider.overrideWithValue(links),
         fakeMapOverride,
       ],
-      child: const MyApp(home: AuthGate()),
+      child: MyApp(home: home),
     ),
   );
   await tester.pumpAndSettle();
@@ -78,7 +77,6 @@ void main() {
     await pumpApp(tester, repository: FakeAuthRepository(restored: _restored));
     expect(find.text('Mon compte'), findsOneWidget);
     expect(find.text('Connecté en tant que aicha@example.com'), findsOneWidget);
-    expect(find.text('Session active. Rôles : CUSTOMER'), findsOneWidget);
     expect(
       find.text('Téléphone de contact (non vérifié) : +22222123456'),
       findsOneWidget,
@@ -182,7 +180,7 @@ void main() {
                   'error': {'code': 'FORBIDDEN'},
                 },
               ),
-        'POST /customers/me': (request) {
+        'POST /accounts/me/setup': (request) {
           final phone = (jsonDecode(request.body) as Map)['phone'];
           if (phone != '+22222123456') {
             return (
@@ -195,7 +193,7 @@ void main() {
           bootstrapped = true;
           return (201, _account);
         },
-        'GET /customers/me': (_) => (200, _account),
+        'GET /accounts/me': (_) => (200, _account),
       }, requests: requests);
       await pumpApp(
         tester,
@@ -234,10 +232,121 @@ void main() {
       expect(find.text('Où souhaitez-vous être livré ?'), findsOneWidget);
       await tester.tap(find.byKey(const Key('address-later')));
       await tester.pumpAndSettle();
-      expect(find.text('Session active. Rôles : CUSTOMER'), findsOneWidget);
       expect(find.textContaining('(non vérifié)'), findsOneWidget);
     },
   );
+
+  group('account types (AT-1, Q5: the app is for buyers)', () {
+    for (final (type, text) in [
+      ('SELLER', 'Votre compte vendeur se gère sur le site web de Chicman.'),
+      (
+        'ADMIN',
+        "Votre compte d'administration se gère sur le site web de Chicman.",
+      ),
+    ]) {
+      testWidgets('a $type account sees only that it is managed on the web', (
+        tester,
+      ) async {
+        final requests = <http.Request>[];
+        final repository = FakeAuthRepository(restored: _restored);
+        await pumpApp(
+          tester,
+          repository: repository,
+          home: const AppShell(),
+          api: routedApi({
+            'GET /auth/session': (_) =>
+                (200, {'userId': 'u1', 'accountType': type}),
+          }, requests: requests),
+        );
+        expect(find.byKey(const Key('managed-on-web')), findsOneWidget);
+        expect(find.textContaining(text), findsOneWidget);
+        // No buyer screen: no dock, and no buyer route was ever called.
+        expect(find.byKey(const Key('dock-home')), findsNothing);
+        expect(
+          requests.where((r) => r.url.path.contains('/customers/me/')),
+          isEmpty,
+        );
+        await tester.tap(find.byKey(const Key('managed-on-web-logout')));
+        await tester.pumpAndSettle();
+        expect(repository.calls, contains('signOut'));
+      });
+    }
+
+    testWidgets('a seller registration is completed on the web, not here', (
+      tester,
+    ) async {
+      final requests = <http.Request>[];
+      await pumpApp(
+        tester,
+        repository: FakeAuthRepository(restored: _restored),
+        api: routedApi({
+          'GET /auth/session': (_) => (
+            403,
+            {
+              'error': {'code': 'FORBIDDEN'},
+            },
+          ),
+          'GET /registration-intents/me': (_) =>
+              (200, {'accountType': 'SELLER'}),
+        }, requests: requests),
+      );
+      expect(find.byKey(const Key('setup-seller-intent')), findsOneWidget);
+      expect(find.byKey(const Key('setup-phone')), findsNothing);
+      expect(requests.where((r) => r.method == 'POST'), isEmpty);
+    });
+
+    testWidgets(
+      'without an intent, setup records the buyer intent and tries once more',
+      (tester) async {
+        final requests = <http.Request>[];
+        var intent = false;
+        await pumpApp(
+          tester,
+          repository: FakeAuthRepository(restored: _restored),
+          api: routedApi({
+            'GET /auth/session': (_) => (
+              403,
+              {
+                'error': {'code': 'FORBIDDEN'},
+              },
+            ),
+            'GET /registration-intents/me': (_) => (200, {'accountType': null}),
+            'POST /registration-intents': (_) {
+              intent = true;
+              return (204, null);
+            },
+            'POST /accounts/me/setup': (_) => intent
+                ? (201, _account)
+                : (
+                    409,
+                    {
+                      'error': {'code': 'REGISTRATION_INTENT_REQUIRED'},
+                    },
+                  ),
+          }, requests: requests),
+        );
+        await tester.enterText(
+          find.byKey(const Key('setup-phone')),
+          '22 12 34 56',
+        );
+        await tester.tap(find.byKey(const Key('setup-submit')));
+        await tester.pumpAndSettle();
+        final recorded = requests.singleWhere(
+          (r) => r.url.path.endsWith('/registration-intents'),
+        );
+        expect(jsonDecode(recorded.body), {
+          'supabaseUserId': 'u1',
+          'accountType': 'BUYER',
+        });
+        expect(recorded.headers.containsKey('authorization'), isFalse);
+        expect(
+          requests.where((r) => r.url.path.endsWith('/accounts/me/setup')),
+          hasLength(2),
+        );
+        expect(find.text('Où souhaitez-vous être livré ?'), findsOneWidget);
+      },
+    );
+  });
 
   testWidgets('a new account keeps the language it was set up in', (
     tester,
@@ -255,12 +364,12 @@ void main() {
                 'error': {'code': 'FORBIDDEN'},
               },
             ),
-      'POST /customers/me': (_) {
+      'POST /accounts/me/setup': (_) {
         bootstrapped = true;
         return (201, _account);
       },
-      'PATCH /customers/me': (_) => (200, _account),
-      'GET /customers/me': (_) => bootstrapped
+      'PATCH /accounts/me': (_) => (200, _account),
+      'GET /accounts/me': (_) => bootstrapped
           ? (200, _account)
           : (
               403,

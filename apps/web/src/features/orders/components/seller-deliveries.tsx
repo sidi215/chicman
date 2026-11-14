@@ -2,9 +2,8 @@
 
 import type { SellerDelivery, SellerInProgressDeliveriesResponse } from "@chicman/shared"
 import { MapPin } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 
-import { BrandLogo } from "@/components/brand/brand-logo"
 import { Button } from "@/components/ui/button"
 import { FormMessage } from "@/features/auth/components/form-field"
 import { TextLink } from "@/features/auth/components/text-link"
@@ -49,11 +48,12 @@ function Destination({ delivery, t }: { delivery: SellerDelivery["delivery"]; t:
 type View = { state: "loading" } | { state: "ready"; data: SellerInProgressDeliveriesResponse } | { state: "failed"; failure: OrderFailure }
 
 /**
- * `/seller/deliveries` (spec 12, D8): the deliveries out for delivery, or
- * failed and not closed. For an approved shop, a shortcut; for a suspended
- * shop, the only orders its owner can see and finish.
+ * The deliveries out for delivery, or failed and not closed, each with its
+ * delivery actions (spec 12, D8). `title` heads the list; with
+ * `hideWhenEmpty` nothing at all shows once the list is known to be empty
+ * (the suspended dashboard, spec 16).
  */
-export function SellerInProgressDeliveries() {
+export function InProgressDeliveryList({ title, hideWhenEmpty = false }: { title?: ReactNode; hideWhenEmpty?: boolean }) {
   const t = useOrderMessages()
   const locale = useLocale()
   const { status, call } = useOrderApi()
@@ -73,57 +73,76 @@ export function SellerInProgressDeliveries() {
     }
   }, [status, call, reloads])
 
+  const empty = view.state === "ready" && view.data.deliveries.length === 0
+  if (hideWhenEmpty && empty && notice === null) return null
+
   return (
-    <main className="flex flex-1 flex-col items-center gap-6 bg-page px-4 py-10">
-      <BrandLogo label={t.brand} />
-      <div className="flex w-full max-w-3xl flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="type-headline-small">{t.inProgressTitle}</h1>
-          <p className="type-body-medium text-muted-foreground">{t.inProgressSubtitle}</p>
+    <div className="flex flex-col gap-4">
+      {title}
+      {notice === null ? null : <FormMessage tone={notice.tone}>{notice.text}</FormMessage>}
+      {view.state === "loading" ? <FormMessage tone="info">{t.loading}</FormMessage> : null}
+      {view.state === "failed" ? (
+        <div className="flex flex-col items-start gap-3">
+          <FormMessage tone="error">{t.failures[view.failure]}</FormMessage>
+          {view.failure === "forbidden" ? null : (
+            <Button variant="outline" onClick={() => setReloads((count) => count + 1)}>
+              {t.retry}
+            </Button>
+          )}
         </div>
-        {notice === null ? null : <FormMessage tone={notice.tone}>{notice.text}</FormMessage>}
-        {view.state === "loading" ? <FormMessage tone="info">{t.loading}</FormMessage> : null}
-        {view.state === "failed" ? (
-          <div className="flex flex-col items-start gap-3">
-            <FormMessage tone="error">{t.failures[view.failure]}</FormMessage>
-            {view.failure === "forbidden" ? null : (
-              <Button variant="outline" onClick={() => setReloads((count) => count + 1)}>
-                {t.retry}
-              </Button>
-            )}
-          </div>
-        ) : null}
-        {view.state === "ready" && view.data.deliveries.length === 0 ? <p className="type-body-medium text-muted-foreground">{t.noInProgress}</p> : null}
-        {view.state === "ready"
-          ? view.data.deliveries.map((delivery) => (
-              <article key={delivery.shopOrderId} className="flex flex-col gap-3 rounded-3xl border border-border bg-surface p-4 sm:p-6">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="type-title-medium">
-                    {t.reference} : <span dir="ltr">{delivery.orderReference}</span>
-                  </p>
-                  <LabelBadge label={delivery.label} t={t} />
-                </div>
-                <Destination delivery={delivery.delivery} t={t} />
-                <ItemList items={delivery.items} t={t} />
-                <div className="flex flex-col gap-1 border-t border-border pt-3">
-                  <AmountRow label={t.productsSubtotal} value={formatMru(delivery.productsSubtotal, locale)} />
-                  <AmountRow label={t.deliveryFee} value={feeText(delivery.deliveryFee, t, locale)} />
-                  <AmountRow label={t.amountDue} value={formatMru(delivery.payment.amountDue, locale)} strong />
-                </div>
-                <DeliveryPanel
-                  shopOrderId={delivery.shopOrderId}
-                  record={delivery.record}
-                  amountDue={delivery.payment.amountDue}
-                  t={t}
-                  call={call}
-                  onChanged={(next) => {
-                    setNotice(next)
-                    setReloads((count) => count + 1)
-                  }}
-                />
-              </article>
-            ))
-          : null}
+      ) : null}
+      {empty ? <p className="type-body-medium text-muted-foreground">{t.noInProgress}</p> : null}
+      {view.state === "ready"
+        ? view.data.deliveries.map((delivery) => (
+            <article key={delivery.shopOrderId} className="flex flex-col gap-3 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="type-title-medium">
+                  {t.reference} : <span dir="ltr">{delivery.orderReference}</span>
+                </p>
+                <LabelBadge label={delivery.label} t={t} />
+              </div>
+              <Destination delivery={delivery.delivery} t={t} />
+              <ItemList items={delivery.items} t={t} />
+              <div className="flex flex-col gap-1 border-t border-border pt-3">
+                <AmountRow label={t.productsSubtotal} value={formatMru(delivery.productsSubtotal, locale)} />
+                <AmountRow label={t.deliveryFee} value={feeText(delivery.deliveryFee, t, locale)} />
+                <AmountRow label={t.amountDue} value={formatMru(delivery.payment.amountDue, locale)} strong />
+              </div>
+              <DeliveryPanel
+                shopOrderId={delivery.shopOrderId}
+                record={delivery.record}
+                amountDue={delivery.payment.amountDue}
+                t={t}
+                call={call}
+                onChanged={(next) => {
+                  setNotice(next)
+                  setReloads((count) => count + 1)
+                }}
+              />
+            </article>
+          ))
+        : null}
+    </div>
+  )
+}
+
+/**
+ * `/seller/deliveries` (spec 12, D8): for an approved shop, a shortcut; for a
+ * suspended shop, the only orders its owner can see and finish.
+ */
+export function SellerInProgressDeliveries() {
+  const t = useOrderMessages()
+  return (
+    <main className="flex flex-1 flex-col items-center gap-6 bg-page py-6">
+      <div className="flex w-full max-w-3xl flex-col gap-4">
+        <InProgressDeliveryList
+          title={
+            <div className="flex flex-col gap-1">
+              <h1 className="type-headline-small">{t.inProgressTitle}</h1>
+              <p className="type-body-medium text-muted-foreground">{t.inProgressSubtitle}</p>
+            </div>
+          }
+        />
         <TextLink href="/seller/shop">{t.backToShop}</TextLink>
       </div>
     </main>

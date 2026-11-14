@@ -37,13 +37,13 @@ export function createCheckoutRouter(guards: AuthGuards, deps: CheckoutDependenc
   const router = Router();
   const placementLimit: RateLimitRule = { name: "checkout-place", ...deps.rateLimit };
 
-  router.get("/customers/me/checkout", ...guards.user, async (req, res) => {
+  router.get("/customers/me/checkout", ...guards.buyer, async (req, res) => {
     const user = requireLoadedUser(req);
     const { addressId } = parseOrBadRequest(checkoutSummaryQuerySchema, { ...req.query });
     res.status(200).json(await deps.checkout.summary(user.id, addressId));
   });
 
-  router.post("/customers/me/checkout", ...guards.user, rateLimit(deps.rateLimiter, placementLimit), async (req, res) => {
+  router.post("/customers/me/checkout", ...guards.buyer, rateLimit(deps.rateLimiter, placementLimit), async (req, res) => {
     const user = requireLoadedUser(req);
     const key = idempotencyKeySchema.safeParse(req.get(IDEMPOTENCY_KEY_HEADER));
     if (!key.success) throw badRequest(CHECKOUT_ERROR_CODES.idempotencyKeyInvalid);

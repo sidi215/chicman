@@ -20,7 +20,11 @@
     "worker": "prisma generate && tsx src/workers/index.ts",
     "worker:start": "node dist/workers/index.js",
     "storage:setup": "tsx scripts/setup-storage.ts",
-    "admin:grant": "tsx scripts/grant-admin.ts"
+    "admin:provision": "tsx scripts/provision-admin.ts",
+    "admin:deactivate": "tsx scripts/deactivate-admin.ts",
+    "accounts:classify": "tsx scripts/classify-account-types.ts",
+    "seller:provision": "tsx scripts/provision-seller.ts",
+    "shop:transfer-owner": "tsx scripts/transfer-shop.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1153.0",

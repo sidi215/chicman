@@ -14,6 +14,8 @@ Implement email + password registration with mandatory email confirmation, login
 - Express verifies Supabase access tokens.
 - Application roles are managed by the backend and PostgreSQL.
 - Supported roles: `CUSTOMER`, `SELLER`, `ADMIN`.
+
+- **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** Roles are replaced by one immutable **account type** per account (`BUYER`, `SELLER`, `ADMIN`). Sign-up, confirmation, Turnstile, and rate limits stay shared; buyers register at `/register` (web and mobile), sellers at `/register/seller` (web only; reached from the public "Vendre sur Chicman" link). Right after sign-up the client records a **server-side registration intent** (`POST /api/v1/registration-intents`, `BUYER` or `SELLER`, write-once, keyed by the new identity), so the choice survives confirmation on another device. Account setup (`POST /api/v1/accounts/me/setup`) reads the intent by the verified `sub` and creates that type: Buyer (phone) or Seller (phone and the spec 06 application fields). It refuses an identity that already has another type (`409 ACCOUNT_TYPE_CONFLICT`); without an intent the setup screen asks and records the choice. `POST /customers/me` is removed. Administrators are provisioned by an operator script only. `user_metadata` stays untrusted. `/session` returns the type, and clients redirect to the buyer, seller, or administrator area after login. The statement that sellers use their own registered customer account is superseded. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
 - Unapproved sellers cannot access selling operations.
 - Authentication must work across web and mobile.
 

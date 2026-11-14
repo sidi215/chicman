@@ -434,3 +434,7 @@ These came from the audit and were not part of either decision round. None is as
 | O8 | Search: sold-out products (C8), PostgreSQL fallback, production hosting (Q16) | Feature 18 |
 | O9 | Favorites: price display for hidden products (C11) | Feature 14. **Implemented with the audit's recommendation (2026-11-10), awaiting the project owner's confirmation:** a hidden favorite shows "unavailable" with no price, shop, or link; no price snapshot (spec 14, Implementation Notes) |
 | O10 | Category management (C13); reviews and reported issues (Q19, D8 in the audit) | Feature 17 scope; roadmap |
+
+## AT-1 impact on these decisions (2026-11-13)
+
+The account-type decision (AT-1, `account-types-audit.md`) leaves every decision above in force, with two interactions to resolve: **O1**'s clause keeping the Flutter shop application screens is **superseded** by the owner's answer to Q5 (2026-11-13): Flutter is buyer only, seller registration and management are web only (the rest of O1 stands); **O2** becomes unreachable (a buyer owns no shop) and is kept as defense in depth.

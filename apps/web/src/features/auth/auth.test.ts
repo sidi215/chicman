@@ -8,7 +8,7 @@ import { authErrorKey, isEnumerationSensitive } from "./auth-errors"
 import { interpretSessionCheck, shouldEndSession } from "./session-check"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { interpretSetupResult } from "./account-setup"
+import { interpretSetupResult } from "./account"
 import { createAuthService } from "./auth-service"
 import { CALLBACK_DESTINATIONS, parseEmailLinkFragment } from "./callback"
 import { normalizeEmail, validateLogin, validatePhone, validateRegistration } from "./validation"
@@ -205,7 +205,7 @@ describe("auth service (spec 03)", () => {
   it("sign-up sends the callback and the Turnstile token, and never the phone", async () => {
     const { client, calls } = fakeSupabase({})
     const service = createAuthService(client, callback)
-    assert.deepEqual(await service.register("a@b.mr", "pw", "captcha-token"), { ok: true })
+    assert.deepEqual(await service.register("a@b.mr", "pw", "captcha-token"), { ok: true, userId: null })
     assert.deepEqual(calls[0], {
       method: "signUp",
       args: [{ email: "a@b.mr", password: "pw", options: { emailRedirectTo: callback(), captchaToken: "captcha-token" } }],
@@ -215,7 +215,12 @@ describe("auth service (spec 03)", () => {
 
   it("sign-up reports success for an already registered email (no enumeration)", async () => {
     const { client } = fakeSupabase({ signUp: { error: { code: "user_already_exists" } } })
-    assert.deepEqual(await createAuthService(client, callback).register("a@b.mr", "pw"), { ok: true })
+    assert.deepEqual(await createAuthService(client, callback).register("a@b.mr", "pw"), { ok: true, userId: null })
+  })
+
+  it("sign-up returns the new identity's ID for the registration intent (AT-1)", async () => {
+    const { client } = fakeSupabase({ signUp: { error: null, data: { user: { id: "identity-1", identities: [{}] } } } })
+    assert.deepEqual(await createAuthService(client, callback).register("a@b.mr", "pw"), { ok: true, userId: "identity-1" })
   })
 
   it("login and recovery pass the Turnstile token; recovery hides unknown addresses", async () => {
@@ -278,13 +283,14 @@ describe("anti-enumeration: registered and unregistered addresses look the same 
     // Supabase (confirmations on) answers an existing address with an obfuscated user, or user_already_exists.
     const existingObfuscated = await service({ signUp: { error: null, data: { user: { identities: [] } } } }).register("r@x.mr", "pw")
     const existingError = await service({ signUp: { error: { code: "user_already_exists", status: 422 } } }).register("r@x.mr", "pw")
-    for (const result of [fresh, existingObfuscated, existingError]) assert.deepEqual(result, { ok: true })
+    // The same success either way (AT-1 adds the identity ID when Supabase gives one, for the intent).
+    for (const result of [fresh, existingObfuscated, existingError]) assert.equal(result.ok, true)
   })
 })
 
-describe("account setup response handling (spec 04)", () => {
-  it("maps bootstrap responses", async () => {
-    const account = { userId: "u", roles: ["CUSTOMER"], profile: {} }
+describe("account setup response handling (spec 04, AT-1)", () => {
+  it("maps setup responses", async () => {
+    const account = { userId: "u", accountType: "BUYER", profile: {} }
     assert.equal(interpretSetupResult(await classifyResponse(json(201, account))).state, "done")
     assert.equal(interpretSetupResult(await classifyResponse(json(200, account))).state, "done")
     assert.equal(interpretSetupResult(await classifyResponse(json(400, { error: { code: "INVALID_PHONE" } }))).state, "invalid-phone")

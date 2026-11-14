@@ -36,7 +36,7 @@ export const LOGO_UPLOAD_RATE_LIMIT = { perShop: 10, windowMs: 10 * 60_000 } as 
  */
 export function createShopRouter(guards: AuthGuards, deps: ShopDependencies): Router {
   const router = Router();
-  const owned = [...guards.user, requireOwnedShop(deps.shopAccess)];
+  const owned = [...guards.seller, requireOwnedShop(deps.shopAccess)];
 
   const logoService = (): LogoService => {
     if (deps.logos === undefined) throw new HttpError(503, SHOP_ERROR_CODES.logoStorageNotConfigured);
@@ -58,15 +58,16 @@ export function createShopRouter(guards: AuthGuards, deps: ShopDependencies): Ro
     next();
   };
 
-  // Rule 1: create the shop = submit the initial application.
-  router.post("/sellers/me/shop", ...guards.user, async (req, res) => {
+  // Rule 1 (AT-1): a shop is normally created by seller account setup. This
+  // route only repairs a Seller account without a shop; a second shop → 409.
+  router.post("/sellers/me/shop", ...guards.seller, async (req, res) => {
     const user = requireLoadedUser(req);
     const input = parseOrBadRequest(shopCreateSchema, req.body);
     res.status(201).json(await deps.shops.create(user.id, input));
   });
 
   // Rule 5: view in any status.
-  router.get("/sellers/me/shop", ...guards.user, async (req, res) => {
+  router.get("/sellers/me/shop", ...guards.seller, async (req, res) => {
     const user = requireLoadedUser(req);
     res.status(200).json(await deps.shops.getOwnerView(user.id));
   });
@@ -96,7 +97,7 @@ export function createShopRouter(guards: AuthGuards, deps: ShopDependencies): Ro
     const user = requireLoadedUser(req);
     const input = parseOrBadRequest(logoUploadRequestSchema, req.body);
     const shopId = req.ownedShop?.id ?? "";
-    res.status(201).json(await logoService().requestUpload({ userId: user.id, roles: user.roles, shopId }, input));
+    res.status(201).json(await logoService().requestUpload({ userId: user.id, accountType: user.accountType, shopId }, input));
   });
 
   router.post(
@@ -107,7 +108,7 @@ export function createShopRouter(guards: AuthGuards, deps: ShopDependencies): Ro
       const user = requireLoadedUser(req);
       const shopId = req.ownedShop?.id ?? "";
       const uploadId = String(req.params["uploadId"] ?? "");
-      res.status(200).json(await logoService().complete({ userId: user.id, roles: user.roles, shopId }, uploadId));
+      res.status(200).json(await logoService().complete({ userId: user.id, accountType: user.accountType, shopId }, uploadId));
     },
   );
 

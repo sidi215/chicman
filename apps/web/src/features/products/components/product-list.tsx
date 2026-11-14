@@ -5,7 +5,6 @@ import { ImageIcon } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState } from "react"
 
-import { BrandLogo } from "@/components/brand/brand-logo"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -57,8 +56,7 @@ export function ProductList() {
   const pages = view.state === "ready" ? Math.max(1, Math.ceil(view.data.total / view.data.pageSize)) : 1
 
   return (
-    <main className="flex flex-1 flex-col items-center gap-6 bg-page px-4 py-10">
-      <BrandLogo label={t.brand} />
+    <main className="flex flex-1 flex-col items-center gap-6 bg-page py-6">
       <div className="flex w-full max-w-3xl flex-col gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-1">

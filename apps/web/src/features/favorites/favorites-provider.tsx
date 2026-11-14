@@ -3,6 +3,7 @@
 import type { FavoriteList } from "@chicman/shared"
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 
+import { useAccount } from "@/features/auth/account-provider"
 import { useAuth } from "@/features/auth/auth-provider"
 import { apiRequest } from "@/lib/api-client"
 
@@ -48,7 +49,12 @@ const NO_IDS: ReadonlySet<string> = new Set()
  * the API returns, and answers meant for a previous account are dropped.
  */
 export function FavoritesProvider({ children }: { children: ReactNode }) {
-  const { status, getAccessToken, signOut } = useAuth()
+  const { status: authStatus, getAccessToken, signOut } = useAuth()
+  const { account: signedIn } = useAccount()
+  // Buyer accounts only (AT-1): for a Seller or an Administrator the favorites behaves as for a guest and is never read.
+  // Waits for the account type: nothing is read before it is known, so no other type ever calls these routes.
+  const status =
+    authStatus !== "signed-in" ? authStatus : signedIn.state === "loading" ? "loading" : signedIn.state === "active" && signedIn.accountType !== "BUYER" ? "signed-out" : authStatus
   const [loaded, setLoaded] = useState<FavoritesState>({ kind: "loading" })
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(NO_IDS)
 

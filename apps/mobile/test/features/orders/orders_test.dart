@@ -142,7 +142,7 @@ Future<void> _pump(
               ),
         ),
         apiClientProvider.overrideWithValue(
-          ApiClient(baseUrl: 'http://api.test', httpClient: client),
+          ApiClient(baseUrl: 'http://api.test', httpClient: _asBuyer(client)),
         ),
       ],
       child: MaterialApp(
@@ -158,6 +158,23 @@ Future<void> _pump(
 }
 
 Finder _key(String key) => find.byKey(Key(key));
+
+/// Answers the account-type check (AT-1) with a Buyer session, so [client]
+/// only sees the order requests under test.
+http.Client _asBuyer(http.Client client) => MockClient((request) async {
+  if (request.url.path.endsWith('/auth/session')) {
+    return http.Response(
+      jsonEncode({'userId': 'u1', 'accountType': 'BUYER'}),
+      200,
+      headers: {'content-type': 'application/json'},
+    );
+  }
+  // A fresh copy: the request was already read by this mock.
+  final copy = http.Request(request.method, request.url)
+    ..headers.addAll(request.headers)
+    ..bodyBytes = request.bodyBytes;
+  return http.Response.fromStream(await client.send(copy));
+});
 
 void main() {
   group('order rules (spec 11)', () {

@@ -26,9 +26,9 @@ const productId = (req: Request): string => idParam(req.params["productId"], PRO
  */
 export function createFavoriteRouter(guards: AuthGuards, deps: FavoriteDependencies): Router {
   const router = Router();
-  const write = [...guards.user, rateLimit(deps.rateLimiter, FAVORITE_WRITE_RATE_LIMIT)];
+  const write = [...guards.buyer, rateLimit(deps.rateLimiter, FAVORITE_WRITE_RATE_LIMIT)];
 
-  router.get("/customers/me/favorites", ...guards.user, async (req, res) => {
+  router.get("/customers/me/favorites", ...guards.buyer, async (req, res) => {
     res.status(200).json(await deps.favorites.list(requireLoadedUser(req).id));
   });
 

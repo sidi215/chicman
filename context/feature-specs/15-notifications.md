@@ -24,6 +24,8 @@ This feature generalizes the existing helper and table. It never creates a secon
 - Keep notification creation separate from delivery mechanisms so additional channels can be added later.
 - Do not assume SMS, email, or push delivery is available unless explicitly configured and implemented.
 - Notifications must respect the user's role and ownership.
+
+- **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** A Buyer reads the customer audience, a Seller the seller audience, and an Administrator has no inbox (`403`; consistent with O6.1). Recipients are unchanged (the order's buyer, the shop's owner). Notifications already recorded for an account later reclassified as Administrator are kept and not shown. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
 - Do not expose internal administrative reasons, private admin notes, audit metadata, or other protected information.
 - For initial shop application rejection, the owner-facing rejection reason may be shown in the seller dashboard through `rejection.applicantReason`. Do not include it in notification content (spec 06; already implemented).
 - Users can list their notifications, mark them read, and access relevant resources only when authorized.

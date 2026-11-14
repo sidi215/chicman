@@ -31,9 +31,9 @@ function addressIdParam(value: unknown): string {
  */
 export function createAddressRouter(guards: AuthGuards, deps: AddressDependencies): Router {
   const router = Router();
-  const write = [...guards.user, rateLimit(deps.rateLimiter, ADDRESS_WRITE_RATE_LIMIT)];
+  const write = [...guards.buyer, rateLimit(deps.rateLimiter, ADDRESS_WRITE_RATE_LIMIT)];
 
-  router.get("/customers/me/addresses", ...guards.user, async (req, res) => {
+  router.get("/customers/me/addresses", ...guards.buyer, async (req, res) => {
     res.status(200).json(await deps.addresses.list(requireLoadedUser(req).id));
   });
 
@@ -47,7 +47,7 @@ export function createAddressRouter(guards: AuthGuards, deps: AddressDependencie
     res.status(201).json(await deps.addresses.create(user.id, input));
   });
 
-  router.get("/customers/me/addresses/:addressId", ...guards.user, async (req, res) => {
+  router.get("/customers/me/addresses/:addressId", ...guards.buyer, async (req, res) => {
     res.status(200).json(await deps.addresses.get(requireLoadedUser(req).id, addressIdParam(req.params["addressId"])));
   });
 

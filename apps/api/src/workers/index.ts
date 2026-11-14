@@ -7,6 +7,8 @@
 //   5 minutes;
 // - automatic closure of failed deliveries (spec 12, D5), every 5 minutes;
 // - notification retention (spec 15, O6.3): notifications older than 365
+//   days, every 24 hours;
+// - registration intent retention (AT-1): intents never consumed within 30
 //   days, every 24 hours.
 // In development it runs as the `worker` service of
 // infrastructure/docker/docker-compose.yml (restart: unless-stopped).
@@ -15,6 +17,7 @@ import dotenv from "dotenv";
 import { loadWorkerStorageConfig } from "../config/env.js";
 import { createPrismaClient } from "../lib/prisma.js";
 import { describeError } from "../lib/describe-error.js";
+import { purgeExpiredRegistrationIntents } from "../modules/accounts/index.js";
 import { closeDueDeliveries } from "../modules/delivery/index.js";
 import { purgeExpiredNotifications } from "../modules/notifications/index.js";
 import { ShopOrderLifecycle, type JobResult } from "../modules/orders/index.js";
@@ -26,6 +29,7 @@ import {
   LOGO_CLEANUP_LOCK_NAME,
   NOTIFICATION_RETENTION_LOCK_NAME,
   ORDER_EXPIRY_LOCK_NAME,
+  REGISTRATION_INTENT_RETENTION_LOCK_NAME,
   ORDER_REMINDER_LOCK_NAME,
   PRODUCT_IMAGE_CLEANUP_LOCK_NAME,
 } from "./advisory-lock.js";
@@ -178,10 +182,30 @@ const notificationRetentionSchedule = createRetentionSchedule<number>({
   logError: (line, error) => console.error(`${line}: ${describeError(error)}`),
 });
 
+// Registration intent retention (AT-1, section 5.3): only unconsumed intents
+// older than 30 days; a consumed intent is kept. Its own lock.
+const intentRetentionLock = createAdvisoryLock(
+  databaseUrl,
+  () => {
+    console.error("Worker registration-intent-retention lock connection lost; exiting so the worker restarts and reacquires the lock");
+    process.exit(1);
+  },
+  REGISTRATION_INTENT_RETENTION_LOCK_NAME,
+);
+const intentRetentionSchedule = createRetentionSchedule<number>({
+  name: "registration intent retention",
+  lockName: "registration-intent-retention",
+  purge: () => purgeExpiredRegistrationIntents(prisma),
+  summarize: (deleted) => `deleted ${deleted} unconsumed registration intent(s) older than 30 days`,
+  lock: intentRetentionLock,
+  log: (line) => console.log(line),
+  logError: (line, error) => console.error(`${line}: ${describeError(error)}`),
+});
+
 console.log(
   `Worker started (pid ${process.pid}); database ${describeDatabase(databaseUrl)}; retention every 24 h` +
     (logoSchedule === null ? "" : "; logo and product image cleanup every 5 min") +
-    "; shop order expiry and reminders every 5 min; delivery auto close every 5 min; notification retention every 24 h",
+    "; shop order expiry and reminders every 5 min; delivery auto close every 5 min; notification and registration intent retention every 24 h",
 );
 
 let stopping = false;
@@ -190,7 +214,7 @@ async function shutdown(signal: string): Promise<void> {
   stopping = true;
   console.log(`Worker received ${signal}; finishing the current run before exiting`);
   try {
-    await Promise.all([schedule.stop(), logoSchedule?.stop(), productImageSchedule?.stop(), expirySchedule.stop(), reminderSchedule.stop(), deliveryAutoCloseSchedule.stop(), notificationRetentionSchedule.stop()]);
+    await Promise.all([schedule.stop(), logoSchedule?.stop(), productImageSchedule?.stop(), expirySchedule.stop(), reminderSchedule.stop(), deliveryAutoCloseSchedule.stop(), notificationRetentionSchedule.stop(), intentRetentionSchedule.stop()]);
     await prisma.$disconnect();
     console.log("Worker stopped cleanly");
     process.exit(0);
@@ -202,4 +226,4 @@ async function shutdown(signal: string): Promise<void> {
 process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
-await Promise.all([schedule.start(), logoSchedule?.start(), productImageSchedule?.start(), expirySchedule.start(), reminderSchedule.start(), deliveryAutoCloseSchedule.start(), notificationRetentionSchedule.start()]);
+await Promise.all([schedule.start(), logoSchedule?.start(), productImageSchedule?.start(), expirySchedule.start(), reminderSchedule.start(), deliveryAutoCloseSchedule.start(), notificationRetentionSchedule.start(), intentRetentionSchedule.start()]);

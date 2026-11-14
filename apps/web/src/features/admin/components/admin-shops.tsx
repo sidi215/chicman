@@ -5,7 +5,6 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useId, useState, type FormEvent } from "react"
 
-import { BrandLogo } from "@/components/brand/brand-logo"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -74,10 +73,9 @@ function useAdminApi() {
   return { status, call }
 }
 
-function Shell({ t, children }: { t: AdminMessages; children: React.ReactNode }) {
+function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex flex-1 flex-col items-center gap-6 bg-page px-4 py-10">
-      <BrandLogo label={t.brand} />
+    <main className="flex flex-1 flex-col items-center gap-6 bg-page px-4 py-6">
       {children}
     </main>
   )
@@ -103,7 +101,7 @@ export function AdminShopList() {
   }, [status, filter, call])
 
   return (
-    <Shell t={t}>
+    <Shell>
       <Card className="w-full max-w-3xl rounded-3xl p-6">
         <CardHeader>
           <CardTitle className="type-headline-small">{t.listTitle}</CardTitle>
@@ -281,14 +279,14 @@ export function AdminShopDetail({ shopId }: { shopId: string }) {
 
   if (outcome === null) {
     return (
-      <Shell t={t}>
+      <Shell>
         <FormMessage tone="info">{t.loading}</FormMessage>
       </Shell>
     )
   }
   if (outcome.state !== "ok") {
     return (
-      <Shell t={t}>
+      <Shell>
         <FormMessage tone="error">{errorText(outcome.state, t)}</FormMessage>
         <TextLink href="/admin/shops">{t.backToList}</TextLink>
       </Shell>
@@ -308,7 +306,7 @@ export function AdminShopDetail({ shopId }: { shopId: string }) {
   ]
 
   return (
-    <Shell t={t}>
+    <Shell>
       <Card className="w-full max-w-3xl rounded-3xl p-6">
         <CardHeader>
           <CardTitle className="type-headline-small">{shop.shopName}</CardTitle>

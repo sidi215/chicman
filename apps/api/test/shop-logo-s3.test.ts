@@ -74,9 +74,9 @@ describe("shop logo upload against S3-compatible storage (spec 06)", { skip }, (
   });
 
   async function ownerShop() {
-    const user = await prisma.user.create({ data: { supabaseUserId: randomUUID(), roles: { create: [{ role: "CUSTOMER" }] } } });
+    const user = await prisma.user.create({ data: { supabaseUserId: randomUUID(), accountType: "SELLER" } });
     const shop = await prisma.shop.create({ data: { ownerUserId: user.id, ...TEST_SHOP_FIELDS } });
-    return { userId: user.id, roles: ["CUSTOMER" as const], shopId: shop.id };
+    return { userId: user.id, accountType: "SELLER" as const, shopId: shop.id };
   }
 
   it("presigned PUT → verified completion → public media URL; staging stays private", async () => {

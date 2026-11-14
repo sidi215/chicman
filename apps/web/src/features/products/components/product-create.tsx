@@ -4,7 +4,6 @@ import type { SellerProductDetail } from "@chicman/shared"
 import { useRouter } from "next/navigation"
 import { useState, type FormEvent } from "react"
 
-import { BrandLogo } from "@/components/brand/brand-logo"
 import { Button } from "@/components/ui/button"
 import { FormField, FormMessage } from "@/features/auth/components/form-field"
 import { TextLink } from "@/features/auth/components/text-link"
@@ -49,8 +48,7 @@ export function ProductCreate() {
   }
 
   return (
-    <main className="flex flex-1 flex-col items-center gap-6 bg-page px-4 py-10">
-      <BrandLogo label={t.brand} />
+    <main className="flex flex-1 flex-col items-center gap-6 bg-page py-6">
       <SectionCard title={t.newTitle} description={t.newSubtitle}>
         <form className="flex flex-col gap-4" onSubmit={(event) => void submit(event)} noValidate>
           <ProductFields t={t} values={values} errors={errors} onChange={(field, value) => setValues((current) => ({ ...current, [field]: value }))} />

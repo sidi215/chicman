@@ -49,7 +49,7 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
   after(() => h.stop());
   beforeEach(async () => {
     await h.reset();
-    admin = await h.actor(["CUSTOMER", "ADMIN"]);
+    admin = await h.actor("ADMIN");
   });
 
   const roles = async (userId: string) =>
@@ -60,8 +60,8 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
   const view = async (actor: Actor) => (await (await h.call("/sellers/me/shop", actor.token)).json()) as OwnerShopResponse;
 
   describe("creation and submission", () => {
-    it("a customer without SELLER and without a shop creates a PENDING shop (201), visible in the review list", async () => {
-      const customer = await h.actor();
+    it("a Seller account without a shop (the repair path; setup normally creates it) creates a PENDING shop (201), visible in the review list", async () => {
+      const customer = await h.actor("SELLER");
       const res = await create(customer);
       assert.equal(res.status, 201);
       const body = (await res.json()) as OwnerShopResponse;
@@ -73,7 +73,7 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
       assert.equal(body.latestDecision, null);
       assert.equal(body.rejection, null);
       assertNoInternalData(body);
-      assert.deepEqual(await roles(customer.userId), ["CUSTOMER"]);
+      assert.deepEqual(await roles(customer.userId), []); // AT-1: no role is ever written
 
       const list = await (await h.call("/admin/shops?status=PENDING", admin.token)).json();
       assert.deepEqual(
@@ -88,7 +88,7 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
     });
 
     it("missing required fields or invalid values → 400 and nothing is written", async () => {
-      const customer = await h.actor();
+      const customer = await h.actor("SELLER");
       const invalid: unknown[] = [
         ...["shopName", "description", "contactPhone", "city", "address"].map((field) => {
           const copy: Record<string, unknown> = { ...APPLICATION };
@@ -116,8 +116,8 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
     });
 
     it("protected fields, alone or mixed with valid fields, → 400 on create and update", async () => {
-      const customer = await h.actor();
-      const other = await h.actor();
+      const customer = await h.actor("SELLER");
+      const other = await h.actor("SELLER");
       for (const extra of [
         { id: randomUUID() },
         { ownerUserId: other.userId },
@@ -147,7 +147,7 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
     });
 
     it("the database refuses a second shop; concurrent creations produce exactly one (409 for the others)", async () => {
-      const customer = await h.actor();
+      const customer = await h.actor("SELLER");
       const results = await Promise.all(Array.from({ length: 5 }, () => create(customer)));
       const statuses = results.map((r) => r.status).sort();
       assert.deepEqual(statuses, [201, 409, 409, 409, 409]);
@@ -158,8 +158,8 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
     });
 
     it("the owner is always the authenticated user", async () => {
-      const customer = await h.actor();
-      const other = await h.actor();
+      const customer = await h.actor("SELLER");
+      const other = await h.actor("SELLER");
       assert.equal((await create(customer, { ...APPLICATION, ownerUserId: other.userId })).status, 400);
       assert.equal((await create(customer)).status, 201);
       assert.equal((await h.prisma.shop.findFirstOrThrow()).ownerUserId, customer.userId);
@@ -167,7 +167,7 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
     });
 
     it("the shop contact phone and the customer profile phone are independent", async () => {
-      const customer = await h.actor();
+      const customer = await h.actor("SELLER");
       await create(customer);
       await h.call("/sellers/me/shop", customer.token, { method: "PATCH", body: { contactPhone: "+22236999999" } });
       const profile = await h.prisma.customerProfile.findUniqueOrThrow({ where: { userId: customer.userId } });
@@ -176,10 +176,19 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
       assert.equal((await view(customer)).contactPhone, "+22236999999");
     });
 
-    it("pre-bootstrap tokens, unauthenticated requests, and users without a shop", async () => {
+    it("Buyer and Administrator accounts cannot create or view a shop (403, AT-1)", async () => {
+      for (const type of ["BUYER", "ADMIN"] as const) {
+        const actor = await h.actor(type);
+        assert.equal((await create(actor)).status, 403, type);
+        assert.equal((await h.call("/sellers/me/shop", actor.token)).status, 403, type);
+      }
+      assert.equal(await h.prisma.shop.count(), 0);
+    });
+
+    it("pre-bootstrap tokens, unauthenticated requests, and Sellers without a shop", async () => {
       assert.equal((await h.call("/sellers/me/shop", null, { method: "POST", body: APPLICATION })).status, 401);
       assert.equal((await h.call("/sellers/me/shop", null)).status, 401);
-      const noShop = await h.actor();
+      const noShop = await h.actor("SELLER");
       for (const [method, path] of [
         ["GET", "/sellers/me/shop"],
         ["PATCH", "/sellers/me/shop"],
@@ -196,7 +205,7 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
 
   describe("resubmission", () => {
     it("REJECTED → PENDING; from PENDING, APPROVED, or SUSPENDED → 409 with the status unchanged", async () => {
-      const customer = await h.actor();
+      const customer = await h.actor("SELLER");
       const { id } = (await (await create(customer)).json()) as OwnerShopResponse;
       assert.equal((await h.call("/sellers/me/shop/resubmit", customer.token, { method: "POST" })).status, 409);
       assert.equal((await decide(id, "reject", { applicantReason: REJECTION })).status, 200);
@@ -207,7 +216,7 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
       // Owner actions are not decisions: latestDecision is still the rejection.
       assert.equal(body.latestDecision?.type, "APPLICATION_REJECTED");
       assert.equal(body.rejection, null);
-      assert.deepEqual(await roles(customer.userId), ["CUSTOMER"]);
+      assert.deepEqual(await roles(customer.userId), []); // AT-1: no role is ever written
 
       for (const status of ["APPROVED", "SUSPENDED"] as const) {
         const { owner, shopId } = await h.shopInStatus(status);
@@ -219,7 +228,7 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
 
     it("only the owner can resubmit: another user only reaches their own (missing) shop → 404", async () => {
       const { shopId } = await h.shopInStatus("REJECTED");
-      const other = await h.actor();
+      const other = await h.actor("SELLER");
       const res = await h.call("/sellers/me/shop/resubmit", other.token, { method: "POST", body: { shopId } });
       assert.equal(res.status, 404);
       assert.equal((await h.prisma.shop.findUniqueOrThrow({ where: { id: shopId } })).status, "REJECTED");
@@ -415,15 +424,17 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
   });
 
   describe("roles and access", () => {
-    it("creating or resubmitting never grants SELLER; initial approval grants it in the same transaction and keeps CUSTOMER", async () => {
+    it("no decision writes a role or changes the account type (AT-1): the Seller stays a Seller", async () => {
       const { owner, shopId } = await h.shopInStatus("PENDING");
       await decide(shopId, "reject", { applicantReason: REJECTION });
       await h.call("/sellers/me/shop/resubmit", owner.token, { method: "POST" });
-      assert.deepEqual(await roles(owner.userId), ["CUSTOMER"]);
       await decide(shopId, "approve", { internalReason: REASON });
-      assert.deepEqual(await roles(owner.userId), ["CUSTOMER", "SELLER"]);
-      // Customer features still work.
-      assert.equal((await h.call("/auth/session", owner.token)).status, 200);
+      await decide(shopId, "suspend", { internalReason: REASON });
+      await decide(shopId, "reinstate", { internalReason: REASON });
+      assert.deepEqual(await roles(owner.userId), []);
+      assert.equal((await h.prisma.user.findUniqueOrThrow({ where: { id: owner.userId } })).accountType, "SELLER");
+      // Never a buyer: buyer routes stay closed in every status.
+      assert.equal((await h.call("/customers/me/cart", owner.token)).status, 403);
     });
 
     it("a failed approval writes nothing: no status change, no event, no role, no notification", async () => {
@@ -436,19 +447,18 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
       assert.equal((await h.prisma.shop.findUniqueOrThrow({ where: { id: shopId } })).status, "PENDING");
       assert.equal(await h.prisma.shopStatusEvent.count(), 0);
       assert.equal(await h.prisma.notification.count(), 0);
-      assert.deepEqual(await roles(owner.userId), ["CUSTOMER"]);
+      assert.deepEqual(await roles(owner.userId), []);
     });
 
-    it("suspension retains SELLER; reinstatement restores access without writing a UserRole row", async () => {
+    it("suspension blocks and reinstatement restores seller operations, by status alone", async () => {
       const { owner, shopId } = await h.shopInStatus("PENDING");
       await decide(shopId, "approve", { internalReason: REASON });
-      const granted = await h.prisma.userRole.findUniqueOrThrow({ where: { userId_role: { userId: owner.userId, role: "SELLER" } } });
+      assert.equal((await h.call("/sellers/me/products", owner.token)).status, 200);
       await decide(shopId, "suspend", { internalReason: REASON });
-      assert.deepEqual(await roles(owner.userId), ["CUSTOMER", "SELLER"]);
+      assert.equal((await h.call("/sellers/me/products", owner.token)).status, 403);
       await decide(shopId, "reinstate", { internalReason: REASON });
-      const after = await h.prisma.userRole.findUniqueOrThrow({ where: { userId_role: { userId: owner.userId, role: "SELLER" } } });
-      assert.equal(after.createdAt.getTime(), granted.createdAt.getTime());
-      assert.equal(await h.prisma.userRole.count({ where: { userId: owner.userId } }), 2);
+      assert.equal((await h.call("/sellers/me/products", owner.token)).status, 200);
+      assert.equal(await h.prisma.userRole.count({ where: { userId: owner.userId } }), 0);
       const events = await h.prisma.shopStatusEvent.findMany({ where: { shopId }, orderBy: { createdAt: "asc" } });
       assert.deepEqual(
         events.map((e) => e.decisionType),
@@ -475,18 +485,19 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
       assert.equal(logo.status, 403);
     });
 
-    it("a user holding SELLER whose shop is APPROVED in name only (status not APPROVED) is denied edits of approved fields", async () => {
-      const seller = await h.actor(["CUSTOMER", "SELLER"]);
+    it("a Seller whose shop is not APPROVED is denied edits of approved fields", async () => {
+      const seller = await h.actor("SELLER");
       await h.shopInStatus("SUSPENDED", seller);
       assert.equal((await h.call("/sellers/me/shop", seller.token, { method: "PATCH", body: { description: "x" } })).status, 403);
-      // An APPROVED shop without the SELLER role is denied approved-shop editing too.
-      const roleless = await h.actor(["CUSTOMER"]);
-      await h.shopInStatus("APPROVED", roleless);
-      assert.equal((await h.call("/sellers/me/shop", roleless.token, { method: "PATCH", body: { description: "x" } })).status, 403);
+      // An APPROVED shop owned by a non-Seller (pre-AT-1 data) is denied every owner route.
+      const legacyOwner = await h.actor("BUYER");
+      await h.legacyShop("APPROVED", legacyOwner);
+      assert.equal((await h.call("/sellers/me/shop", legacyOwner.token, { method: "PATCH", body: { description: "x" } })).status, 403);
+      assert.equal((await h.call("/sellers/me/shop", legacyOwner.token)).status, 403);
     });
 
     it("client-provided roles or statuses (claims, headers, query, body) never grant anything", async () => {
-      const claims = await h.actor(["CUSTOMER"], { role: "ADMIN", roles: ["ADMIN", "SELLER"], app_metadata: { roles: ["ADMIN"] } });
+      const claims = await h.actor("BUYER", { role: "ADMIN", roles: ["ADMIN", "SELLER"], app_metadata: { roles: ["ADMIN"] } });
       const { shopId } = await h.shopInStatus("PENDING");
       const res = await h.call(`/admin/shops/${shopId}/approve?role=ADMIN`, claims.token, {
         method: "POST",
@@ -499,7 +510,7 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
 
     it("only administrators decide; owners, customers, and sellers → 403; unauthenticated → 401", async () => {
       const { owner, shopId } = await h.shopInStatus("PENDING");
-      const seller = await h.actor(["CUSTOMER", "SELLER"]);
+      const seller = await h.actor("SELLER");
       const customer = await h.actor();
       for (const action of ["approve", "reject", "suspend", "reinstate"]) {
         const body = action === "reject" ? { applicantReason: REJECTION } : { internalReason: REASON };
@@ -675,16 +686,21 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
       };
     }
 
-    /** An account holding ADMIN and CUSTOMER that owns a shop in `status`. */
+    /** A change request from before AT-1, inserted as it was stored then. */
+    async function legacyChangeRequest(shopId: string, owner: Actor, proposal: { proposedShopName?: string; proposedCity?: string }): Promise<string> {
+      const request = await h.prisma.shopChangeRequest.create({ data: { shopId, submittedByUserId: owner.userId, ...proposal }, select: { id: true } });
+      return request.id;
+    }
+
+    /** An Administrator account that owns a shop in `status`: pre-AT-1 data only (development account A). */
     async function adminOwner(status: "PENDING" | "APPROVED" | "SUSPENDED") {
-      const owner = await h.actor(status === "PENDING" ? ["CUSTOMER", "ADMIN"] : ["CUSTOMER", "ADMIN", "SELLER"]);
-      const { shopId } = await h.shopInStatus(status, owner);
+      const owner = await h.actor("ADMIN");
+      const { shopId } = await h.legacyShop(status, owner);
       return { owner, shopId };
     }
 
     it("cannot approve or reject its own PENDING application; nothing changes", async () => {
       const { owner, shopId } = await adminOwner("PENDING");
-      assert.deepEqual(await roles(owner.userId), ["CUSTOMER", "ADMIN"]);
       const before = await snapshot(shopId, owner.userId);
       for (const [action, body] of [
         ["approve", { internalReason: REASON, internalNote: "self" }],
@@ -695,8 +711,7 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
         assert.deepEqual(await res.json(), SELF);
       }
       assert.deepEqual(await snapshot(shopId, owner.userId), before);
-      // No SELLER grant from a self-approval attempt.
-      assert.ok(!(await roles(owner.userId)).includes("SELLER"));
+      assert.deepEqual(await roles(owner.userId), []);
     });
 
     it("cannot suspend its own APPROVED shop or reinstate its own SUSPENDED shop; nothing changes", async () => {
@@ -715,9 +730,8 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
 
     it("cannot approve or reject its own change request; the request stays PENDING and the shop unchanged", async () => {
       const { owner, shopId } = await adminOwner("APPROVED");
-      const submitted = await h.call("/sellers/me/shop/change-requests", owner.token, { method: "POST", body: { shopName: "Nom auto-approuvé", city: "Atar" } });
-      assert.equal(submitted.status, 201);
-      const requestId = (await view(owner)).changeRequest?.id;
+      // Pre-AT-1 data: the request was submitted while the account could act as a seller.
+      const requestId = await legacyChangeRequest(shopId, owner, { proposedShopName: "Nom auto-approuvé", proposedCity: "Atar" });
       const before = await snapshot(shopId, owner.userId);
       for (const action of ["approve", "reject"]) {
         const res = await h.call(`/admin/shops/${shopId}/change-requests/${requestId}/${action}`, owner.token, {
@@ -752,8 +766,7 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
       assert.equal(await h.prisma.notification.count({ where: { userId: owner.userId } }), 1);
       assert.equal((await h.call(`/admin/shops/${shopId}`, admin.token)).status, 200);
 
-      await h.call("/sellers/me/shop/change-requests", owner.token, { method: "POST", body: { city: "Rosso" } });
-      const requestId = (await view(owner)).changeRequest?.id;
+      const requestId = await legacyChangeRequest(shopId, owner, { proposedCity: "Rosso" });
       const decided = await h.call(`/admin/shops/${shopId}/change-requests/${requestId}/approve`, admin.token, {
         method: "POST",
         body: { internalReason: REASON },
@@ -767,13 +780,19 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
       assert.equal((await h.call(`/admin/shops/${other.shopId}`, owner.token)).status, 200);
     });
 
-    it("the owner's own seller operations are unchanged by holding ADMIN", async () => {
-      const { owner } = await adminOwner("APPROVED");
-      assert.equal((await h.call("/sellers/me/shop", owner.token)).status, 200);
-      assert.equal((await h.call("/sellers/me/shop", owner.token, { method: "PATCH", body: { address: "Nouvelle adresse" } })).status, 200);
-      // ADMIN grants nothing on the owner side: a suspended admin-owner is still denied edits.
-      const suspended = await adminOwner("SUSPENDED");
-      assert.equal((await h.call("/sellers/me/shop", suspended.owner.token, { method: "PATCH", body: { address: "x" } })).status, 403);
+    it("an admin-owner has no seller access at all to its own shop (AT-1): every owner route → 403", async () => {
+      const { owner, shopId } = await adminOwner("APPROVED");
+      for (const [method, path] of [
+        ["GET", "/sellers/me/shop"],
+        ["PATCH", "/sellers/me/shop"],
+        ["POST", "/sellers/me/shop/change-requests"],
+        ["GET", "/sellers/me/products"],
+        ["GET", "/sellers/me/orders"],
+      ] as const) {
+        const res = await h.call(path, owner.token, method === "GET" ? {} : { method, body: { address: "Nouvelle adresse" } });
+        assert.equal(res.status, 403, `${method} ${path}`);
+      }
+      assert.equal((await h.prisma.shop.findUniqueOrThrow({ where: { id: shopId } })).address, TEST_SHOP_FIELDS.address);
     });
 
     it("an invalid body is still 400 and an unknown shop 404 for an admin-owner", async () => {
@@ -902,7 +921,7 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
     });
 
     it("every status change writes exactly one ShopStatusEvent with actor, reasons, note, and time", async () => {
-      const customer = await h.actor();
+      const customer = await h.actor("SELLER");
       const { id } = (await (await create(customer)).json()) as OwnerShopResponse;
       await decide(id, "reject", { applicantReason: REJECTION, internalNote: "n1" });
       await h.call("/sellers/me/shop/resubmit", customer.token, { method: "POST" });

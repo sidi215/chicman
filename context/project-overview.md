@@ -15,6 +15,8 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 
 ## Core User Flow
 
+> **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** Chicman has three mutually exclusive account types: **Buyer**, **Seller**, and **Administrator**. Buyers and sellers register through separate public flows; administrators are provisioned by an operator only. An account never holds two types, sellers and administrators cannot buy, and only seller registration creates a shop (its application starts `PENDING`). The flows below describe the current single-sign-up model. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.
+
 ### Customer Flow
 
 1. Customer discovers the marketplace through the web or mobile application.

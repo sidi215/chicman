@@ -59,7 +59,8 @@ const changeRequestNotFound = (): HttpError => notFound(SHOP_ERROR_CODES.changeR
 
 /**
  * An administrator cannot perform administrative decisions on a shop they
- * own, even when their account has the ADMIN role. Checked inside each
+ * own. AT-1 makes this unreachable (only Seller accounts own shops); it is
+ * kept as defense in depth. Checked inside each
  * decision transaction, under the shop row lock, before any write.
  */
 export function assertNotOwnShop(shop: { ownerUserId: string }, adminUserId: string): void {
@@ -70,7 +71,7 @@ export function assertNotOwnShop(shop: { ownerUserId: string }, adminUserId: str
  * Administrator decisions (spec 06). Each runs in one transaction: a row
  * lock and the self-administration check (`403`, nothing written), a
  * conditional update on the expected current status, the audit record, the
- * `SELLER` grant (initial approval only), and the owner notification. A
+ * owner notification (AT-1: no role grant). A
  * concurrent action that changed the status first makes the update affect
  * no row → `409`, and nothing is written.
  */
@@ -110,12 +111,7 @@ export class ShopLifecycle {
         select: { id: true, createdAt: true },
       });
 
-      // Initial approval only (including after a resubmission): grant SELLER
-      // if absent (INSERT … ON CONFLICT DO NOTHING). Reinstatement retains
-      // the existing role without a new grant; suspension revokes nothing.
-      if (input.action === "approve") {
-        await tx.userRole.createMany({ data: [{ userId: shop.ownerUserId, role: "SELLER" }], skipDuplicates: true });
-      }
+      // AT-1: approval grants nothing; the owner is a Seller account from setup.
 
       // Suspension cancels the shop's orders that have not left, in this
       // transaction, with the shop still locked (D8, spec 11 section 9).

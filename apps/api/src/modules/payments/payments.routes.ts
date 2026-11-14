@@ -27,7 +27,7 @@ export function createPaymentRouter(guards: AuthGuards, deps: PaymentDependencie
     res.status(200).json(await deps.payments.sellerSummary(req.sellerShop.id, query));
   });
 
-  router.post("/admin/orders/:shopOrderId/payment/notes", ...guards.role("ADMIN"), async (req, res) => {
+  router.post("/admin/orders/:shopOrderId/payment/notes", ...guards.admin, async (req, res) => {
     const admin = requireLoadedUser(req);
     // Body first: an invalid reason writes nothing.
     const { reason } = parseOrBadRequest(paymentNoteSchema, req.body ?? {});

@@ -40,6 +40,10 @@ const CUSTOMER_ORDER_ID = Prisma.sql`(
   WHERE n."resourceType" = 'SHOP_ORDER' AND so."id" = n."resourceId" AND o."userId" = n."userId"
 )`;
 
+/** The rows `audienceOf` puts in the customer audience, in SQL (AT-1 viewer scope). */
+const CUSTOMER_AUDIENCE = Prisma.sql`(n."type" IN (${Prisma.join(CUSTOMER_ONLY_NOTIFICATION_TYPES)})
+  OR (n."type" IN (${Prisma.join(SHARED_ORDER_NOTIFICATION_TYPES)}) AND ${CUSTOMER_ORDER_ID} IS NOT NULL))`;
+
 /** Customer order notifications only (`audience=CUSTOMER`, for the mobile app). */
 const CUSTOMER_ORDER_NOTIFICATION = Prisma.sql`n."type" IN (${Prisma.join(CUSTOMER_CAPABLE)}) AND ${CUSTOMER_ORDER_ID} IS NOT NULL`;
 
@@ -86,7 +90,22 @@ function toItem(row: NotificationRow): NotificationItem {
   } as NotificationItem;
 }
 
-const scopeOf = (query: NotificationScopeQuery) => (query.audience === "CUSTOMER" ? Prisma.sql`AND ${CUSTOMER_ORDER_NOTIFICATION}` : Prisma.empty);
+/** Whose inbox: a Buyer reads the customer audience, a Seller the seller audience (AT-1; no administrator inbox, O6.1). */
+export interface NotificationViewer {
+  id: string;
+  accountType: "BUYER" | "SELLER";
+}
+
+/**
+ * The rows a viewer may read, count, or mark. The type scope matters only for
+ * notifications recorded before AT-1, when one account could receive both
+ * audiences; such rows are kept, never shown to the other type (Q9).
+ */
+function scopeOf(viewer: NotificationViewer, query: NotificationScopeQuery = {}) {
+  const byType = viewer.accountType === "BUYER" ? Prisma.sql`AND ${CUSTOMER_AUDIENCE}` : Prisma.sql`AND NOT (${CUSTOMER_AUDIENCE})`;
+  const byQuery = query.audience === "CUSTOMER" ? Prisma.sql`AND ${CUSTOMER_ORDER_NOTIFICATION}` : Prisma.empty;
+  return Prisma.sql`${byType} ${byQuery}`;
+}
 
 /**
  * Reading the authenticated user's notifications (spec 15). The recipient is
@@ -98,14 +117,14 @@ const scopeOf = (query: NotificationScopeQuery) => (query.audience === "CUSTOMER
 export class NotificationService {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async list(userId: string, query: NotificationListQuery): Promise<NotificationList> {
+  async list(viewer: NotificationViewer, query: NotificationListQuery): Promise<NotificationList> {
     const after = query.cursor === undefined ? null : decodeCursor(query.cursor);
     const page = after === null ? Prisma.empty : Prisma.sql`AND (n."createdAt", n."id") < (${after.createdAt}, ${after.id}::uuid)`;
     const rows = await this.prisma.$queryRaw<NotificationRow[]>`
       SELECT n."id", n."type", n."payload", n."resourceType", n."resourceId", n."createdAt", n."readAt",
              ${CUSTOMER_ORDER_ID} AS "customerOrderId"
       FROM "Notification" n
-      WHERE n."userId" = ${userId}::uuid ${scopeOf(query)} ${page}
+      WHERE n."userId" = ${viewer.id}::uuid ${scopeOf(viewer, query)} ${page}
       ORDER BY n."createdAt" DESC, n."id" DESC
       LIMIT ${query.limit + 1}`;
     const items = rows.slice(0, query.limit);
@@ -113,25 +132,28 @@ export class NotificationService {
     return { items: items.map(toItem), nextCursor: rows.length > query.limit && last !== undefined ? encodeCursor(last) : null };
   }
 
-  async unreadCount(userId: string, query: NotificationScopeQuery): Promise<NotificationUnreadCount> {
+  async unreadCount(viewer: NotificationViewer, query: NotificationScopeQuery): Promise<NotificationUnreadCount> {
     const [row] = await this.prisma.$queryRaw<{ unread: number }[]>`
       SELECT count(*)::int AS "unread" FROM "Notification" n
-      WHERE n."userId" = ${userId}::uuid AND n."readAt" IS NULL ${scopeOf(query)}`;
+      WHERE n."userId" = ${viewer.id}::uuid AND n."readAt" IS NULL ${scopeOf(viewer, query)}`;
     return { unread: row?.unread ?? 0 };
   }
 
   /** Idempotent: an already read notification keeps its first `readAt`. */
-  async markRead(userId: string, notificationId: string): Promise<void> {
-    const updated = await this.prisma.notification.updateMany({ where: { id: notificationId, userId, readAt: null }, data: { readAt: new Date() } });
-    if (updated.count === 1) return;
-    const own = await this.prisma.notification.findFirst({ where: { id: notificationId, userId }, select: { id: true } });
-    if (own === null) throw notFound(NOTIFICATION_ERROR_CODES.notFound);
+  async markRead(viewer: NotificationViewer, notificationId: string): Promise<void> {
+    const updated = await this.prisma.$executeRaw`
+      UPDATE "Notification" AS n SET "readAt" = ${new Date()}
+      WHERE n."id" = ${notificationId}::uuid AND n."userId" = ${viewer.id}::uuid AND n."readAt" IS NULL ${scopeOf(viewer)}`;
+    if (updated === 1) return;
+    const [own] = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT n."id" FROM "Notification" n WHERE n."id" = ${notificationId}::uuid AND n."userId" = ${viewer.id}::uuid ${scopeOf(viewer)}`;
+    if (own === undefined) throw notFound(NOTIFICATION_ERROR_CODES.notFound);
   }
 
   /** Idempotent: marks every unread notification in scope, and nothing else. */
-  async markAllRead(userId: string, query: NotificationScopeQuery): Promise<void> {
+  async markAllRead(viewer: NotificationViewer, query: NotificationScopeQuery): Promise<void> {
     await this.prisma.$executeRaw`
       UPDATE "Notification" AS n SET "readAt" = ${new Date()}
-      WHERE n."userId" = ${userId}::uuid AND n."readAt" IS NULL ${scopeOf(query)}`;
+      WHERE n."userId" = ${viewer.id}::uuid AND n."readAt" IS NULL ${scopeOf(viewer, query)}`;
   }
 }
