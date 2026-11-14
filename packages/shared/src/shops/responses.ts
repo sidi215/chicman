@@ -83,6 +83,9 @@ export interface AdminShopSummary {
 
 export interface AdminShopListResponse {
   shops: AdminShopSummary[];
+  page: number;
+  pageSize: number;
+  total: number;
 }
 
 export interface AdminShopStatusEvent {

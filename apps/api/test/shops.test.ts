@@ -980,5 +980,40 @@ describe("shop management (spec 06, PostgreSQL)", { skip: databaseUrl === undefi
       assert.equal((await h.call("/admin/shops?status=NOPE", admin.token)).status, 400);
       assert.equal((await h.call("/admin/shops?unknown=1", admin.token)).status, 400);
     });
+
+    it("searches by name or city and paginates the list (spec 17)", async () => {
+      type ListBody = { shops: { id: string; shopName: string }[]; page: number; pageSize: number; total: number };
+      const named = async (shopName: string, city: string) => {
+        const { shopId } = await h.shopInStatus("PENDING");
+        await h.prisma.shop.update({ where: { id: shopId }, data: { shopName, city } });
+        return shopId;
+      };
+      const lalla = await named("Maison Lalla", "Nouakchott");
+      const voiles = await named("Voiles du Sahel", "Atar");
+      const melhfa = await named("Melhfa Chic", "Nouadhibou");
+      const list = async (query: string) => (await (await h.call(`/admin/shops${query}`, admin.token)).json()) as ListBody;
+
+      assert.deepEqual((await list("?q=lalla")).shops.map((s) => s.id), [lalla]);
+      assert.deepEqual((await list("?q=%20ATAR%20")).shops.map((s) => s.id), [voiles]);
+      const nouak = await list("?q=Noua");
+      assert.deepEqual(new Set(nouak.shops.map((s) => s.id)), new Set([lalla, melhfa]));
+      assert.equal(nouak.total, 2);
+      assert.equal((await list("?q=inexistante")).total, 0);
+      assert.equal((await list("?q=lalla&status=APPROVED")).total, 0);
+
+      const first = await list("?pageSize=2");
+      assert.equal(first.total, 3);
+      assert.equal(first.page, 1);
+      assert.equal(first.pageSize, 2);
+      assert.equal(first.shops.length, 2);
+      const second = await list("?pageSize=2&page=2");
+      assert.equal(second.shops.length, 1);
+      assert.equal(new Set([...first.shops, ...second.shops].map((s) => s.id)).size, 3);
+      assert.equal((await list("")).pageSize, 20);
+
+      for (const bad of ["?q=", "?q=%20%20", `?q=${"x".repeat(101)}`, "?pageSize=51", "?page=0", "?limit=10"]) {
+        assert.equal((await h.call(`/admin/shops${bad}`, admin.token)).status, 400, bad);
+      }
+    });
   });
 });

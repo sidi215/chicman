@@ -670,6 +670,21 @@ describe("order management (spec 11, PostgreSQL)", { skip: databaseUrl === undef
       assert.equal(((await (await h.call("/admin/orders?to=2020-01-01", admin.token)).json()) as AdminShopOrderListResponse).total, 0);
       await expectError(await h.call("/admin/orders?from=nope", admin.token), 400, "BAD_REQUEST");
 
+      // Reference search (spec 17): with or without the prefix, any case, spaces ignored.
+      const reference = all.shopOrders.find(({ id }) => id === second.id)?.orderReference ?? "";
+      const byReference = async (search: string) =>
+        ((await (await h.call(`/admin/orders?reference=${encodeURIComponent(search)}`, admin.token)).json()) as AdminShopOrderListResponse).shopOrders.map(({ id }) => id);
+      assert.deepEqual(await byReference(reference), [second.id]);
+      assert.deepEqual(await byReference(reference.slice(3).toLowerCase()), [second.id]);
+      assert.deepEqual(await byReference(` ${reference.slice(3, 9)} `), [second.id]);
+      assert.deepEqual(
+        ((await (await h.call(`/admin/orders?reference=${reference}&status=REJECTED`, admin.token)).json()) as AdminShopOrderListResponse).shopOrders,
+        [],
+      );
+      for (const bad of ["", "ab", "CM-", "%25%25%25", "x".repeat(41)]) {
+        await expectError(await h.call(`/admin/orders?reference=${bad}`, admin.token), 400, "BAD_REQUEST");
+      }
+
       const detail = (await (await h.call(adminPath(first.id), admin.token)).json()) as AdminShopOrderDetail;
       assert.equal(detail.customerUserId, customer.userId);
       assert.equal(detail.delivery.deliveryPhone, "+22233000000");

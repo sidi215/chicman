@@ -1,12 +1,16 @@
 import type { AdminShopDetailResponse, AdminShopListResponse, ShopStatus } from "@chicman/shared";
 
+import type { Prisma } from "../../generated/prisma/client.js";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { assertNotOwnShop } from "../shops/shop-lifecycle.js";
 
 export interface AdminShopListFilter {
   status?: ShopStatus;
   openChangeRequest?: boolean;
-  limit: number;
+  /** Shop name or city, case-insensitive, contains. */
+  search?: string;
+  page: number;
+  pageSize: number;
 }
 
 /** Administrator read models: review list and full shop history (spec 06, Audit). */
@@ -14,28 +18,44 @@ export class AdminShopQueries {
   constructor(private readonly prisma: PrismaClient) {}
 
   async list(filter: AdminShopListFilter): Promise<AdminShopListResponse> {
-    const shops = await this.prisma.shop.findMany({
-      where: {
-        ...(filter.status === undefined ? {} : { status: filter.status }),
-        ...(filter.openChangeRequest === undefined
-          ? {}
-          : { changeRequests: filter.openChangeRequest ? { some: { status: "PENDING" } } : { none: { status: "PENDING" } } }),
-      },
-      // Oldest first: the review queue.
-      orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
-      take: filter.limit,
-      select: {
-        id: true,
-        ownerUserId: true,
-        status: true,
-        shopName: true,
-        city: true,
-        createdAt: true,
-        updatedAt: true,
-        changeRequests: { where: { status: "PENDING" }, select: { id: true }, take: 1 },
-      },
-    });
+    const where = {
+      ...(filter.status === undefined ? {} : { status: filter.status }),
+      ...(filter.openChangeRequest === undefined
+        ? {}
+        : { changeRequests: filter.openChangeRequest ? { some: { status: "PENDING" as const } } : { none: { status: "PENDING" as const } } }),
+      ...(filter.search === undefined
+        ? {}
+        : {
+            OR: [
+              { shopName: { contains: filter.search, mode: "insensitive" as const } },
+              { city: { contains: filter.search, mode: "insensitive" as const } },
+            ],
+          }),
+    } satisfies Prisma.ShopWhereInput;
+    const [total, shops] = await Promise.all([
+      this.prisma.shop.count({ where }),
+      this.prisma.shop.findMany({
+        where,
+        // Oldest first: the review queue.
+        orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+        skip: (filter.page - 1) * filter.pageSize,
+        take: filter.pageSize,
+        select: {
+          id: true,
+          ownerUserId: true,
+          status: true,
+          shopName: true,
+          city: true,
+          createdAt: true,
+          updatedAt: true,
+          changeRequests: { where: { status: "PENDING" }, select: { id: true }, take: 1 },
+        },
+      }),
+    ]);
     return {
+      page: filter.page,
+      pageSize: filter.pageSize,
+      total,
       shops: shops.map((shop) => ({
         id: shop.id,
         ownerUserId: shop.ownerUserId,
