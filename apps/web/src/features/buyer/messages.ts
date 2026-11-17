@@ -1,0 +1,108 @@
+import type { Locale } from "@/lib/locale"
+import { useLocale } from "@/lib/locale-provider"
+
+import type { BuyerArea } from "./buyer-dashboard"
+
+/** Buyer dashboard shell and overview texts (French default, Arabic RTL). */
+export const BUYER_MESSAGES = {
+  fr: {
+    brand: "Chicman",
+    areaTitle: "Mon espace",
+    home: "Accueil Chicman",
+    storefront: "Continuer mes achats",
+    navLabel: "Navigation de mon espace",
+    nav: {
+      overview: "Tableau de bord",
+      orders: "Mes commandes",
+      favorites: "Mes favoris",
+      addresses: "Mes adresses",
+      notifications: "Notifications",
+      profile: "Profil",
+    } satisfies Record<BuyerArea, string>,
+    title: "Tableau de bord",
+    greeting: "Bonjour {name}",
+    greetingAnonymous: "Bonjour",
+    subtitle: "Suivez vos commandes, vos favoris et vos adresses de livraison.",
+    loading: "Chargement…",
+    retry: "Réessayer",
+    unknown: "—",
+    summaryLabel: "Résumé",
+    tiles: {
+      orders: "Commandes",
+      openOrders: "{count} en cours parmi les plus récentes",
+      noOpenOrders: "Aucune commande en cours parmi les plus récentes",
+      notifications: "Notifications non lues",
+      favorites: "Produits favoris",
+      address: "Adresse par défaut",
+      noAddress: "Aucune adresse",
+      addAddress: "Ajoutez une adresse de livraison",
+    },
+    recentTitle: "Commandes récentes",
+    seeAllOrders: "Voir toutes mes commandes",
+    noOrders: "Vous n'avez pas encore passé de commande.",
+    startShopping: "Découvrir les produits",
+    ordersFailed: "Vos commandes n'ont pas pu être chargées.",
+    openOrder: "Ouvrir la commande",
+    placedOn: "Passée le {date}",
+    profileTitle: "Mes informations",
+    noPhone: "Non renseigné",
+    editProfile: "Modifier mon profil",
+    addressPromptTitle: "Ajoutez une adresse de livraison",
+    addressPromptBody: "Enregistrez votre adresse maintenant pour commander plus vite.",
+    addressPromptAdd: "Ajouter une adresse",
+    addressPromptLater: "Plus tard",
+  },
+  ar: {
+    brand: "شيكمان",
+    areaTitle: "مساحتي",
+    home: "الصفحة الرئيسية لشيكمان",
+    storefront: "مواصلة التسوق",
+    navLabel: "التنقل في مساحتي",
+    nav: {
+      overview: "لوحة التحكم",
+      orders: "طلباتي",
+      favorites: "مفضلتي",
+      addresses: "عناويني",
+      notifications: "الإشعارات",
+      profile: "الملف الشخصي",
+    } satisfies Record<BuyerArea, string>,
+    title: "لوحة التحكم",
+    greeting: "مرحبًا {name}",
+    greetingAnonymous: "مرحبًا",
+    subtitle: "تابع طلباتك ومفضلتك وعناوين التوصيل.",
+    loading: "جارٍ التحميل…",
+    retry: "إعادة المحاولة",
+    unknown: "—",
+    summaryLabel: "ملخص",
+    tiles: {
+      orders: "الطلبات",
+      openOrders: "{count} قيد التنفيذ من بين أحدث الطلبات",
+      noOpenOrders: "لا توجد طلبات قيد التنفيذ من بين أحدث الطلبات",
+      notifications: "إشعارات غير مقروءة",
+      favorites: "المنتجات المفضلة",
+      address: "العنوان الافتراضي",
+      noAddress: "لا يوجد عنوان",
+      addAddress: "أضف عنوان توصيل",
+    },
+    recentTitle: "أحدث الطلبات",
+    seeAllOrders: "عرض جميع طلباتي",
+    noOrders: "لم تقم بأي طلب بعد.",
+    startShopping: "اكتشف المنتجات",
+    ordersFailed: "تعذّر تحميل طلباتك.",
+    openOrder: "فتح الطلب",
+    placedOn: "بتاريخ {date}",
+    profileTitle: "معلوماتي",
+    noPhone: "غير محدد",
+    editProfile: "تعديل ملفي الشخصي",
+    addressPromptTitle: "أضف عنوان توصيل",
+    addressPromptBody: "احفظ عنوانك الآن لتطلب بشكل أسرع.",
+    addressPromptAdd: "إضافة عنوان",
+    addressPromptLater: "لاحقًا",
+  },
+} as const
+
+export type BuyerMessages = (typeof BUYER_MESSAGES)[Locale]
+
+export function useBuyerMessages(): BuyerMessages {
+  return BUYER_MESSAGES[useLocale()]
+}

@@ -28,6 +28,8 @@
 
 - `apps/web/` — Next.js application responsible for the customer storefront, seller dashboard, and administrator dashboard. All routes live under `app/[locale]/`, and `src/proxy.ts` maps public URLs onto them (see Web Localization).
 
+- **Buyer dashboard (web):** `/account/*` uses `BuyerShell` (`features/buyer/`), the same header and side navigation as `/seller` and `/admin`, around the existing buyer pages: overview, orders, favorites (`/account/favorites`), addresses, notifications (`/account/notifications`), and profile. `/favorites` and `/notifications` redirect there. Account setup and a non-buyer's profile page render without the shell. Flutter shows the same overview as the buyer's account tab.
+
 - `apps/mobile/` — Flutter application for buyers only (AT-1, Q5; formerly "customer and seller experiences"): a Seller or Administrator account sees a "managed on the web" screen. It opens on the public storefront; the account is a dock destination (`lib/app_shell.dart`). Seller product management on mobile is a future feature that reuses the existing `/api/v1/sellers/me/products` routes.
 
 - `apps/api/` — Node.js + Express backend responsible for REST endpoints, request validation, authentication verification, authorization, and marketplace business logic.
@@ -66,9 +68,11 @@
 
 - `apps/api/src/modules/favorites/` — The customer's favorites (`/api/v1/customers/me/favorites`, spec 14): one `Favorite` row per user and product (unique pair), at most 200. `PUT` and `DELETE` by product ID are idempotent. Each read shows the product's current state through `productVisibility` and the availability rule, with the catalog's public summary (`toPublicProductSummary`). A product that is no longer public is `UNAVAILABLE`, with no price, shop, or link. Favorites keep no snapshot and never write the cart.
 
+- `apps/api/src/modules/search/` — Product search (spec 18). `GET /products?q=` (the catalog route; no second API) asks Meilisearch for ordered IDs only and re-reads each one from PostgreSQL through `catalogWhere`, so the index never decides visibility. If Meilisearch fails or is not configured, PostgreSQL answers with a word match and `search.degraded = true` (30 s cooldown after a failure). The document holds public fields only. Database triggers on `Product`, `ProductVariant`, `ProductImage`, and `Shop` (status, name) queue changes in `SearchIndexTask`; the worker applies them and reconciles. `pnpm --filter @chicman/api search:reindex` for recovery.
+
 - `apps/api/src/modules/admin/` — Administrative operations, seller approvals, marketplace monitoring, and platform management. Built: shop administration (spec 06) with list search and pagination (spec 17). Order and delivery oversight routes live with their modules (`/admin/orders`, spec 11, with reference search; payment notes, spec 13). User oversight, product moderation, and statistics wait for O4; categories for O10.
 
-- `apps/api/src/workers/` — Background processing for notifications, search indexing, and asynchronous tasks. Current jobs: phone-change history retention and notification retention (spec 15, O6.3; each every 24 h), shop logo cleanup and reconciliation (every 5 min), and product image cleanup and reconciliation (every 5 min), each behind its own PostgreSQL advisory lock. Shop order expiry and seller response reminders (spec 11) and the automatic closure of failed deliveries (spec 12, `DELIVERY_FAILED_AUTO_CLOSE_DAYS`) run every 5 minutes, each behind its own lock, and are idempotent.
+- `apps/api/src/workers/` — Background processing for notifications, search indexing, and asynchronous tasks. Current jobs: phone-change history retention and notification retention (spec 15, O6.3; each every 24 h), shop logo cleanup and reconciliation (every 5 min), and product image cleanup and reconciliation (every 5 min), each behind its own PostgreSQL advisory lock. Shop order expiry and seller response reminders (spec 11) and the automatic closure of failed deliveries (spec 12, `DELIVERY_FAILED_AUTO_CLOSE_DAYS`) run every 5 minutes, each behind its own lock, and are idempotent. Search indexing (spec 18) runs every 10 seconds (the only writer of search documents, with retries backing off to an hour) and search reconciliation at start and every 6 hours, each behind its own lock, when `MEILI_URL` is set.
 
 - `packages/shared/` — Shared API contracts, validation schemas, enums, and common business definitions where compatible with both web and backend TypeScript applications. Application code only: no visual design tokens.
 
@@ -106,7 +110,7 @@ The app follows the profile's `preferredLocale` (`core/locale/app_locale_control
 
 - **Redis**: Stores temporary cache data, session-related temporary data when needed, queue data, rate-limit counters, and background job state.
 
-- **Meilisearch**: Stores searchable product indexes derived from PostgreSQL. It is a secondary search system, not the authoritative source for product information.
+- **Meilisearch**: Stores searchable product indexes derived from PostgreSQL. It is a secondary search system, not the authoritative source for product information. One index (`MEILI_PRODUCTS_INDEX`, default `products`) of public products only, rebuilt from PostgreSQL by reconciliation; losing it loses nothing. Production: self-hosted Docker container next to the API, persistent volume, private network only, `MEILI_ENV=production`, search-only key for the API and admin key for the worker (spec 18, O8).
 
 ## Auth and Access Model
 
@@ -194,7 +198,7 @@ The app follows the profile's `preferredLocale` (`core/locale/app_locale_control
 
 9. **Money and order records must remain consistent.** Prices, delivery fees, and order totals must be validated and recorded at checkout. Use appropriate database transactions for critical order operations.
 
-10. **Search indexing is asynchronous.** Changes to products in PostgreSQL must eventually be reflected in Meilisearch.
+10. **Search indexing is asynchronous.** Changes to products in PostgreSQL must eventually be reflected in Meilisearch. They are queued by database triggers in the transaction of the change and applied by the worker; search results are always re-checked in PostgreSQL, and PostgreSQL answers alone while Meilisearch is unavailable.
 
 11. **Object storage is not a database.** Uploaded files are stored in object storage, while their references and ownership metadata are maintained in PostgreSQL.
 

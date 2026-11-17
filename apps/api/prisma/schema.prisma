@@ -572,6 +572,25 @@ model ProductImage {
   @@index([status, createdAt])
 }
 
+/// A product whose search document must be refreshed (spec 18). Rows are
+/// written only by database triggers on Product, ProductVariant, ProductImage,
+/// and Shop (migration `20261114120000_search_index`), in the transaction of
+/// the change, and cleared by the worker's search indexing job once
+/// Meilisearch has applied the document. `version` changes on every new
+/// request, so a change made while a batch is being indexed is never lost.
+/// No foreign key: the index is derived data, and a task for a missing product
+/// simply removes its document.
+model SearchIndexTask {
+  productId     String   @id @db.Uuid
+  version       BigInt   @default(autoincrement())
+  requestedAt   DateTime @default(now()) @db.Timestamptz(3)
+  attempts      Int      @default(0)
+  nextAttemptAt DateTime @default(now()) @db.Timestamptz(3)
+  lastErrorCode String?  @db.VarChar(64)
+
+  @@index([nextAttemptAt, requestedAt])
+}
+
 // A customer's cart (feature 09): at most one per application user, kept across
 // sessions. It reserves no stock and commits to no price.
 model Cart {

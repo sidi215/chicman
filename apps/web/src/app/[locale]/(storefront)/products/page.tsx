@@ -21,13 +21,15 @@ export async function generateMetadata({ searchParams }: { searchParams: SearchP
   const locale = await currentLocale()
   const t = STOREFRONT_MESSAGES[locale]
   const filters = readFilters(await searchParams)
-  const heading = filters.category === null ? t.allProducts : t.categories[filters.category]
+  const heading =
+    filters.search !== null ? t.searchHeading.replace("{query}", filters.search) : filters.category === null ? t.allProducts : t.categories[filters.category]
   const outcome = await loadCatalog<PublicProductListResponse>(catalogApiPath(filters))
   return {
     title: `${heading} · ${t.brand}`,
     description: t.heroBody,
     alternates: pageAlternates(canonicalListingHref(filters), locale),
-    ...(outcome.state === "ok" ? {} : { robots: { index: false } }),
+    // Search results are not pages to index (spec 18); the canonical URL drops the search.
+    ...(outcome.state === "ok" && filters.search === null ? {} : { robots: { index: false } }),
   }
 }
 

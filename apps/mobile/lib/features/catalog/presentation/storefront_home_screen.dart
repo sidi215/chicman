@@ -12,10 +12,15 @@ import 'catalog_messages.dart';
 import 'catalog_widgets.dart';
 import 'product_list_screen.dart';
 
-void _openListing(BuildContext context, CatalogFilters filters) {
+void _openListing(
+  BuildContext context,
+  CatalogFilters filters, {
+  bool search = false,
+}) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => ProductListScreen(initialFilters: filters),
+      builder: (_) =>
+          ProductListScreen(initialFilters: filters, autofocusSearch: search),
     ),
   );
 }
@@ -33,7 +38,17 @@ class StorefrontHomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: BrandWordmark(semanticLabel: t.brand),
         centerTitle: false,
-        actions: const [NotificationsAction(), CartAction()],
+        actions: [
+          IconButton(
+            key: const Key('home-search'),
+            tooltip: t.searchLabel,
+            icon: const Icon(Icons.search),
+            onPressed: () =>
+                _openListing(context, const CatalogFilters(), search: true),
+          ),
+          const NotificationsAction(),
+          const CartAction(),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: () => ref.refresh(homeSectionsProvider.future),

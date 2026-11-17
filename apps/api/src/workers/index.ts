@@ -9,12 +9,15 @@
 // - notification retention (spec 15, O6.3): notifications older than 365
 //   days, every 24 hours;
 // - registration intent retention (AT-1): intents never consumed within 30
-//   days, every 24 hours.
+//   days, every 24 hours;
+// - search indexing (spec 18): queued product changes applied to Meilisearch
+//   every 10 seconds, and a reconciliation at start and every 6 hours, when
+//   MEILI_URL is configured.
 // In development it runs as the `worker` service of
 // infrastructure/docker/docker-compose.yml (restart: unless-stopped).
 import dotenv from "dotenv";
 
-import { loadWorkerStorageConfig } from "../config/env.js";
+import { loadWorkerSearchConfig, loadWorkerStorageConfig } from "../config/env.js";
 import { createPrismaClient } from "../lib/prisma.js";
 import { describeError } from "../lib/describe-error.js";
 import { purgeExpiredRegistrationIntents } from "../modules/accounts/index.js";
@@ -22,6 +25,14 @@ import { closeDueDeliveries } from "../modules/delivery/index.js";
 import { purgeExpiredNotifications } from "../modules/notifications/index.js";
 import { ShopOrderLifecycle, type JobResult } from "../modules/orders/index.js";
 import { runProductImageCleanup, type ProductImageCleanupResult } from "../modules/products/index.js";
+import {
+  MeilisearchClient,
+  MeilisearchProductIndex,
+  requestSearchReconciliation,
+  runSearchIndexing,
+  type SearchIndexingResult,
+  type SearchReconciliationResult,
+} from "../modules/search/index.js";
 import { runLogoCleanup, S3ObjectStorage, type LogoCleanupResult } from "../modules/shops/index.js";
 import {
   createAdvisoryLock,
@@ -32,6 +43,8 @@ import {
   REGISTRATION_INTENT_RETENTION_LOCK_NAME,
   ORDER_REMINDER_LOCK_NAME,
   PRODUCT_IMAGE_CLEANUP_LOCK_NAME,
+  SEARCH_INDEXING_LOCK_NAME,
+  SEARCH_RECONCILIATION_LOCK_NAME,
 } from "./advisory-lock.js";
 import { purgeExpiredPhoneChanges } from "./phone-change-retention.js";
 import { createRetentionSchedule, type RetentionSchedule } from "./retention-schedule.js";
@@ -44,6 +57,10 @@ const PRODUCT_IMAGE_CLEANUP_INTERVAL_MS = 5 * 60_000;
 const ORDER_JOBS_INTERVAL_MS = 5 * 60_000;
 /** Automatic closure of failed deliveries (spec 12, section 6). */
 const DELIVERY_AUTO_CLOSE_INTERVAL_MS = 5 * 60_000;
+/** Search indexing (spec 18): how soon a catalog change reaches search. */
+const SEARCH_INDEXING_INTERVAL_MS = 10_000;
+/** Search reconciliation (spec 18): recovery from anything the queue missed. */
+const SEARCH_RECONCILIATION_INTERVAL_MS = 6 * 60 * 60_000;
 
 dotenv.config({ quiet: true });
 const databaseUrl = process.env["DATABASE_URL"];
@@ -202,10 +219,54 @@ const intentRetentionSchedule = createRetentionSchedule<number>({
   logError: (line, error) => console.error(`${line}: ${describeError(error)}`),
 });
 
+// Search indexing (spec 18): the queue filled by database triggers, drained
+// by one job (the only writer of documents) and refilled by reconciliation.
+const searchConfig = loadWorkerSearchConfig(process.env);
+let searchIndexingSchedule: RetentionSchedule | null = null;
+let searchReconciliationSchedule: RetentionSchedule | null = null;
+if (searchConfig === undefined) {
+  console.warn("Search (MEILI_URL) is not configured: the search indexing jobs are disabled; changes stay queued");
+} else {
+  // Indexing waits for each Meilisearch task, which takes longer than a search.
+  const searchIndex = new MeilisearchProductIndex(new MeilisearchClient({ ...searchConfig, timeoutMs: Math.max(searchConfig.timeoutMs, 10_000) }));
+  const searchLock = (name: string, lockName: string) =>
+    createAdvisoryLock(
+      databaseUrl,
+      () => {
+        console.error(`Worker ${name} lock connection lost; exiting so the worker restarts and reacquires the lock`);
+        process.exit(1);
+      },
+      lockName,
+    );
+  searchIndexingSchedule = createRetentionSchedule<SearchIndexingResult>({
+    name: "search indexing",
+    lockName: "search-indexing",
+    intervalMs: SEARCH_INDEXING_INTERVAL_MS,
+    purge: () => runSearchIndexing({ prisma, index: searchIndex }),
+    summarize: (r) =>
+      `documents indexed ${r.indexed}, removed ${r.removed}` + (r.failed > 0 ? `, failed ${r.failed} (${r.errorCode ?? "unknown"}; retried later)` : ""),
+    quiet: (r) => r.indexed === 0 && r.removed === 0 && r.failed === 0,
+    lock: searchLock("search indexing", SEARCH_INDEXING_LOCK_NAME),
+    log: (line) => console.log(line),
+    logError: (line, error) => console.error(`${line}: ${describeError(error)}`),
+  });
+  searchReconciliationSchedule = createRetentionSchedule<SearchReconciliationResult>({
+    name: "search reconciliation",
+    lockName: "search-reconciliation",
+    intervalMs: SEARCH_RECONCILIATION_INTERVAL_MS,
+    purge: () => requestSearchReconciliation({ prisma, index: searchIndex }),
+    summarize: (r) => `queued ${r.queuedPublic} public product(s) and ${r.queuedStale} stale document(s); removed ${r.removedForeign} foreign document(s)`,
+    lock: searchLock("search reconciliation", SEARCH_RECONCILIATION_LOCK_NAME),
+    log: (line) => console.log(line),
+    logError: (line, error) => console.error(`${line}: ${describeError(error)}`),
+  });
+}
+
 console.log(
   `Worker started (pid ${process.pid}); database ${describeDatabase(databaseUrl)}; retention every 24 h` +
     (logoSchedule === null ? "" : "; logo and product image cleanup every 5 min") +
-    "; shop order expiry and reminders every 5 min; delivery auto close every 5 min; notification and registration intent retention every 24 h",
+    "; shop order expiry and reminders every 5 min; delivery auto close every 5 min; notification and registration intent retention every 24 h" +
+    (searchIndexingSchedule === null ? "" : "; search indexing every 10 s, reconciliation every 6 h"),
 );
 
 let stopping = false;
@@ -214,7 +275,7 @@ async function shutdown(signal: string): Promise<void> {
   stopping = true;
   console.log(`Worker received ${signal}; finishing the current run before exiting`);
   try {
-    await Promise.all([schedule.stop(), logoSchedule?.stop(), productImageSchedule?.stop(), expirySchedule.stop(), reminderSchedule.stop(), deliveryAutoCloseSchedule.stop(), notificationRetentionSchedule.stop(), intentRetentionSchedule.stop()]);
+    await Promise.all([schedule.stop(), logoSchedule?.stop(), productImageSchedule?.stop(), expirySchedule.stop(), reminderSchedule.stop(), deliveryAutoCloseSchedule.stop(), notificationRetentionSchedule.stop(), intentRetentionSchedule.stop(), searchIndexingSchedule?.stop(), searchReconciliationSchedule?.stop()]);
     await prisma.$disconnect();
     console.log("Worker stopped cleanly");
     process.exit(0);
@@ -226,4 +287,4 @@ async function shutdown(signal: string): Promise<void> {
 process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
-await Promise.all([schedule.start(), logoSchedule?.start(), productImageSchedule?.start(), expirySchedule.start(), reminderSchedule.start(), deliveryAutoCloseSchedule.start(), notificationRetentionSchedule.start(), intentRetentionSchedule.start()]);
+await Promise.all([schedule.start(), logoSchedule?.start(), productImageSchedule?.start(), expirySchedule.start(), reminderSchedule.start(), deliveryAutoCloseSchedule.start(), notificationRetentionSchedule.start(), intentRetentionSchedule.start(), searchReconciliationSchedule?.start(), searchIndexingSchedule?.start()]);

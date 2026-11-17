@@ -16,6 +16,8 @@ export interface RetentionScheduleOptions<T = number> {
   lockName?: string;
   /** Describes a successful run's result (default: phone-history wording). */
   summarize?: (result: T) => string;
+  /** A successful run with this result is not logged (frequent jobs that usually find nothing). */
+  quiet?: (result: T) => boolean;
   lock: WorkerLock;
   log: (line: string) => void;
   /** Logs a failure. Receives the error so the caller can redact it. */
@@ -65,6 +67,7 @@ export function createRetentionSchedule<T = number>(options: RetentionScheduleOp
         return;
       }
       const result = await options.purge();
+      if (options.quiet?.(result) === true) return;
       const next = new Date(startedAt.getTime() + intervalMs);
       options.log(`${label} succeeded at ${startedAt.toISOString()}: ${summarize(result)}; next run at ${next.toISOString()}`);
     } catch (error) {

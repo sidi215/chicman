@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils"
 import { filtersFromParams, listingHref, NO_FILTERS } from "../catalog-query"
 import { useStorefrontMessages } from "../messages"
 import { LanguageSwitch } from "./language-switch"
+import { SearchBox } from "./search-box"
 
 function CategoryLink({ href, active, children }: { href: string; active: boolean; children: string }) {
   return (
@@ -140,6 +141,9 @@ export function StorefrontHeader() {
             <AccountAction />
           </div>
         </div>
+        <Suspense fallback={null}>
+          <SearchBox />
+        </Suspense>
         <Suspense fallback={<CategoryLinks active={null} />}>
           <CurrentCategoryLinks />
         </Suspense>

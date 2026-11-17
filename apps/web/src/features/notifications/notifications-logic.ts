@@ -18,7 +18,7 @@ import { NOTIFICATION_MESSAGES, type NotificationMessages } from "./messages"
 export const NOTIFICATIONS_PATH = "/customers/me/notifications"
 export const UNREAD_COUNT_PATH = `${NOTIFICATIONS_PATH}/unread-count`
 export const READ_ALL_PATH = `${NOTIFICATIONS_PATH}/read-all`
-export const NOTIFICATIONS_HREF = "/notifications"
+export const NOTIFICATIONS_HREF = "/account/notifications"
 
 export const notificationListPath = (cursor: string | null): string =>
   cursor === null ? NOTIFICATIONS_PATH : `${NOTIFICATIONS_PATH}?cursor=${encodeURIComponent(cursor)}`

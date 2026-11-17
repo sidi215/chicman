@@ -1,6 +1,6 @@
 "use client"
 
-import { CATALOG_SORTS, type CatalogSort, type PublicProductListResponse } from "@chicman/shared"
+import { type CatalogSort, type PublicProductListResponse } from "@chicman/shared"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useId, useTransition } from "react"
@@ -10,13 +10,33 @@ import { localizedPath } from "@/lib/locale"
 import { useLocale } from "@/lib/locale-provider"
 import { cn } from "@/lib/utils"
 
-import { activeFilterCount, changeFilters, clearFilters, listingHref, pageCount, type CatalogFilters, type CatalogOutcome } from "../catalog-query"
+import {
+  activeFilterCount,
+  changeFilters,
+  changeSearch,
+  clearFilters,
+  listingHref,
+  pageCount,
+  sortOptions,
+  type CatalogFilters,
+  type CatalogOutcome,
+} from "../catalog-query"
 import { useStorefrontMessages, type StorefrontMessages } from "../messages"
 import { CatalogFailureView } from "./catalog-failure"
 import { CatalogFiltersPanel } from "./catalog-filters"
 import { ProductGrid } from "./product-card"
 
-function SortControl({ value, onChange, t }: { value: CatalogSort; onChange: (sort: CatalogSort) => void; t: StorefrontMessages }) {
+function SortControl({
+  value,
+  options,
+  onChange,
+  t,
+}: {
+  value: CatalogSort
+  options: readonly CatalogSort[]
+  onChange: (sort: CatalogSort) => void
+  t: StorefrontMessages
+}) {
   const id = useId()
   return (
     <div className="flex items-center gap-2">
@@ -29,13 +49,25 @@ function SortControl({ value, onChange, t }: { value: CatalogSort; onChange: (so
         onChange={(event) => onChange(event.target.value as CatalogSort)}
         className="h-control-sm min-w-0 rounded-full border border-border bg-surface px-3 type-body-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
       >
-        {CATALOG_SORTS.map((sort) => (
+        {options.map((sort) => (
           <option key={sort} value={sort}>
             {t.sorts[sort]}
           </option>
         ))}
       </select>
     </div>
+  )
+}
+
+/** A sentence with the customer's search in it, isolated so Arabic and French text mix correctly. */
+function SearchHeading({ template, query }: { template: string; query: string }) {
+  const [before = "", after = ""] = template.split("{query}")
+  return (
+    <>
+      {before}
+      <bdi>{query}</bdi>
+      {after}
+    </>
   )
 }
 
@@ -73,22 +105,32 @@ export function ProductListing({ filters, outcome }: { filters: CatalogFilters; 
   const [pending, startTransition] = useTransition()
   const update = (next: CatalogFilters) => startTransition(() => router.push(localizedPath(locale, listingHref(next)), { scroll: false }))
   const data = outcome.state === "ok" ? outcome.data : null
+  const { search } = filters
+  const heading = filters.category === null ? t.allProducts : t.categories[filters.category]
+  const withoutSearch = changeSearch(filters, "")
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-page-gutter py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <h1 className="type-headline-medium">{filters.category === null ? t.allProducts : t.categories[filters.category]}</h1>
+          <h1 className="type-headline-medium">
+            {search === null ? heading : <SearchHeading template={t.searchHeading} query={search} />}
+          </h1>
           <p role="status" className="type-body-small text-muted-foreground">
             {data === null ? " " : t.resultCount.replace("{count}", String(data.total))}
           </p>
         </div>
-        <SortControl value={filters.sort} onChange={(sort) => update(changeFilters(filters, { sort }))} t={t} />
+        <SortControl value={filters.sort} options={sortOptions(search)} onChange={(sort) => update(changeFilters(filters, { sort }))} t={t} />
       </div>
       <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-start">
         <CatalogFiltersPanel filters={filters} onChange={update} t={t} />
         <div aria-busy={pending} className={cn("flex min-w-0 flex-col gap-4 transition-opacity", pending && "opacity-60")}>
           {outcome.state !== "ok" ? <CatalogFailureView failure={outcome.state} /> : null}
+          {data?.search?.degraded === true ? (
+            <p role="status" className="rounded-md border border-border bg-muted px-4 py-3 type-body-small text-muted-foreground">
+              {t.searchDegraded}
+            </p>
+          ) : null}
           {data !== null && data.products.length === 0 ? (
             <div className="flex flex-col items-start gap-3">
               {data.total > 0 ? (
@@ -97,6 +139,25 @@ export function ProductListing({ filters, outcome }: { filters: CatalogFilters; 
                   <Link href={localizedPath(locale, listingHref({ ...filters, page: 1 }))} className={buttonVariants({ variant: "outline" })}>
                     {t.firstPage}
                   </Link>
+                </>
+              ) : search !== null ? (
+                <>
+                  <p className="type-body-medium text-muted-foreground">
+                    <SearchHeading template={t.emptySearch} query={search} />
+                  </p>
+                  <p className="type-body-small text-muted-foreground">{t.emptySearchHint}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {withoutSearch !== null ? (
+                      <Link href={localizedPath(locale, listingHref(withoutSearch))} className={buttonVariants({ variant: "outline" })}>
+                        {t.searchClear}
+                      </Link>
+                    ) : null}
+                    {activeFilterCount(filters) > 0 ? (
+                      <Link href={localizedPath(locale, listingHref(clearFilters(filters)))} className={buttonVariants({ variant: "outline" })}>
+                        {t.clearFilters}
+                      </Link>
+                    ) : null}
+                  </div>
                 </>
               ) : (
                 <>

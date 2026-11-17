@@ -33,6 +33,15 @@ class CatalogMessages {
   String get firstPage => _('firstPage');
   String get pastEnd => _('pastEnd');
   String get retry => _('retry');
+  String get searchLabel => _('searchLabel');
+  String get searchPlaceholder => _('searchPlaceholder');
+  String get searchClear => _('searchClear');
+  String searchHeading(String query) =>
+      _('searchHeading').replaceAll('{query}', query);
+  String emptySearch(String query) =>
+      _('emptySearch').replaceAll('{query}', query);
+  String get emptySearchHint => _('emptySearchHint');
+  String get searchDegraded => _('searchDegraded');
   String get sortLabel => _('sortLabel');
   String sort(CatalogSort sort) => _('sort.${sort.name}');
   String get filters => _('filters');
@@ -92,6 +101,15 @@ class CatalogMessages {
     'pastEnd': "Cette page n'existe plus.",
     'retry': 'Réessayer',
     'sortLabel': 'Trier par',
+    'searchLabel': 'Rechercher des produits',
+    'searchPlaceholder': 'Produit, marque ou boutique…',
+    'searchClear': 'Effacer la recherche',
+    'searchHeading': 'Résultats pour « {query} »',
+    'emptySearch': 'Aucun produit ne correspond à « {query} ».',
+    'emptySearchHint': "Vérifiez l'orthographe ou essayez un mot plus général.",
+    'searchDegraded':
+        'La recherche fonctionne en mode simplifié pour le moment : les résultats peuvent être moins précis.',
+    'sort.relevance': 'Pertinence',
     'sort.newest': 'Nouveautés',
     'sort.priceAsc': 'Prix croissant',
     'sort.priceDesc': 'Prix décroissant',
@@ -157,6 +175,14 @@ class CatalogMessages {
     'pastEnd': 'هذه الصفحة لم تعد موجودة.',
     'retry': 'إعادة المحاولة',
     'sortLabel': 'الترتيب حسب',
+    'searchLabel': 'البحث عن المنتجات',
+    'searchPlaceholder': 'منتج أو علامة تجارية أو متجر…',
+    'searchClear': 'مسح البحث',
+    'searchHeading': 'نتائج البحث عن «{query}»',
+    'emptySearch': 'لا توجد منتجات تطابق «{query}».',
+    'emptySearchHint': 'تحقق من الإملاء أو جرّب كلمة أعم.',
+    'searchDegraded': 'يعمل البحث حاليًا بشكل مبسّط، وقد تكون النتائج أقل دقة.',
+    'sort.relevance': 'الأكثر صلة',
     'sort.newest': 'الأحدث',
     'sort.priceAsc': 'السعر: من الأقل إلى الأعلى',
     'sort.priceDesc': 'السعر: من الأعلى إلى الأقل',

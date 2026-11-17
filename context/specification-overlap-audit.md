@@ -508,7 +508,7 @@ Owner confirms in Q4.
 | 17 | User data source, moderation, statistics (Q14) | **Awaiting decision** |
 | 18 | Catalog, facets, visibility | Implemented |
 | 18 | Compose service | Configured; no API client, configuration, or index job |
-| 18 | Availability (C8), fallback (Q16), production hosting | **Awaiting decision** |
+| 18 | Availability (C8), fallback (Q16), production hosting | **Decided 2026-11-14** (spec 18, Decisions) |
 
 ## G. Open Business Questions
 

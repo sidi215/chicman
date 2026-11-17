@@ -52,8 +52,9 @@ class _StateMessage extends StatelessWidget {
   }
 }
 
-class _LabelChip extends StatelessWidget {
-  const _LabelChip(this.label);
+/// A shop order's status as the customer reads it; also on the buyer dashboard.
+class OrderLabelChip extends StatelessWidget {
+  const OrderLabelChip(this.label, {super.key});
 
   final ShopOrderLabel label;
 
@@ -181,7 +182,7 @@ class OrderListScreen extends ConsumerWidget {
                                   shop.name,
                                   textDirection: sellerTextDirection(shop.name),
                                 ),
-                                _LabelChip(shop.label),
+                                OrderLabelChip(shop.label),
                               ],
                             ),
                           ),
@@ -331,7 +332,7 @@ class _OrderDetail extends StatelessWidget {
                         textDirection: sellerTextDirection(shopOrder.shopName),
                         style: theme.textTheme.titleMedium,
                       ),
-                      _LabelChip(shopOrder.label),
+                      OrderLabelChip(shopOrder.label),
                     ],
                   ),
                   if (shopOrder.decision.byChicman)

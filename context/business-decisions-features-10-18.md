@@ -431,7 +431,7 @@ These came from the audit and were not part of either decision round. None is as
 |---|---|---|
 | O4 | Admin scope beyond D6 and D9: user oversight (no email stored; no Supabase secret key), product moderation (C12), statistics definitions, phone history access (Q14) | Feature 17 |
 | O5 | Retention of orders, snapshots with personal data, payment events; effect on account deletion (Q18) | Data policy; not the first implementation |
-| O8 | Search: sold-out products (C8), PostgreSQL fallback, production hosting (Q16) | Feature 18 |
+| O8 | Search: sold-out products (C8), PostgreSQL fallback, production hosting (Q16) | Feature 18. **Resolved 2026-11-14 (project owner):** sold-out products stay indexed with their availability (only non-public products are removed); when Meilisearch is unavailable PostgreSQL answers with a word match on name, brand, description, and shop name, flagged `search.degraded`; production Meilisearch is self-hosted Docker. Implemented (spec 18, Decisions) |
 | O9 | Favorites: price display for hidden products (C11) | Feature 14. **Implemented with the audit's recommendation (2026-11-10), awaiting the project owner's confirmation:** a hidden favorite shows "unavailable" with no price, shop, or link; no price snapshot (spec 14, Implementation Notes) |
 | O10 | Category management (C13); reviews and reported issues (Q19, D8 in the audit) | Feature 17 scope; roadmap |
 

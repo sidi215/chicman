@@ -229,10 +229,11 @@ describe("favorites (spec 14, PostgreSQL)", { skip: databaseUrl === undefined ? 
       assert.equal(item.product?.price, "1500.00");
     });
 
-    it(`stops at ${FAVORITES_MAX_ITEMS} products, and still accepts a repeated add at the limit`, async () => {
-      const created = await product();
-      const filler = await h.prisma.product.findUniqueOrThrow({ where: { id: created.id } });
-      // Clones of the same public product, inserted directly to keep the test fast.
+    it(`stops at ${FAVORITES_MAX_ITEMS} products, even for concurrent adds, and still accepts a repeated add at the limit`, async () => {
+      const first = await product({ name: "Premier" });
+      const second = await product({ name: "Second" });
+      const filler = await h.prisma.product.findUniqueOrThrow({ where: { id: first.id } });
+      // Clones of a public product, inserted directly to keep the test fast: one slot left.
       const clones = await Promise.all(
         Array.from({ length: FAVORITES_MAX_ITEMS - 1 }, async (_, index) => {
           const clone = await h.prisma.product.create({
@@ -251,13 +252,25 @@ describe("favorites (spec 14, PostgreSQL)", { skip: databaseUrl === undefined ? 
         }),
       );
       await h.prisma.favorite.createMany({ data: clones.map((productId) => ({ userId: customer.userId, productId })) });
-      await ok(await put(created.id));
+      assert.equal(await h.prisma.favorite.count({ where: { userId: customer.userId } }), FAVORITES_MAX_ITEMS - 1);
+
+      // Two distinct products race for the last slot: exactly one wins.
+      const responses = await Promise.all([put(first.id), put(second.id)]);
+      const statuses = responses.map((response) => response.status).sort();
+      assert.deepEqual(statuses, [200, 409]);
+      const refused = responses.find((response) => response.status === 409);
+      assert.ok(refused);
+      assert.deepEqual(await refused.json(), { error: { code: "FAVORITE_LIMIT_REACHED" } });
       assert.equal(await h.prisma.favorite.count({ where: { userId: customer.userId } }), FAVORITES_MAX_ITEMS);
-      await ok(await put(created.id));
-      const another = await product({ name: "De trop" });
-      await expectError(await put(another.id), 409, "FAVORITE_LIMIT_REACHED");
-      await ok(await remove(created.id));
-      await ok(await put(another.id));
+
+      const winner = responses[0]?.status === 200 ? first : second;
+      const loser = winner === first ? second : first;
+      // A repeated add of a product already listed succeeds at the limit.
+      await ok(await put(winner.id));
+      await expectError(await put(loser.id), 409, "FAVORITE_LIMIT_REACHED");
+      await ok(await remove(winner.id));
+      await ok(await put(loser.id));
+      assert.equal(await h.prisma.favorite.count({ where: { userId: customer.userId } }), FAVORITES_MAX_ITEMS);
     });
 
     it("rolls back an add that fails before commit", async () => {

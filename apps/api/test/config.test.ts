@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { duplicateEnvKeys, loadConfig } from "../src/config/env.js";
+import { duplicateEnvKeys, loadConfig, loadWorkerSearchConfig } from "../src/config/env.js";
 
 const base = {
   SUPABASE_URL: "https://ref.supabase.co",
@@ -126,6 +126,45 @@ describe("API configuration", () => {
         (error: Error) => error.message.includes("MEDIA_PUBLIC_BASE_URL: must be an http(s) URL") && !error.message.includes("secret-value"),
       );
       assert.throws(() => loadConfig({ ...db, ...storage, LOGO_COMPLETION_LEASE_MS: "-1" }));
+    });
+  });
+
+  describe("search engine (spec 18)", () => {
+    const db = { ...base, DATABASE_URL: "postgresql://u:p@localhost:5442/chicman" };
+    const storage = {
+      S3_ENDPOINT: "http://localhost:8333",
+      S3_ACCESS_KEY_ID: "key",
+      S3_SECRET_ACCESS_KEY: "secret-value",
+      S3_UPLOADS_BUCKET: "chicman-uploads",
+      S3_MEDIA_BUCKET: "chicman-media",
+      MEDIA_PUBLIC_BASE_URL: "http://localhost:8333/chicman-media",
+    };
+    const production = { ...db, ...storage, NODE_ENV: "production", REDIS_URL: "redis://localhost:6379" };
+
+    it("is optional outside production: searches use the PostgreSQL fallback", () => {
+      assert.equal(loadConfig(db).search, undefined);
+      assert.equal(loadWorkerSearchConfig({}), undefined);
+    });
+
+    it("is required in production", () => {
+      assert.throws(() => loadConfig(production), /MEILI_URL: the search engine is required in production/);
+      assert.equal(loadConfig({ ...production, MEILI_URL: "http://meilisearch:7700" }).search?.url, "http://meilisearch:7700");
+    });
+
+    it("loads defaults and overrides, and refuses invalid values without echoing the key", () => {
+      assert.deepEqual(loadConfig({ ...db, MEILI_URL: "http://localhost:7700/", MEILI_API_KEY: "search-key" }).search, {
+        url: "http://localhost:7700",
+        apiKey: "search-key",
+        indexUid: "products",
+        timeoutMs: 1500,
+      });
+      assert.equal(loadWorkerSearchConfig({ MEILI_URL: "http://m:7700", MEILI_PRODUCTS_INDEX: "products_v2", MEILI_TIMEOUT_MS: "800" })?.indexUid, "products_v2");
+      assert.throws(
+        () => loadConfig({ ...db, MEILI_URL: "not a url", MEILI_API_KEY: "secret-key" }),
+        (error: Error) => error.message.includes("MEILI_URL: must be an http(s) URL") && !error.message.includes("secret-key"),
+      );
+      assert.throws(() => loadConfig({ ...db, MEILI_URL: "http://m:7700", MEILI_PRODUCTS_INDEX: "bad index/name" }), /MEILI_PRODUCTS_INDEX/);
+      assert.throws(() => loadConfig({ ...db, MEILI_URL: "http://m:7700", MEILI_TIMEOUT_MS: "0" }), /MEILI_TIMEOUT_MS/);
     });
   });
 });

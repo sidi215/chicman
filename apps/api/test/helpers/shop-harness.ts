@@ -15,6 +15,7 @@ import { StockService } from "../../src/modules/inventory/index.js";
 import { OrderQueries, ShopOrderLifecycle, type ShopOrderLifecycleFaults } from "../../src/modules/orders/index.js";
 import { PaymentService } from "../../src/modules/payments/index.js";
 import { CatalogService, ProductImageService, ProductService, type ProductImageServiceFaults } from "../../src/modules/products/index.js";
+import { ProductSearch, SearchEngineError, type ProductSearchEngine } from "../../src/modules/search/index.js";
 import {
   LogoService,
   PrismaShopAccessRepository,
@@ -133,6 +134,13 @@ export class ShopHarness {
   orderLifecycle!: ShopOrderLifecycle;
   /** The delivery lifecycle the routes use, for the closure job in tests. */
   deliveryLifecycle!: DeliveryLifecycle;
+  /**
+   * The search engine behind `GET /products?q=` (spec 18). Without one, a
+   * search fails over to PostgreSQL, as when Meilisearch is down.
+   */
+  searchEngine: ProductSearchEngine | undefined;
+  /** Lines the search fallback logged. */
+  readonly searchLog: string[] = [];
 
   constructor(private readonly databaseUrl: string) {}
 
@@ -190,7 +198,19 @@ export class ShopHarness {
         rateLimiter: { hit: (key, limit, windowMs) => this.productRateLimiter.hit(key, limit, windowMs) },
       },
       catalog: {
-        catalog: new CatalogService(this.prisma, MEDIA_BASE_URL),
+        catalog: new CatalogService(
+          this.prisma,
+          MEDIA_BASE_URL,
+          new ProductSearch(
+            {
+              search: (query) => {
+                if (this.searchEngine === undefined) throw new SearchEngineError("not_configured");
+                return this.searchEngine.search(query);
+              },
+            },
+            { cooldownMs: 0, log: (line) => this.searchLog.push(line) },
+          ),
+        ),
         rateLimiter: { hit: (key, limit, windowMs) => this.catalogRateLimiter.hit(key, limit, windowMs) },
         internalKey: CATALOG_INTERNAL_KEY,
       },
@@ -256,6 +276,8 @@ export class ShopHarness {
     this.notificationRateLimiter = new MemoryRateLimiter();
     this.checkoutRateLimiter = new MemoryRateLimiter();
     this.orderRateLimiter = new MemoryRateLimiter();
+    this.searchEngine = undefined;
+    this.searchLog.length = 0;
     await resetDatabase(this.prisma);
   }
 

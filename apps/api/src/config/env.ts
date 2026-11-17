@@ -128,6 +128,25 @@ const envSchema = z.object({
   // undeliverable automatically (D5, spec 12). Read when the failure is
   // recorded: changing it never moves existing deadlines.
   DELIVERY_FAILED_AUTO_CLOSE_DAYS: optionalPositiveInt(DEFAULT_DELIVERY_FAILED_AUTO_CLOSE_DAYS),
+  // Meilisearch (spec 18): the product search index, derived from PostgreSQL.
+  // Required in production; elsewhere searches use the PostgreSQL fallback
+  // without it. The API should use a search-only key, the worker an admin key.
+  MEILI_URL: z.string().trim().optional(),
+  MEILI_API_KEY: z.string().trim().optional(),
+  MEILI_PRODUCTS_INDEX: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value, ctx) => {
+      if (value === undefined || value === "") return "products";
+      if (!/^[A-Za-z0-9_-]{1,100}$/.test(value)) {
+        ctx.addIssue({ code: "custom", message: "must be letters, digits, '-' or '_' (at most 100)" });
+        return z.NEVER;
+      }
+      return value;
+    }),
+  MEILI_TIMEOUT_MS: optionalPositiveInt(1_500),
+
   // Checkout placement limits (S2-6): server configuration, not business rules.
   CHECKOUT_RATE_LIMIT_PER_USER: optionalPositiveInt(20),
   CHECKOUT_RATE_LIMIT_PER_IP: optionalPositiveInt(60),
@@ -145,6 +164,14 @@ const STORAGE_KEYS = [
 ] as const;
 
 const httpUrl = z.url({ protocol: /^https?$/ });
+
+/** Meilisearch connection (spec 18). */
+export interface SearchConfig {
+  url: string;
+  apiKey: string | undefined;
+  indexUid: string;
+  timeoutMs: number;
+}
 
 export interface AppConfig {
   nodeEnv: string;
@@ -169,6 +196,8 @@ export interface AppConfig {
   };
   /** `undefined`: storage not configured (logo routes → `503`; not allowed in production). */
   storage: StorageConfig | undefined;
+  /** `undefined`: no search engine; searches use the PostgreSQL fallback (not allowed in production). */
+  search: SearchConfig | undefined;
   logo: LogoTimingConfig;
   orders: { responseTimeoutHours: number };
   delivery: { failedAutoCloseDays: number };
@@ -226,6 +255,23 @@ function parseStorageConfig(env: ParsedEnv): { storage: StorageConfig | undefine
   };
 }
 
+/** The search engine settings; without `MEILI_URL` there is none (an error in production). */
+function parseSearchConfig(env: Pick<ParsedEnv, "NODE_ENV" | "MEILI_URL" | "MEILI_API_KEY" | "MEILI_PRODUCTS_INDEX" | "MEILI_TIMEOUT_MS">): {
+  search: SearchConfig | undefined;
+  errors: string[];
+} {
+  const url = env.MEILI_URL ?? "";
+  if (url === "") {
+    return { search: undefined, errors: env.NODE_ENV === "production" ? ["  - MEILI_URL: the search engine is required in production"] : [] };
+  }
+  if (!httpUrl.safeParse(url).success) return { search: undefined, errors: ["  - MEILI_URL: must be an http(s) URL"] };
+  const apiKey = env.MEILI_API_KEY === undefined || env.MEILI_API_KEY === "" ? undefined : env.MEILI_API_KEY;
+  return {
+    errors: [],
+    search: { url: url.replace(/\/+$/, ""), apiKey, indexUid: env.MEILI_PRODUCTS_INDEX, timeoutMs: env.MEILI_TIMEOUT_MS },
+  };
+}
+
 function isPostgresUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -267,6 +313,8 @@ export function loadConfig(source: NodeJS.ProcessEnv): AppConfig {
   }
   const { storage, errors: storageErrors } = parseStorageConfig(env);
   if (storageErrors.length > 0) throw new Error(`Invalid API configuration:\n${storageErrors.join("\n")}`);
+  const { search, errors: searchErrors } = parseSearchConfig(env);
+  if (searchErrors.length > 0) throw new Error(`Invalid API configuration:\n${searchErrors.join("\n")}`);
   return {
     nodeEnv: env.NODE_ENV,
     port: env.PORT,
@@ -287,6 +335,7 @@ export function loadConfig(source: NodeJS.ProcessEnv): AppConfig {
       authTimeoutMs: env.SUPABASE_AUTH_TIMEOUT_MS,
     },
     storage,
+    search,
     logo: {
       completionLeaseMs: env.LOGO_COMPLETION_LEASE_MS,
       completionWindowMs: env.LOGO_COMPLETION_WINDOW_MS,
@@ -326,6 +375,17 @@ export function loadWorkerStorageConfig(source: NodeJS.ProcessEnv): { storage: S
     storage,
     logo: { completionLeaseMs: env.data.LOGO_COMPLETION_LEASE_MS, completionWindowMs: env.data.LOGO_COMPLETION_WINDOW_MS },
   };
+}
+
+/** Search engine settings for the worker process and the reindex script. */
+export function loadWorkerSearchConfig(source: NodeJS.ProcessEnv): SearchConfig | undefined {
+  const env = envSchema
+    .pick({ NODE_ENV: true, MEILI_URL: true, MEILI_API_KEY: true, MEILI_PRODUCTS_INDEX: true, MEILI_TIMEOUT_MS: true })
+    .safeParse(source);
+  if (!env.success) throw new Error("Invalid worker configuration: search settings (MEILI_*)");
+  const { search, errors } = parseSearchConfig(env.data);
+  if (errors.length > 0) throw new Error(`Invalid worker configuration:\n${errors.join("\n")}`);
+  return search;
 }
 
 /** Loads `.env` (if present) and validates the process environment. */
