@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,9 +14,16 @@ import 'catalog_widgets.dart';
 /// A product listing: categories, filter and sort sheets, and server-side
 /// pages. Same filters and rules as the web listing.
 class ProductListScreen extends ConsumerStatefulWidget {
-  const ProductListScreen({super.key, required this.initialFilters});
+  const ProductListScreen({
+    super.key,
+    required this.initialFilters,
+    this.autofocusSearch = false,
+  });
 
   final CatalogFilters initialFilters;
+
+  /// Opens with the keyboard on the search field (the home's search action).
+  final bool autofocusSearch;
 
   @override
   ConsumerState<ProductListScreen> createState() => _ProductListScreenState();
@@ -22,8 +31,40 @@ class ProductListScreen extends ConsumerStatefulWidget {
 
 class _ProductListScreenState extends ConsumerState<ProductListScreen> {
   late CatalogFilters _filters = widget.initialFilters;
+  late final _search = TextEditingController(
+    text: widget.initialFilters.search,
+  );
+  Timer? _debounce;
 
   void _update(CatalogFilters next) => setState(() => _filters = next);
+
+  /// Spec 18: the search waits for a pause in typing, then keeps the filters.
+  void _onSearchChanged(String text) {
+    _debounce?.cancel();
+    _debounce = Timer(searchDebounce, () {
+      if (!mounted) return;
+      final next = _filters.withSearch(text);
+      if (!identical(next, _filters)) _update(next);
+    });
+  }
+
+  void _submitSearch(String text) {
+    _debounce?.cancel();
+    final next = _filters.withSearch(text);
+    if (!identical(next, _filters)) _update(next);
+  }
+
+  void _clearSearch() {
+    _search.clear();
+    _submitSearch('');
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _search.dispose();
+    super.dispose();
+  }
 
   Future<void> _openFilters() async {
     final next = await showModalBottomSheet<CatalogFilters>(
@@ -44,7 +85,7 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (final option in CatalogSort.values)
+            for (final option in CatalogSort.optionsFor(_filters.search))
               ListTile(
                 key: Key('sort-${option.apiValue}'),
                 title: Text(t.sort(option)),
@@ -65,15 +106,62 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
   Widget build(BuildContext context) {
     final t = CatalogMessages.of(context);
     final category = _filters.category;
+    final search = _filters.search;
     final active = _filters.activeCount;
     return Scaffold(
       appBar: AppBar(
-        title: Text(category == null ? t.allProducts : t.category(category)),
+        title: Text(
+          search != null
+              ? t.searchHeading(search)
+              : category == null
+              ? t.allProducts
+              : t.category(category),
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: const [CartAction()],
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.s2),
         children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.pageGutter,
+            ),
+            child: ValueListenableBuilder(
+              valueListenable: _search,
+              builder: (context, value, _) => TextField(
+                key: const Key('listing-search'),
+                controller: _search,
+                autofocus: widget.autofocusSearch,
+                maxLength: catalogSearchMaxLength,
+                textInputAction: TextInputAction.search,
+                onChanged: _onSearchChanged,
+                onSubmitted: _submitSearch,
+                decoration: InputDecoration(
+                  hintText: t.searchPlaceholder,
+                  labelText: t.searchLabel,
+                  floatingLabelBehavior: FloatingLabelBehavior.never,
+                  counterText: '',
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    size: AppIconSize.action,
+                  ),
+                  suffixIcon: value.text.isEmpty
+                      ? null
+                      : IconButton(
+                          key: const Key('listing-search-clear'),
+                          tooltip: t.searchClear,
+                          icon: const Icon(
+                            Icons.close,
+                            size: AppIconSize.action,
+                          ),
+                          onPressed: _clearSearch,
+                        ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s2),
           CategoryChips(
             selected: category,
             onSelected: (next) => _update(_filters.withCategory(next)),
@@ -109,7 +197,11 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.pageGutter,
             ),
-            child: _Results(filters: _filters, onChange: _update),
+            child: _Results(
+              filters: _filters,
+              onChange: _update,
+              onClearSearch: _clearSearch,
+            ),
           ),
         ],
       ),
@@ -118,10 +210,15 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
 }
 
 class _Results extends ConsumerWidget {
-  const _Results({required this.filters, required this.onChange});
+  const _Results({
+    required this.filters,
+    required this.onChange,
+    required this.onClearSearch,
+  });
 
   final CatalogFilters filters;
   final ValueChanged<CatalogFilters> onChange;
+  final VoidCallback onClearSearch;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -143,6 +240,56 @@ class _Results extends ConsumerWidget {
               OutlinedButton(
                 onPressed: () => onChange(filters.atPage(1)),
                 child: Text(t.firstPage),
+              ),
+            ],
+          );
+        }
+        final degraded = page.searchDegraded
+            ? Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.s3),
+                child: Container(
+                  key: const Key('search-degraded'),
+                  padding: const EdgeInsets.all(AppSpacing.s3),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  child: Text(t.searchDegraded, style: mutedStyle),
+                ),
+              )
+            : const SizedBox.shrink();
+        final search = filters.search;
+        if (page.products.isEmpty && search != null) {
+          final filtered = filters.activeCount > 0;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              degraded,
+              Text(t.emptySearch(search), style: mutedStyle),
+              const SizedBox(height: AppSpacing.s1),
+              Text(
+                t.emptySearchHint,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: AppSpacing.s3),
+              Wrap(
+                spacing: AppSpacing.s2,
+                runSpacing: AppSpacing.s2,
+                children: [
+                  OutlinedButton(
+                    key: const Key('search-empty-clear'),
+                    onPressed: onClearSearch,
+                    child: Text(t.searchClear),
+                  ),
+                  if (filtered)
+                    OutlinedButton(
+                      key: const Key('listing-clear'),
+                      onPressed: () => onChange(filters.cleared()),
+                      child: Text(t.clearFilters),
+                    ),
+                ],
               ),
             ],
           );
@@ -170,6 +317,7 @@ class _Results extends ConsumerWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            degraded,
             Text(t.resultCount(page.total), style: mutedStyle),
             const SizedBox(height: AppSpacing.s3),
             ProductGrid(products: page.products),

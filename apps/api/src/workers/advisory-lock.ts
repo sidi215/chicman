@@ -17,6 +17,10 @@ export const DELIVERY_AUTO_CLOSE_LOCK_NAME = "chicman:delivery-auto-close";
 /** Lock of the notification retention cleanup (spec 15, O6.3). */
 export const NOTIFICATION_RETENTION_LOCK_NAME = "chicman:notification-retention";
 export const REGISTRATION_INTENT_RETENTION_LOCK_NAME = "chicman:registration-intent-retention";
+/** Lock of the search indexing job (spec 18): the only writer of search documents. */
+export const SEARCH_INDEXING_LOCK_NAME = "chicman:search-indexing";
+/** Lock of the search reconciliation job (spec 18). */
+export const SEARCH_RECONCILIATION_LOCK_NAME = "chicman:search-reconciliation";
 
 /**
  * A PostgreSQL session advisory lock on a dedicated connection. The lock is

@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 
 import { BrandLogo } from "@/components/brand/brand-logo"
+import { useInDashboard } from "@/components/layout/in-dashboard"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -75,10 +76,12 @@ function useAddressApi() {
   return { status, call }
 }
 
+/** In the buyer dashboard the shell's header carries the brand; standalone, the page shows it. */
 function Shell({ t, children }: { t: AddressMessages; children: React.ReactNode }) {
+  const inDashboard = useInDashboard()
   return (
-    <main className="flex flex-1 flex-col items-center gap-6 bg-page px-4 py-10">
-      <BrandLogo label={t.brand} />
+    <main className={inDashboard ? "flex flex-1 flex-col items-center gap-6 py-6" : "flex flex-1 flex-col items-center gap-6 bg-page px-4 py-10"}>
+      {inDashboard ? null : <BrandLogo label={t.brand} />}
       {children}
     </main>
   )

@@ -24,7 +24,8 @@
     "admin:deactivate": "tsx scripts/deactivate-admin.ts",
     "accounts:classify": "tsx scripts/classify-account-types.ts",
     "seller:provision": "tsx scripts/provision-seller.ts",
-    "shop:transfer-owner": "tsx scripts/transfer-shop.ts"
+    "shop:transfer-owner": "tsx scripts/transfer-shop.ts",
+    "search:reindex": "tsx scripts/search-reindex.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1153.0",

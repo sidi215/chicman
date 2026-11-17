@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -162,6 +164,24 @@ final orderListProvider =
     NotifierProvider.autoDispose<OrderListController, OrderListView>(
       OrderListController.new,
     );
+
+/// The customer's latest orders and their total count, for the buyer
+/// dashboard (`GET /customers/me/orders?page=1&pageSize=3`). Reload with
+/// `ref.invalidate(recentOrdersProvider)`.
+const recentOrderCount = 3;
+
+final recentOrdersProvider =
+    FutureProvider.autoDispose<OrderOutcome<OrderPage>>((ref) async {
+      final (loading, userId) = _watchAccount(ref);
+      if (loading) return Completer<OrderOutcome<OrderPage>>().future;
+      if (userId == null) return OrderSignedOut<OrderPage>();
+      return _send(
+        ref,
+        'GET',
+        '$customerOrdersPath?page=1&pageSize=$recentOrderCount',
+        OrderPage.fromJson,
+      );
+    });
 
 /// One order of the customer's, and the cancellation of a pending shop order.
 class OrderDetailController extends Notifier<OrderDetailView> {

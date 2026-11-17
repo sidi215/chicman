@@ -2,13 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../profile/presentation/profile_settings_screen.dart';
-import '../../addresses/application/address_providers.dart';
-import '../../addresses/domain/address.dart';
-import '../../addresses/presentation/address_messages.dart';
+import '../../buyer/presentation/buyer_dashboard_screen.dart';
 import '../../addresses/presentation/address_screens.dart';
-import '../../orders/presentation/order_messages.dart';
-import '../../orders/presentation/order_screens.dart';
 import '../application/auth_providers.dart';
 import '../data/auth_repository.dart';
 import '../domain/account_setup.dart';
@@ -33,11 +28,18 @@ class AccountScreen extends ConsumerWidget {
     final check = ref.watch(sessionCheckProvider);
     final email = session.email;
 
+    // A set-up Buyer gets the dashboard; setup, errors, and the session check
+    // keep the card below.
+    if (check case AsyncData(
+      value: SessionActive(:final session),
+    ) when session.isBuyer) {
+      return BuyerDashboardScreen(email: email);
+    }
+
     final List<Widget> status = switch (check) {
-      AsyncData(value: SessionActive(:final session)) =>
-        session.isBuyer
-            ? [const _ContactPhone(), const _DeliveryAddresses()]
-            : [AuthMessageText(webOnlyText(t, session.accountType))],
+      AsyncData(value: SessionActive(:final session)) => [
+        AuthMessageText(webOnlyText(t, session.accountType)),
+      ],
       AsyncData(value: SessionNotBootstrapped()) => [const _SetupStep()],
       AsyncData(value: SessionUnavailable()) => [
         AuthMessageText(t.authUnavailable, isError: true),
@@ -73,49 +75,6 @@ class AccountScreen extends ConsumerWidget {
           key: const Key('account-logout'),
           onPressed: () => ref.read(authRepositoryProvider)?.signOut(),
           child: Text(t.logout),
-        ),
-      ],
-    );
-  }
-}
-
-/// The unverified contact phone of the bootstrapped account.
-class _ContactPhone extends ConsumerWidget {
-  const _ContactPhone();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = AuthMessages.of(context);
-    final account = ref.watch(customerAccountProvider).value;
-    if (account == null) return const SizedBox.shrink();
-    final fullName = account.fullName;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (fullName != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.s2),
-            child: Text(
-              fullName,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ),
-        AuthMessageText('${t.contactPhone} : ${account.phone ?? ''}'),
-        OutlinedButton(
-          key: const Key('account-profile-settings'),
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const ProfileSettingsScreen(),
-            ),
-          ),
-          child: Text(t.profileSettings),
-        ),
-        OutlinedButton(
-          key: const Key('account-orders'),
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const OrderListScreen()),
-          ),
-          child: Text(OrderMessages.of(context).myOrders),
         ),
       ],
     );
@@ -258,71 +217,6 @@ class _AccountSetupFormState extends ConsumerState<AccountSetupForm> {
           child: Text(t.submitSetup),
         ),
         const SizedBox(height: AppSpacing.s2),
-      ],
-    );
-  }
-}
-
-/// Delivery addresses (spec 05): the list, and a prompt while the customer
-/// has none (until "Plus tard" on this device).
-class _DeliveryAddresses extends ConsumerWidget {
-  const _DeliveryAddresses();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = AddressMessages.of(context);
-    final list = ref.watch(addressListProvider).value;
-    final dismissed = ref.watch(addressPromptDismissedProvider);
-    final none =
-        list?.kind == AddressOutcomeKind.ok && (list?.data?.isEmpty ?? false);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        OutlinedButton(
-          key: const Key('account-addresses'),
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const AddressListScreen()),
-          ),
-          child: Text(t.myAddresses),
-        ),
-        if (none && !dismissed)
-          Card(
-            key: const Key('account-address-prompt'),
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.s4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    t.promptTitle,
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: AppSpacing.s1),
-                  Text(
-                    t.promptBody,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: AppSpacing.s3),
-                  FilledButton(
-                    key: const Key('account-address-prompt-add'),
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const AddressEditorScreen(),
-                      ),
-                    ),
-                    child: Text(t.add),
-                  ),
-                  TextButton(
-                    key: const Key('account-address-prompt-later'),
-                    onPressed: () => ref
-                        .read(addressPromptDismissedProvider.notifier)
-                        .dismiss(),
-                    child: Text(t.later),
-                  ),
-                ],
-              ),
-            ),
-          ),
       ],
     );
   }

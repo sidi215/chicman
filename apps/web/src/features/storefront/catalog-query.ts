@@ -1,7 +1,9 @@
 import {
-  CATALOG_DEFAULT_SORT,
   CATALOG_SORTS,
   catalogCategorySchema,
+  catalogSearchSchema,
+  defaultCatalogSort,
+  LISTING_SORTS,
   catalogColorSchema,
   catalogPriceBoundSchema,
   catalogSizeSchema,
@@ -20,6 +22,8 @@ import { normalizePriceInput } from "../products/product-form"
  * queries use the same parameter names.
  */
 export interface CatalogFilters {
+  /** The search text (spec 18), normalized as the server reads it. */
+  search: string | null
   category: ProductCategory | null
   minPrice: string | null
   maxPrice: string | null
@@ -31,13 +35,14 @@ export interface CatalogFilters {
 }
 
 export const NO_FILTERS: CatalogFilters = {
+  search: null,
   category: null,
   minPrice: null,
   maxPrice: null,
   availableOnly: false,
   size: null,
   color: null,
-  sort: CATALOG_DEFAULT_SORT,
+  sort: defaultCatalogSort(null),
   page: 1,
 }
 
@@ -54,27 +59,39 @@ export function filtersFromParams(params: Pick<URLSearchParams, "get">): Catalog
   const rangeValid = isPriceRangeValid(minPrice ?? undefined, maxPrice ?? undefined)
   const sort = params.get("sort") as CatalogSort | null
   const page = Number(params.get("page"))
+  const searchText = valueOf(catalogSearchSchema, params.get("q"))
+  const search = searchText === null || searchText === "" ? null : searchText
   return {
+    search,
     category: valueOf(catalogCategorySchema, params.get("category")),
     minPrice,
     maxPrice: rangeValid ? maxPrice : null,
     availableOnly: params.get("availability") === "available",
     size: valueOf(catalogSizeSchema, params.get("size")),
     color: valueOf(catalogColorSchema, params.get("color")),
-    sort: sort !== null && CATALOG_SORTS.includes(sort) ? sort : CATALOG_DEFAULT_SORT,
+    sort: sort !== null && sortOptions(search).includes(sort) ? sort : defaultCatalogSort(search),
     page: Number.isInteger(page) && page >= 1 && page <= 1_000_000 ? page : 1,
   }
 }
 
+/** Pause after the last keystroke before a search is sent (spec 18). */
+export const SEARCH_DEBOUNCE_MS = 350
+
+/** The sorts a listing offers: relevance only for a search. */
+export function sortOptions(search: string | null): readonly CatalogSort[] {
+  return search === null ? LISTING_SORTS : CATALOG_SORTS
+}
+
 function toQuery(filters: CatalogFilters): string {
   const query = new URLSearchParams()
+  if (filters.search !== null) query.set("q", filters.search)
   if (filters.category !== null) query.set("category", filters.category)
   if (filters.minPrice !== null) query.set("minPrice", filters.minPrice)
   if (filters.maxPrice !== null) query.set("maxPrice", filters.maxPrice)
   if (filters.availableOnly) query.set("availability", "available")
   if (filters.size !== null) query.set("size", filters.size)
   if (filters.color !== null) query.set("color", filters.color)
-  if (filters.sort !== CATALOG_DEFAULT_SORT) query.set("sort", filters.sort)
+  if (filters.sort !== defaultCatalogSort(filters.search)) query.set("sort", filters.sort)
   if (filters.page > 1) query.set("page", String(filters.page))
   return query.toString()
 }
@@ -102,15 +119,30 @@ export function changeFilters(filters: CatalogFilters, change: Partial<Omit<Cata
   return { ...filters, ...change, page: 1 }
 }
 
+/**
+ * A new search text, read as the server reads it; `null` when it is invalid
+ * (too long). A blank text clears the search. Filters stay; the page returns
+ * to 1. A default order follows the search (relevance with a query, newest
+ * without), and relevance never outlives the query.
+ */
+export function changeSearch(filters: CatalogFilters, text: string): CatalogFilters | null {
+  const parsed = catalogSearchSchema.safeParse(text)
+  if (!parsed.success) return null
+  const search = parsed.data === "" ? null : parsed.data
+  if (search === filters.search) return filters
+  const keepSort = filters.sort !== defaultCatalogSort(filters.search) && sortOptions(search).includes(filters.sort)
+  return changeFilters(filters, { search, sort: keepSort ? filters.sort : defaultCatalogSort(search) })
+}
+
 /** Sizes and colors depend on the category, so a new category clears them. */
 export function changeCategory(filters: CatalogFilters, category: ProductCategory | null): CatalogFilters {
   if (category === filters.category) return filters
   return changeFilters(filters, { category, size: null, color: null })
 }
 
-/** Clears the filters shown in the filter panel. The category and sort order remain. */
+/** Clears the filters shown in the filter panel. The search, category, and sort order remain. */
 export function clearFilters(filters: CatalogFilters): CatalogFilters {
-  return { ...NO_FILTERS, category: filters.category, sort: filters.sort }
+  return { ...NO_FILTERS, search: filters.search, category: filters.category, sort: filters.sort }
 }
 
 export function activeFilterCount(filters: CatalogFilters): number {

@@ -72,8 +72,9 @@ services:
       - object-storage-data:/data
 
   # Background jobs (apps/api/src/workers/): phone-change history retention,
-  # once at start and then every 24 hours (spec 04), and the shop logo
-  # cleanup and reconciliation job every 5 minutes (spec 06). One instance only: the
+  # once at start and then every 24 hours (spec 04), the shop logo
+  # cleanup and reconciliation job every 5 minutes (spec 06), and search
+  # indexing every 10 seconds with a reconciliation every 6 hours (spec 18). One instance only: the
   # fixed container_name makes `--scale worker=2` fail, and a PostgreSQL
   # advisory lock makes any other worker process (for example a host-run
   # `pnpm worker`) skip its runs. Logs: `docker compose ... logs -t worker`.
@@ -100,11 +101,18 @@ services:
       S3_MEDIA_BUCKET: ${S3_MEDIA_BUCKET:-chicman-media}
       # Must equal the API's MEDIA_PUBLIC_BASE_URL (the job matches Shop.logoUrl against it).
       MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-http://localhost:8333/chicman-media}
+      # The `meilisearch` service, for search indexing (spec 18). The worker
+      # writes the index, so it uses an admin key (here the master key).
+      MEILI_URL: http://meilisearch:7700
+      MEILI_API_KEY: ${MEILI_MASTER_KEY:-chicman-dev-master-key-change-me}
     depends_on:
       postgres:
         condition: service_healthy
         restart: true
       object-storage:
+        condition: service_started
+      # Not required to be healthy: indexing retries while it is down.
+      meilisearch:
         condition: service_started
     stop_signal: SIGTERM
     stop_grace_period: 30s

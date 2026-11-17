@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { ACCOUNT_HOME, ACCOUNT_PATH, ACCOUNT_SETUP_HREF } from "@/features/auth/account"
 import { useAccount } from "@/features/auth/account-provider"
 import { BrandLogo } from "@/components/brand/brand-logo"
+import { useInDashboard } from "@/components/layout/in-dashboard"
 import { ThemeSelector } from "@/components/theme/theme-selector"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -144,11 +145,13 @@ export function ProfileSettings() {
     }
   }
 
+  // In the buyer dashboard the shell's header carries the brand.
+  const inDashboard = useInDashboard()
   const update = (patch: Partial<ProfileFormValues>) => setValues((current) => (current ? { ...current, ...patch } : current))
 
   return (
-    <main className="flex flex-1 flex-col items-center gap-6 bg-page px-4 py-10">
-      <BrandLogo label={t.brand} />
+    <main className={inDashboard ? "flex flex-1 flex-col items-center gap-6 py-6" : "flex flex-1 flex-col items-center gap-6 bg-page px-4 py-10"}>
+      {inDashboard ? null : <BrandLogo label={t.brand} />}
       <Card className="w-full max-w-md rounded-3xl p-6">
         <CardHeader>
           <CardTitle className="type-headline-small">{t.title}</CardTitle>

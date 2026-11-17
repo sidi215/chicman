@@ -19,13 +19,42 @@ enum ProductCategory {
 }
 
 enum CatalogSort {
+  /// Search only (spec 18).
+  relevance('relevance'),
   newest('newest'),
   priceAsc('price_asc'),
   priceDesc('price_desc');
 
   const CatalogSort(this.apiValue);
   final String apiValue;
+
+  /// The order used when none is chosen: relevance for a search, else newest.
+  static CatalogSort defaultFor(String? search) =>
+      search == null ? CatalogSort.newest : CatalogSort.relevance;
+
+  /// The sorts a listing offers: relevance only for a search.
+  static List<CatalogSort> optionsFor(String? search) => search == null
+      ? const [CatalogSort.newest, CatalogSort.priceAsc, CatalogSort.priceDesc]
+      : CatalogSort.values;
 }
+
+/// Longest search query, as on the server (`CATALOG_SEARCH_MAX_LENGTH`).
+const catalogSearchMaxLength = 100;
+
+/// Pause after the last keystroke before a search is sent (spec 18).
+const searchDebounce = Duration(milliseconds: 350);
+
+final _invisibleMarks = RegExp(
+  '[\u00ad\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]',
+);
+final _spaceRun = RegExp(r'[\s\x00-\x1f\x7f-\x9f]+');
+
+/// Search text close to how the server reads it (`normalizeSearchText`):
+/// invisible marks removed, spaces collapsed, ends trimmed. The server also
+/// folds compatibility forms; this is only for deciding whether the text
+/// changed.
+String normalizeSearchText(String value) =>
+    value.replaceAll(_invisibleMarks, '').replaceAll(_spaceRun, ' ').trim();
 
 class PublicProductSummary {
   const PublicProductSummary({
@@ -166,11 +195,15 @@ class CatalogPage {
     required this.page,
     required this.pageSize,
     required this.total,
+    this.searchDegraded = false,
   });
 
   factory CatalogPage.fromJson(Object? json) {
     final map = json! as Map<String, dynamic>;
+    final search = map['search'];
     return CatalogPage(
+      searchDegraded:
+          search is Map<String, dynamic> && search['degraded'] == true,
       products: [
         for (final product in map['products'] as List<dynamic>)
           PublicProductSummary.fromJson(product),
@@ -185,6 +218,9 @@ class CatalogPage {
   final int page;
   final int pageSize;
   final int total;
+
+  /// The search engine was unavailable and a simpler match answered (spec 18).
+  final bool searchDegraded;
 
   /// An empty listing has one page.
   int get pageCount => total == 0 ? 1 : (total + pageSize - 1) ~/ pageSize;
@@ -210,18 +246,24 @@ const _unchanged = Object();
 /// The state of a product listing. Equal values share one provider instance.
 @immutable
 class CatalogFilters {
+  /// Without [sort], the default order of the search (or listing) applies.
   const CatalogFilters({
+    this.search,
     this.category,
     this.minPrice,
     this.maxPrice,
     this.availableOnly = false,
     this.size,
     this.color,
-    this.sort = CatalogSort.newest,
+    CatalogSort? sort,
     this.page = 1,
     this.pageSize,
-  });
+  }) : sort =
+           sort ??
+           (search == null ? CatalogSort.newest : CatalogSort.relevance);
 
+  /// The search text (spec 18), normalized; null without a search.
+  final String? search;
   final ProductCategory? category;
   final String? minPrice;
   final String? maxPrice;
@@ -243,6 +285,7 @@ class CatalogFilters {
     Object? color = _unchanged,
     CatalogSort? sort,
   }) => CatalogFilters(
+    search: search,
     category: category,
     minPrice: identical(minPrice, _unchanged)
         ? this.minPrice
@@ -257,10 +300,38 @@ class CatalogFilters {
     pageSize: pageSize,
   );
 
+  /// A new search text. A blank text clears the search. Filters stay; the
+  /// page returns to 1. A default order follows the search, and relevance
+  /// never outlives it. Unchanged text returns this listing.
+  CatalogFilters withSearch(String text) {
+    final normalized = normalizeSearchText(text);
+    final next = normalized.isEmpty
+        ? null
+        : normalized.length > catalogSearchMaxLength
+        ? normalized.substring(0, catalogSearchMaxLength)
+        : normalized;
+    if (next == search) return this;
+    final keepSort =
+        sort != CatalogSort.defaultFor(search) &&
+        CatalogSort.optionsFor(next).contains(sort);
+    return CatalogFilters(
+      search: next,
+      category: category,
+      minPrice: minPrice,
+      maxPrice: maxPrice,
+      availableOnly: availableOnly,
+      size: size,
+      color: color,
+      sort: keepSort ? sort : null,
+      pageSize: pageSize,
+    );
+  }
+
   /// Sizes and colors depend on the category, so a new category clears them.
   CatalogFilters withCategory(ProductCategory? next) => next == category
       ? this
       : CatalogFilters(
+          search: search,
           category: next,
           minPrice: minPrice,
           maxPrice: maxPrice,
@@ -271,6 +342,7 @@ class CatalogFilters {
 
   /// Keeps every filter and the sort order.
   CatalogFilters atPage(int next) => CatalogFilters(
+    search: search,
     category: category,
     minPrice: minPrice,
     maxPrice: maxPrice,
@@ -282,9 +354,13 @@ class CatalogFilters {
     pageSize: pageSize,
   );
 
-  /// Clears the filter sheet. The category and sort order remain.
-  CatalogFilters cleared() =>
-      CatalogFilters(category: category, sort: sort, pageSize: pageSize);
+  /// Clears the filter sheet. The search, category, and sort order remain.
+  CatalogFilters cleared() => CatalogFilters(
+    search: search,
+    category: category,
+    sort: sort,
+    pageSize: pageSize,
+  );
 
   int get activeCount =>
       [minPrice, maxPrice, size, color].where((value) => value != null).length +
@@ -292,13 +368,14 @@ class CatalogFilters {
 
   String get apiPath {
     final query = <String, String>{
+      'q': ?search,
       if (category != null) 'category': category!.apiValue,
       'minPrice': ?minPrice,
       'maxPrice': ?maxPrice,
       if (availableOnly) 'availability': 'available',
       'size': ?size,
       'color': ?color,
-      if (sort != CatalogSort.newest) 'sort': sort.apiValue,
+      if (sort != CatalogSort.defaultFor(search)) 'sort': sort.apiValue,
       if (page > 1) 'page': '$page',
       if (pageSize != null) 'pageSize': '$pageSize',
     };

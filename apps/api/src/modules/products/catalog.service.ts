@@ -13,12 +13,17 @@ import {
 import type { Prisma } from "../../generated/prisma/client.js";
 import { notFound } from "../../lib/http-error.js";
 import type { PrismaClient } from "../../lib/prisma.js";
+import type { ProductSearch, SearchQuery } from "../search/product-index.js";
 import { AVAILABLE_PRODUCT_WHERE, AVAILABLE_VARIANT_WHERE, isStockAvailable, productAvailability } from "../inventory/availability.js";
 import { activeImages, mediaUrlBuilder, type MediaUrl } from "./product-views.js";
 import { PUBLIC_PRODUCT_WHERE } from "./product-visibility.js";
 
-/** The ID breaks ties, so pages never repeat or skip a product. */
+/**
+ * The ID breaks ties, so pages never repeat or skip a product. PostgreSQL has
+ * no relevance score: its search fallback (spec 18) lists matches newest first.
+ */
 const ORDER_BY: Record<CatalogSort, Prisma.ProductOrderByWithRelationInput[]> = {
+  relevance: [{ publishedAt: "desc" }, { id: "desc" }],
   newest: [{ publishedAt: "desc" }, { id: "desc" }],
   price_asc: [{ price: "asc" }, { id: "asc" }],
   price_desc: [{ price: "desc" }, { id: "desc" }],
@@ -50,10 +55,32 @@ const ignoringCase = (value: string): Prisma.StringNullableFilter<"ProductVarian
   mode: "insensitive",
 });
 
+/** `contains` ignoring case, with `%` and `_` matching only themselves (see `ignoringCase`). */
+const containing = (value: string) => ({ contains: value.replace(/[\\%_]/g, "\\$&"), mode: "insensitive" as const });
+
+/** Words of a fallback search; more add little and cost a join each. */
+export const FALLBACK_SEARCH_MAX_WORDS = 8;
+
+/**
+ * The PostgreSQL search fallback (spec 18, Q16), used only while the search
+ * engine is unavailable: every word must appear, ignoring case, in the name,
+ * brand, description, or shop name. No typo tolerance, no relevance.
+ */
+export function searchTextWhere(q: string): Prisma.ProductWhereInput {
+  const words = [...new Set(q.split(" ").filter((word) => word !== ""))].slice(0, FALLBACK_SEARCH_MAX_WORDS);
+  return {
+    AND: words.map((word) => ({
+      OR: [{ name: containing(word) }, { brand: containing(word) }, { description: containing(word) }, { shop: { shopName: containing(word) } }],
+    })),
+  };
+}
+
 /**
  * Public visibility is always the first condition and filters can only narrow
  * it (`AND`). Availability stays a separate, optional condition. Size, color,
- * and availability describe one variant when they are combined.
+ * and availability describe one variant when they are combined. The search
+ * text (`q`) is not part of it: it goes to the search engine, or to
+ * `searchTextWhere` when the engine is unavailable.
  */
 export function catalogWhere(query: Omit<CatalogListQuery, "sort" | "page" | "pageSize">): Prisma.ProductWhereInput {
   const conditions: Prisma.ProductWhereInput[] = [PUBLIC_PRODUCT_WHERE];
@@ -93,15 +120,21 @@ function distinctValues(values: readonly (string | null)[]): string[] {
 export class CatalogService {
   private readonly mediaUrl: MediaUrl;
 
+  /** `search` is the search engine (spec 18); without it, searches use the PostgreSQL fallback. */
   constructor(
     private readonly prisma: PrismaClient,
     mediaPublicBaseUrl: string,
+    private readonly search?: ProductSearch,
   ) {
     this.mediaUrl = mediaUrlBuilder(mediaPublicBaseUrl);
   }
 
   async list(query: CatalogListQuery): Promise<PublicProductListResponse> {
-    const where = catalogWhere(query);
+    if (query.q !== undefined) return this.searchList({ ...query, q: query.q });
+    return this.pageOf(query, catalogWhere(query));
+  }
+
+  private async pageOf(query: CatalogListQuery, where: Prisma.ProductWhereInput): Promise<PublicProductListResponse> {
     const [products, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
@@ -117,6 +150,39 @@ export class CatalogService {
       page: query.page,
       pageSize: query.pageSize,
       total,
+    };
+  }
+
+  /**
+   * A search (spec 18). The engine only chooses and orders product IDs: each
+   * one is read again from PostgreSQL with `catalogWhere` (public visibility
+   * and every filter), so a stale or wrong document can never show a hidden
+   * product, and cards always carry current prices and availability. A
+   * document not yet removed from the index can make a page shorter until the
+   * worker catches up. Without the engine, PostgreSQL answers alone.
+   */
+  private async searchList(query: SearchQuery): Promise<PublicProductListResponse> {
+    const hits = (await this.search?.find(query)) ?? null;
+    if (hits === null) {
+      return { ...(await this.pageOf(query, { AND: [catalogWhere(query), searchTextWhere(query.q)] })), search: { degraded: true } };
+    }
+    const rows =
+      hits.ids.length === 0
+        ? []
+        : await this.prisma.product.findMany({
+            where: { AND: [catalogWhere(query), { id: { in: hits.ids } }] },
+            include: publicSummaryInclude,
+          });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return {
+      products: hits.ids.flatMap((id) => {
+        const row = byId.get(id);
+        return row === undefined ? [] : [this.toSummary(row)];
+      }),
+      page: query.page,
+      pageSize: query.pageSize,
+      total: hits.total,
+      search: { degraded: false },
     };
   }
 

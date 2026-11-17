@@ -21,6 +21,7 @@ import { NotificationService } from "./modules/notifications/index.js";
 import { OrderQueries, ShopOrderLifecycle } from "./modules/orders/index.js";
 import { PaymentService } from "./modules/payments/index.js";
 import { CatalogService, ProductImageService, ProductService } from "./modules/products/index.js";
+import { MeilisearchClient, MeilisearchProductIndex, ProductSearch } from "./modules/search/index.js";
 import {
   LogoService,
   PrismaShopAccessRepository,
@@ -65,6 +66,15 @@ if (config.nodeEnv === "production" && config.catalogInternalKey === undefined) 
   console.warn("CATALOG_INTERNAL_KEY is not set: all server-rendered storefront pages share the web server's rate limit.");
 }
 
+// Search (spec 18): the engine only orders IDs; PostgreSQL re-checks every
+// result and answers alone while the engine is unavailable.
+if (config.search === undefined) {
+  console.warn("MEILI_URL is not set: searches use the PostgreSQL fallback (development only).");
+}
+const productSearch = new ProductSearch(
+  config.search === undefined ? undefined : new MeilisearchProductIndex(new MeilisearchClient(config.search)),
+);
+
 const cartService = new CartService(prisma, mediaPublicBaseUrl);
 
 const app = createApp({
@@ -89,7 +99,7 @@ const app = createApp({
     images: productImages,
     rateLimiter,
   },
-  catalog: { catalog: new CatalogService(prisma, mediaPublicBaseUrl), rateLimiter, internalKey: config.catalogInternalKey },
+  catalog: { catalog: new CatalogService(prisma, mediaPublicBaseUrl, productSearch), rateLimiter, internalKey: config.catalogInternalKey },
   cart: { cart: cartService, rateLimiter },
   checkout: {
     checkout: new CheckoutService(prisma, cartService, { mediaPublicBaseUrl, responseTimeoutHours: config.orders.responseTimeoutHours }),

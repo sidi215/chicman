@@ -332,7 +332,10 @@ describe("public catalog (spec 08, PostgreSQL)", { skip: databaseUrl === undefin
         `?size=${"x".repeat(31)}`,
         "?size=M&size=L",
         "?color=a%00b",
-        "?q=robe",
+        // `q` is the search parameter (spec 18); other names stay unknown.
+        "?search=robe",
+        "?sort=relevance",
+        "?q=robe&q=robe",
         "?status=DRAFT",
         "?shopId=abc",
       ]) {

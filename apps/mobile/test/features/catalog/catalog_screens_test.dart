@@ -488,4 +488,122 @@ void main() {
       expect(find.text('Voile léger.'), findsOneWidget);
     });
   });
+
+  group('search (spec 18)', () {
+    testWidgets('typing searches after a pause, with filters kept', (
+      tester,
+    ) async {
+      final queries = <Map<String, String>>[];
+      await _pump(
+        tester,
+        const ProductListScreen(
+          initialFilters: CatalogFilters(category: ProductCategory.shoes),
+        ),
+        api: routedApi({
+          'GET /products': (request) {
+            queries.add(request.url.queryParameters);
+            final q = request.url.queryParameters['q'];
+            return (
+              200,
+              q == null
+                  ? _page([_card('a', name: 'Sandale')])
+                  : {
+                      ..._page([_card('b', name: 'Sandale en cuir')]),
+                      'search': {'degraded': false},
+                    },
+            );
+          },
+        }),
+      );
+      expect(queries, hasLength(1));
+
+      await tester.enterText(find.byKey(const Key('listing-search')), 'san');
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.enterText(
+        find.byKey(const Key('listing-search')),
+        'sandale ',
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      // Nothing sent while typing.
+      expect(queries, hasLength(1));
+      await tester.pump(searchDebounce);
+      await tester.pumpAndSettle();
+      expect(queries, hasLength(2));
+      expect(queries.last, {'q': 'sandale', 'category': 'SHOES'});
+      expect(find.text('Sandale en cuir'), findsOneWidget);
+      expect(find.text('Résultats pour « sandale »'), findsOneWidget);
+      expect(find.byKey(const Key('search-degraded')), findsNothing);
+
+      // Relevance is offered only now.
+      await tester.tap(find.byKey(const Key('listing-sort')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('sort-relevance')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('sort-price_asc')));
+      await tester.pumpAndSettle();
+      expect(queries.last, {
+        'q': 'sandale',
+        'category': 'SHOES',
+        'sort': 'price_asc',
+      });
+
+      await tester.tap(find.byKey(const Key('listing-search-clear')));
+      await tester.pumpAndSettle();
+      expect(queries.last, {'category': 'SHOES', 'sort': 'price_asc'});
+    });
+
+    testWidgets(
+      'no result and a degraded search are explained, in Arabic too',
+      (tester) async {
+        await _pump(
+          tester,
+          const ProductListScreen(
+            initialFilters: CatalogFilters(search: 'xyz'),
+          ),
+          locale: const Locale('ar'),
+          api: routedApi({
+            'GET /products': (request) => (
+              200,
+              request.url.queryParameters.containsKey('q')
+                  ? {
+                      ..._page(const []),
+                      'search': {'degraded': true},
+                    }
+                  : _page([_card('a')]),
+            ),
+          }),
+        );
+        expect(find.text('لا توجد منتجات تطابق «xyz».'), findsOneWidget);
+        expect(find.byKey(const Key('search-degraded')), findsOneWidget);
+        expect(
+          Directionality.of(
+            tester.element(find.byKey(const Key('listing-search'))),
+          ),
+          TextDirection.rtl,
+        );
+        await tester.tap(find.byKey(const Key('search-empty-clear')));
+        await tester.pumpAndSettle();
+        expect(find.text('Robe'), findsOneWidget);
+        expect(find.byKey(const Key('listing-search-clear')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'the home search action opens the listing on the search field',
+      (tester) async {
+        await _pump(
+          tester,
+          const AppShell(),
+          api: _homeApi(),
+          repository: FakeAuthRepository(),
+        );
+        await tester.tap(find.byKey(const Key('home-search')));
+        await tester.pumpAndSettle();
+        final field = tester.widget<TextField>(
+          find.byKey(const Key('listing-search')),
+        );
+        expect(field.autofocus, isTrue);
+        expect(find.byType(ProductListScreen), findsOneWidget);
+      },
+    );
+  });
 }

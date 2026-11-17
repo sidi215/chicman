@@ -46,4 +46,6 @@ export async function resetDatabase(prisma: PrismaClient): Promise<void> {
   await prisma.shop.deleteMany();
   await prisma.userRole.deleteMany();
   await prisma.user.deleteMany();
+  // Filled by the search triggers (spec 18) as the rows above are deleted.
+  await prisma.searchIndexTask.deleteMany();
 }

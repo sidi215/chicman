@@ -254,4 +254,84 @@ void main() {
     expect(sellerTextDirection('42 ملحفة'), TextDirection.rtl);
     expect(sellerTextDirection('42'), isNull);
   });
+
+  group('search (spec 18)', () {
+    test('sends q with relevance as its default order', () {
+      const filters = CatalogFilters(search: 'robe soie');
+      expect(filters.sort, CatalogSort.relevance);
+      expect(filters.apiPath, '/products?q=robe+soie');
+      expect(
+        const CatalogFilters(search: 'robe', sort: CatalogSort.newest).apiPath,
+        '/products?q=robe&sort=newest',
+      );
+      expect(
+        const CatalogFilters(search: 'ملحفة').apiPath,
+        '/products?q=%D9%85%D9%84%D8%AD%D9%81%D8%A9',
+      );
+    });
+
+    test('offers relevance only with a search', () {
+      expect(
+        CatalogSort.optionsFor(null),
+        isNot(contains(CatalogSort.relevance)),
+      );
+      expect(CatalogSort.optionsFor('robe'), CatalogSort.values);
+    });
+
+    test('normalizes the text like the server', () {
+      expect(normalizeSearchText('  robe \n\t  soie '), 'robe soie');
+      expect(normalizeSearchText('\u200fملحفة\u200e'), 'ملحفة');
+    });
+
+    test('changes the search, keeps filters, returns to page 1', () {
+      const listing = CatalogFilters(
+        category: ProductCategory.shoes,
+        size: '40',
+        page: 3,
+      );
+      final searched = listing.withSearch('  sandales ');
+      expect(searched.search, 'sandales');
+      expect(searched.sort, CatalogSort.relevance);
+      expect(searched.page, 1);
+      expect(searched.size, '40');
+      expect(searched.category, ProductCategory.shoes);
+
+      // A chosen order stays; relevance goes with the search.
+      const byPrice = CatalogFilters(sort: CatalogSort.priceAsc);
+      expect(byPrice.withSearch('sandales').sort, CatalogSort.priceAsc);
+      final cleared = searched.withSearch('   ');
+      expect(cleared.search, isNull);
+      expect(cleared.sort, CatalogSort.newest);
+      // The same normalized text changes nothing.
+      expect(identical(searched.withSearch('sandales  '), searched), isTrue);
+    });
+
+    test('keeps the search when filters are cleared or pages change', () {
+      const filters = CatalogFilters(search: 'robe', size: 'M');
+      expect(filters.activeCount, 1);
+      expect(filters.cleared().search, 'robe');
+      expect(filters.cleared().size, isNull);
+      expect(filters.atPage(2).search, 'robe');
+      expect(filters.withCategory(ProductCategory.shoes).search, 'robe');
+    });
+
+    test('reads the degraded flag of a search response', () {
+      Map<String, Object?> page([Object? search]) => {
+        'products': const [],
+        'page': 1,
+        'pageSize': 20,
+        'total': 0,
+        'search': ?search,
+      };
+      expect(CatalogPage.fromJson(page()).searchDegraded, isFalse);
+      expect(
+        CatalogPage.fromJson(page({'degraded': false})).searchDegraded,
+        isFalse,
+      );
+      expect(
+        CatalogPage.fromJson(page({'degraded': true})).searchDegraded,
+        isTrue,
+      );
+    });
+  });
 }

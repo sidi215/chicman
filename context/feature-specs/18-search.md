@@ -48,17 +48,41 @@ Requirements:
 - Use appropriate debouncing in web and mobile search interfaces.
 - Do not create a second product catalog API or duplicate existing discovery facets.
 
+## Decisions (O8, confirmed by the project owner, 2026-11-14)
+
+- **Sold-out products (C8): kept indexed.** A published product at zero stock stays searchable and shows its unavailable state, as in the listings (spec 08). `availability=available` is honoured. A document is removed only when its product stops being public (`PUBLIC_PRODUCT_WHERE`: unpublished, archived, shop not approved, no active image).
+- **Fallback (Q16): a PostgreSQL match.** When Meilisearch is unavailable, the same request is answered by PostgreSQL: every word must appear (ignoring case) in the name, brand, description, or shop name, with the same filters, sorts, and pagination; relevance falls back to newest. The response says so (`search.degraded = true`) and clients show a notice.
+- **Production hosting: self-hosted Docker.** Meilisearch runs as a container on the API's VPS with a persistent volume, reachable only on the private network, `MEILI_ENV=production` and a master key of at least 16 bytes. The API uses a search-only key, the worker an admin key.
+
 ## Verification Checklist
 
-- [ ] Search returns relevant public products.
-- [ ] French and Arabic queries are supported.
-- [ ] Unpublished, archived, or otherwise ineligible products are excluded.
-- [ ] Product creation and updates synchronize with the search index.
-- [ ] Product archival or removal updates the index correctly.
-- [ ] Indexing failures can be retried and reconciled.
-- [ ] Search filters cannot bypass product visibility rules.
-- [ ] Pagination and sorting are validated.
-- [ ] Search service failure is handled safely.
-- [ ] PostgreSQL remains the source of truth.
-- [ ] Web and mobile search interfaces work in French and Arabic RTL.
-- [ ] API, web, and mobile tests cover the supported workflows.
+- [x] Search returns relevant public products.
+- [x] French and Arabic queries are supported.
+- [x] Unpublished, archived, or otherwise ineligible products are excluded.
+- [x] Product creation and updates synchronize with the search index.
+- [x] Product archival or removal updates the index correctly.
+- [x] Indexing failures can be retried and reconciled.
+- [x] Search filters cannot bypass product visibility rules.
+- [x] Pagination and sorting are validated.
+- [x] Search service failure is handled safely.
+- [x] PostgreSQL remains the source of truth.
+- [x] Web and mobile search interfaces work in French and Arabic RTL. (Web checked in a browser against the development API, which was answering from the fallback; Flutter by widget tests only.)
+- [x] API, web, and mobile tests cover the supported workflows.
+
+## Implementation Notes (2026-11-14)
+
+**Contract (`packages/shared/src/products/catalog.ts`).** No new route. `GET /products` gains `q` (normalized: NFKC, invisible marks removed, whitespace collapsed, trimmed; at most 100 characters; blank = no search) and the `relevance` sort (default with `q`, refused without it). `LISTING_SORTS` are the three spec 08 sorts. The response gains an optional `search: { degraded }`, present only for a search. `GET /products/facets` is unchanged.
+
+**Query path (`modules/products/catalog.service.ts`, `modules/search/product-index.ts`).** Meilisearch only chooses and orders product IDs for the requested page (`attributesToRetrieve: ["id"]`). Each ID is re-read from PostgreSQL with `catalogWhere` (public visibility and every filter), and the cards come from PostgreSQL, so a stale document can never show a hidden product or an old price; a stale hit can make a page shorter until the worker catches up. The index filter is built only from parsed fields, with values quoted and escaped (`searchFilter`). `total` is Meilisearch's exact count (capped by `maxTotalHits` = 5000). After any engine failure, `ProductSearch` answers from PostgreSQL for 30 s (one log line with the error code, never the query).
+
+**Document (`modules/search/search-document.ts`).** Public fields only: ID, name, description, brand, category, French and Arabic category words, shop name, price in hundredths (integer), publication time, availability, lower-cased variant keys (size, color, size+color pair; any stock and in stock). Only `id` is displayed. Arabic: Meilisearch folds alef forms, teh marbuta, diacritics, and tatweel; it does not strip the article, so the article and its attached forms (`ال`, `وال`, `بال`, `فال`, `كال`, `لل`) are removed into extra searchable fields (`nameForms`, `descriptionForms`) and from the query, so both sides meet on the bare word. Ranking: `sort` first (explicit orders are exact, with every word required), then the text rules.
+
+**Synchronization (migration `20261114120000_search_index`).** Database triggers on `Product`, `ProductVariant`, `ProductImage`, and `Shop` (status or name) write `SearchIndexTask` rows in the transaction of the change, so every write path is covered (seller routes, checkout and order stock, shop decisions, scripts). The worker's **search indexing** job (every 10 s, lock `chicman:search-indexing`, the only writer of documents) reads batches of 200, re-reads them through `PUBLIC_PRODUCT_WHERE`, replaces or deletes the documents, waits for Meilisearch to apply them, and deletes each task only if its `version` is unchanged. A failed batch is retried after 10 s, doubled per attempt up to an hour, with its error code stored. **Search reconciliation** (at start and every 6 h, lock `chicman:search-reconciliation`) re-applies the index settings and queues every public product and every indexed document whose product is not public. `pnpm --filter @chicman/api search:reindex` does both now (`--status` shows the queue).
+
+**Configuration.** `MEILI_URL`, `MEILI_API_KEY`, `MEILI_PRODUCTS_INDEX` (default `products`), `MEILI_TIMEOUT_MS` (default 1500). Required in production; without them, development searches use the fallback and the worker leaves changes queued. The Compose `worker` uses the `meilisearch` service.
+
+**Clients.** Web: a search box in the storefront header (on `/products` it updates the URL 350 ms after typing stops, keeping filters; elsewhere it submits to `/products?q=`), relevance in the sort list only during a search, a search heading, a degraded notice, a no-results state with "clear search", and `noindex` for search pages (the canonical URL drops `q`). Flutter: a search field on the listing (350 ms debounce), a search action on the home, the same states, French and Arabic.
+
+**Not done here.** Suggestions (autocomplete) are not built: the spec makes them optional. Facets are not narrowed by the search text.
+
+**Tests.** API 710 (search: contract, document, filters, client errors, cooldown, triggers, retries, version check, reconciliation, re-check, fallback including `%`/`_`, real Meilisearch French/Arabic/filters/sorts/pagination with `TEST_MEILI_URL`, and an end-to-end run). Web 291. Flutter 270.

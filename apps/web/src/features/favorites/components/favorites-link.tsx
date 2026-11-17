@@ -19,7 +19,7 @@ export function FavoritesLink() {
   const { count } = useFavorites()
   return (
     <Link
-      href="/favorites"
+      href="/account/favorites"
       aria-label={count > 0 ? t.linkWithCount.replace("{count}", String(count)) : t.link}
       className={buttonVariants({ variant: "outline", size: "icon-sm", className: "relative" })}
     >

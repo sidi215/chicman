@@ -12,6 +12,7 @@ import {
   catalogApiPath,
   changeCategory,
   changeFilters,
+  changeSearch,
   clearFilters,
   facetsApiPath,
   filtersFromParams,
@@ -20,6 +21,7 @@ import {
   NO_FILTERS,
   pageCount,
   parsePriceRange,
+  sortOptions,
 } from "./catalog-query"
 import { STOREFRONT_MESSAGES } from "./messages"
 import { isMissingProduct, isProductId, productToCheck } from "./product-check"
@@ -33,6 +35,7 @@ describe("listing URL state", () => {
     const url = "category=SHOES&minPrice=10.00&maxPrice=20.50&availability=available&size=M&color=Noir&sort=price_desc&page=3"
     const filters = filtersFromParams(params(url))
     assert.deepEqual(filters, {
+      search: null,
       category: "SHOES",
       minPrice: "10.00",
       maxPrice: "20.50",
@@ -347,5 +350,62 @@ describe("search engine files", () => {
   it("lists categories without filters or sorting", () => {
     assert.deepEqual(sitemapStaticPaths().slice(0, 3), ["/", "/products", "/products?category=CLOTHING"])
     assert.ok(sitemapStaticPaths().every((path) => !path.includes("sort") && !path.includes("page")))
+  })
+})
+
+describe("search state (spec 18)", () => {
+  it("reads and writes the search as `q`, normalized, with relevance as its default order", () => {
+    const filters = filtersFromParams(params("q=%20%20robe%20%20%20soie%20&category=CLOTHING"))
+    assert.equal(filters.search, "robe soie")
+    assert.equal(filters.sort, "relevance")
+    assert.equal(listingHref(filters), "/products?q=robe+soie&category=CLOTHING")
+    assert.equal(catalogApiPath(filters), "/products?q=robe+soie&category=CLOTHING")
+    assert.equal(filtersFromParams(params("q=%D9%85%D9%84%D8%AD%D9%81%D8%A9")).search, "ملحفة")
+  })
+
+  it("ignores a blank or too long search and relevance without a search", () => {
+    assert.equal(filtersFromParams(params("q=%20%20")).search, null)
+    assert.equal(filtersFromParams(params(`q=${"a".repeat(101)}`)).search, null)
+    assert.equal(filtersFromParams(params("sort=relevance")).sort, "newest")
+    assert.equal(filtersFromParams(params("q=robe&sort=newest")).sort, "newest")
+    assert.equal(listingHref(filtersFromParams(params("q=robe&sort=newest"))), "/products?q=robe&sort=newest")
+  })
+
+  it("offers relevance only with a search", () => {
+    assert.deepEqual(sortOptions(null), ["newest", "price_asc", "price_desc"])
+    assert.deepEqual(sortOptions("robe"), ["relevance", "newest", "price_asc", "price_desc"])
+  })
+
+  it("changes the search: keeps filters, returns to page 1, follows the default order", () => {
+    const listing = { ...NO_FILTERS, category: "SHOES" as const, size: "40", page: 3 }
+    const searched = changeSearch(listing, "  sandales ")
+    assert.deepEqual(searched, { ...listing, search: "sandales", sort: "relevance", page: 1 })
+    // A chosen order stays; relevance goes with the search.
+    const byPrice = changeSearch({ ...listing, sort: "price_asc" }, "sandales")
+    assert.equal(byPrice?.sort, "price_asc")
+    const cleared = changeSearch({ ...listing, search: "sandales", sort: "relevance" }, "")
+    assert.deepEqual(cleared, { ...listing, search: null, sort: "newest", page: 1 })
+    // The same normalized text changes nothing; a too long text is refused.
+    const same = { ...listing, search: "sandales", sort: "relevance" as const }
+    assert.equal(changeSearch(same, "sandales  "), same)
+    assert.equal(changeSearch(listing, "a".repeat(101)), null)
+  })
+
+  it("keeps the search when the filters are cleared, and leaves it out of the filter count", () => {
+    const filters = { ...NO_FILTERS, search: "robe", sort: "relevance" as const, size: "M" }
+    assert.equal(activeFilterCount(filters), 1)
+    assert.deepEqual(clearFilters(filters), { ...NO_FILTERS, search: "robe", sort: "relevance" })
+  })
+
+  it("drops the search from the canonical listing URL", () => {
+    assert.equal(canonicalListingHref({ ...NO_FILTERS, search: "robe", sort: "relevance", category: "SHOES" }), "/products?category=SHOES")
+  })
+
+  it("has every search text in both languages", () => {
+    for (const locale of ["fr", "ar"] as const) {
+      const t = STOREFRONT_MESSAGES[locale]
+      assert.ok(t.searchHeading.includes("{query}") && t.emptySearch.includes("{query}"))
+      assert.ok(t.sorts.relevance && t.searchDegraded && t.searchPlaceholder && t.searchClear && t.searchLabel && t.emptySearchHint)
+    }
   })
 })
