@@ -137,7 +137,17 @@ class ProductCard extends StatelessWidget {
                     style: textTheme.titleSmall,
                   ),
                   const SizedBox(height: AppSpacing.s1),
-                  Text(t.price(product.price), style: textTheme.titleSmall),
+                  // One line, as the grid's height expects: a long price
+                  // shrinks instead of wrapping out of the card.
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      t.price(product.price),
+                      maxLines: 1,
+                      style: textTheme.titleSmall,
+                    ),
+                  ),
                   const SizedBox(height: AppSpacing.s1),
                   Text(
                     product.shopName,

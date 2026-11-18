@@ -292,7 +292,14 @@ class _ItemRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.s2),
-          Text(t.price(lineTotal), style: theme.textTheme.titleSmall),
+          // May wrap on a narrow screen with large text instead of overflowing.
+          Flexible(
+            child: Text(
+              t.price(lineTotal),
+              textAlign: TextAlign.end,
+              style: theme.textTheme.titleSmall,
+            ),
+          ),
         ],
       ),
     );

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/widgets/brand_wordmark.dart';
+import '../../buyer/presentation/account_drawer.dart';
 import '../../cart/presentation/cart_widgets.dart';
 import '../../notifications/presentation/notifications_screen.dart';
 import '../application/catalog_providers.dart';
@@ -35,6 +36,7 @@ class StorefrontHomeScreen extends ConsumerWidget {
     final t = CatalogMessages.of(context);
     final sections = ref.watch(homeSectionsProvider);
     return Scaffold(
+      drawer: const AccountDrawer(),
       appBar: AppBar(
         title: BrandWordmark(semanticLabel: t.brand),
         centerTitle: false,

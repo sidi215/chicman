@@ -6,6 +6,7 @@ import 'app_shell.dart';
 import 'core/auth/email_link_listener.dart';
 import 'core/auth/supabase_init.dart';
 import 'core/config/app_config.dart';
+import 'core/config/configuration_error_app.dart';
 import 'core/locale/app_locale_controller.dart';
 import 'core/storage/shared_preferences_provider.dart';
 import 'core/theme/app_theme.dart';
@@ -18,6 +19,16 @@ Future<void> main() async {
   // Never blocks startup: falls back to `null` (System theme, no persistence).
   final prefs = await loadSharedPreferences();
   final config = AppConfig.fromEnvironment();
+  // An unusable build value stops here, with a clear message, before any
+  // service or widget reads it.
+  final problems = config.problems;
+  if (problems.isNotEmpty) {
+    for (final problem in problems) {
+      debugPrint('Invalid configuration: $problem');
+    }
+    runApp(ConfigurationErrorApp(problems: problems));
+    return;
+  }
   // Restores the persisted session; never blocks startup either.
   final auth = await initSupabaseAuth(config);
   runApp(

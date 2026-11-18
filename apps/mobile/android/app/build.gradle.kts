@@ -17,9 +17,19 @@ val dartDefines: Map<String, String> =
         ?.mapNotNull { entry -> entry.split("=", limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }
         ?.toMap()
         ?: emptyMap()
+// A malformed SITE_URL (for example "htt://localhost:3000") stops the build
+// here with a clear message instead of producing an app that fails at runtime.
+val siteUrlHost: String? =
+    dartDefines["SITE_URL"]?.takeIf { it.isNotBlank() }?.let { value ->
+        val uri = runCatching { URI(value.trim()) }.getOrNull()
+        if (uri == null || (uri.scheme != "http" && uri.scheme != "https") || uri.host.isNullOrEmpty()) {
+            throw GradleException("SITE_URL must be an http(s) URL with a host, got \"$value\"")
+        }
+        uri.host
+    }
 val appLinkHost: String =
     (project.findProperty("chicman.appLinkHost") as String?)
-        ?: dartDefines["SITE_URL"]?.let { runCatching { URI(it).host }.getOrNull() }
+        ?: siteUrlHost
         ?: "app-links.invalid"
 
 android {

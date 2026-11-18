@@ -28,7 +28,7 @@
 
 - `apps/web/` — Next.js application responsible for the customer storefront, seller dashboard, and administrator dashboard. All routes live under `app/[locale]/`, and `src/proxy.ts` maps public URLs onto them (see Web Localization).
 
-- **Buyer dashboard (web):** `/account/*` uses `BuyerShell` (`features/buyer/`), the same header and side navigation as `/seller` and `/admin`, around the existing buyer pages: overview, orders, favorites (`/account/favorites`), addresses, notifications (`/account/notifications`), and profile. `/favorites` and `/notifications` redirect there. Account setup and a non-buyer's profile page render without the shell. Flutter shows the same overview as the buyer's account tab.
+- **Buyer dashboard (web):** `/account/*` uses `BuyerShell` (`features/buyer/`), the same header and side navigation as `/seller` and `/admin`, around the existing buyer pages: overview, orders, favorites (`/account/favorites`), addresses, notifications (`/account/notifications`), and profile. `/favorites` and `/notifications` redirect there. Account setup and a non-buyer's profile page render without the shell. Flutter shows the same overview as the buyer's account tab, and the account options in a slide-out drawer (`AccountDrawer`) on its main tabs.
 
 - `apps/mobile/` — Flutter application for buyers only (AT-1, Q5; formerly "customer and seller experiences"): a Seller or Administrator account sees a "managed on the web" screen. It opens on the public storefront; the account is a dock destination (`lib/app_shell.dart`). Seller product management on mobile is a future feature that reuses the existing `/api/v1/sellers/me/products` routes.
 

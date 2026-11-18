@@ -237,5 +237,17 @@ final accountTabRequestProvider = NotifierProvider<AccountTabRequest, int>(
 );
 
 /// Incoming links (App Links / Universal Links). Overridden in `main()` and
-/// in tests; `null` disables link handling.
+/// in tests; `null` disables link handling. The source may be a
+/// single-subscription stream (`appLinkStream` is): read [appLinksProvider].
 final incomingLinksProvider = Provider<Stream<Uri>?>((ref) => null);
+
+/// [incomingLinksProvider] as one shared broadcast stream, created once.
+/// `AuthGate` is mounted again whenever the shell switches between the buyer
+/// dock and the "managed on the web" screen; each new gate subscribes again,
+/// which a single-subscription stream refuses ("Stream has already been
+/// listened to"), even after the previous subscription was cancelled. The
+/// source is listened to once, from the first gate on, so the launch link is
+/// delivered once and later gates receive the links that follow.
+final appLinksProvider = Provider<Stream<Uri>?>(
+  (ref) => ref.watch(incomingLinksProvider)?.asBroadcastStream(),
+);

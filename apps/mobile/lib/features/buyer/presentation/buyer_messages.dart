@@ -37,6 +37,14 @@ class BuyerMessages {
   String get addresses => _('addresses');
   String get notifications => _('notifications');
   String get profile => _('profile');
+  String get cart => _('cart');
+  String get profileAndPreferences => _('profileAndPreferences');
+  String get groupShopping => _('groupShopping');
+  String get groupAccount => _('groupAccount');
+  String get menu => _('menu');
+  String get guestTitle => _('guestTitle');
+  String get guestBody => _('guestBody');
+  String get signIn => _('signIn');
   String get noPhone => _('noPhone');
 
   static const _fr = BuyerMessages._({
@@ -65,6 +73,15 @@ class BuyerMessages {
     'addresses': 'Mes adresses',
     'notifications': 'Notifications',
     'profile': 'Profil',
+    'cart': 'Panier',
+    'profileAndPreferences': 'Profil et préférences',
+    'groupShopping': 'Mes achats',
+    'groupAccount': 'Mon compte',
+    'menu': 'Menu du compte',
+    'guestTitle': 'Invité',
+    'guestBody':
+        'Connectez-vous pour suivre vos commandes, vos favoris et vos adresses.',
+    'signIn': 'Se connecter ou créer un compte',
     'noPhone': 'Non renseigné',
   });
 
@@ -93,6 +110,14 @@ class BuyerMessages {
     'addresses': 'عناويني',
     'notifications': 'الإشعارات',
     'profile': 'الملف الشخصي',
+    'cart': 'السلة',
+    'profileAndPreferences': 'الملف الشخصي والتفضيلات',
+    'groupShopping': 'مشترياتي',
+    'groupAccount': 'حسابي',
+    'menu': 'قائمة الحساب',
+    'guestTitle': 'زائر',
+    'guestBody': 'سجّل الدخول لمتابعة طلباتك ومفضلتك وعناوينك.',
+    'signIn': 'تسجيل الدخول أو إنشاء حساب',
     'noPhone': 'غير محدد',
   });
 }

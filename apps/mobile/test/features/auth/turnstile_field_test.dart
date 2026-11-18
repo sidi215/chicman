@@ -312,6 +312,41 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a malformed SITE_URL (htt://) never crashes the screen and fails closed',
+    (tester) async {
+      // Regression: "Origin is only applicable to schemes http and https"
+      // was thrown from didChangeDependencies on an Android device. `main`
+      // now stops such a build at startup; the field still fails closed.
+      final (challenge, repository) = await _openLogin(
+        tester,
+        config: const AppConfig(
+          supabaseUrl: 'https://p.supabase.co',
+          supabasePublishableKey: 'k',
+          apiBaseUrl: 'http://api.test',
+          siteUrl: 'htt://localhost:3000',
+          turnstileSiteKey: '0xPUBLIC',
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      expect(challenge.args, isNull);
+      expect(find.byKey(const Key('turnstile-not-configured')), findsOneWidget);
+      await _submit(tester);
+      expect(repository.calls, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'the device configuration (SITE_URL=http://localhost:3000) starts the challenge',
+    (tester) async {
+      final (challenge, _) = await _openLogin(tester);
+      expect(tester.takeException(), isNull);
+      expect(challenge.args?.baseUrl, 'http://localhost:3000/');
+      expect(challenge.args?.document, contains('0xPUBLIC'));
+      expect(find.byKey(const Key('turnstile-not-configured')), findsNothing);
+    },
+  );
+
   testWidgets('without a site key there is no challenge (development only)', (
     tester,
   ) async {

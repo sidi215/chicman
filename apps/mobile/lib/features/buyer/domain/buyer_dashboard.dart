@@ -1,3 +1,5 @@
+import 'package:flutter/widgets.dart' show StringCharacters;
+
 import '../../addresses/domain/address.dart';
 import '../../orders/domain/orders.dart';
 
@@ -41,3 +43,20 @@ String? greetingName(String? fullName) {
   final parts = (fullName ?? '').trim().split(RegExp(r'\s+'));
   return parts.first.isEmpty ? null : parts.first;
 }
+
+/// Up to two initials for the account avatar (first and last name), or null
+/// without a name. Works for Arabic names too (first letter of each part).
+String? initialsOf(String? fullName) {
+  final parts = (fullName ?? '')
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) return null;
+  final first = parts.first.characters.first;
+  final last = parts.length > 1 ? parts.last.characters.first : '';
+  return '$first$last'.toUpperCase();
+}
+
+/// A count as shown on a menu badge: `99+` beyond 99.
+String countBadge(int count) => count > 99 ? '99+' : '$count';

@@ -66,6 +66,24 @@ Details: `feature-specs/03-authentication.md` (Verification Status) and `feature
 
 ## Completed Work
 
+### Mobile: Chicman app icon (2026-11-18)
+
+- The Flutter default icon is replaced by the Chicman wordmark (black on white), the only brand master (`packages/design-tokens/brand/chicman-wordmark.png`): Android legacy icons, an adaptive icon (Android 8+, wordmark inside the safe zone) with a monochrome layer for Android 13 themed icons, the iOS app icon set, and the Flutter web icons. Regenerate with `python3 tool/make_app_icons.py .` (Pillow). A debug APK builds with the new resources. A square logo mark does not exist yet; if one is made, rerun the script with it.
+
+### Mobile buyer: account drawer and large-text layout fixes (2026-11-18)
+
+- **Account drawer** (`features/buyer/presentation/account_drawer.dart`): a slide-out Material drawer on the three main tabs (Accueil, Favoris, account), opened by the app bar's menu button; from the right in Arabic. Header: avatar with initials (person icon without a name), name, email. "Mes achats": Mes commandes, Mes favoris, Panier; "Mon compte": Mes adresses, Notifications, Profil et préférences; then Se déconnecter (the existing sign-out). Live counts from the cart, favorites, and notifications providers. Every entry opens the existing screen, which keeps its back button; guests get an "Invité" header and a sign-in button that opens the account tab. Pushed screens (for example favorites opened from the drawer) have no drawer.
+- **Dashboard:** the duplicated "Mon compte" section list was removed (approved); greeting, tiles, recent orders, and sign-out stay. The unverified contact phone (spec 04) moved under the greeting.
+- **Layout defects fixed** (found by running the suite at Android's 1.3× and 2.0× font sizes, and at 320 px): dashboard tiles (fixed aspect ratio → rows as tall as their content), the recent-orders header (now wraps), the product card price (one line, scales down), the checkout line total, the order amount rows, the listing's page buttons, and, found by the new regression tests, the order item line total and the recent order total. No business logic, API, or authentication change.
+- **Verified:** Flutter 307 tests (drawer: header, groups, live counts, each destination, sign-out, guest, Arabic RTL, 320 px at 1.3×/2.0×; regression tests for every overflow at 320 px and 1.3×/2.0×), `flutter analyze` clean; full-suite sweeps at 1.3× and 2.0× report zero overflows (seven tests fail only at 2.0× because their fixed test viewports no longer contain the widgets they tap). **Not verified on a device:** no Android device was connected.
+
+### Mobile: malformed configuration URL crash (2026-11-18)
+
+- **Cause:** the app was run with `--dart-define=SITE_URL=htt://localhost:3000` (a typo at the command line; no file in the repository, `apps/mobile/.env`, or the IDE configurations holds it). Nothing validated the scheme, and `AppConfig.turnstileBaseUrl` called `Uri.origin`, which throws for a non-http(s) scheme, inside `TurnstileField.didChangeDependencies`.
+- **Fix:** `AppConfig.isHttpUrl` and `AppConfig.problems` (`SUPABASE_URL`, `API_BASE_URL`, `SITE_URL`); `main` shows `ConfigurationErrorApp` (French/Arabic) before starting anything when a value is unusable; the derived getters (`turnstileBaseUrl`, `authCallbackUrl`, `appLinkHost`) never throw and Turnstile still fails closed; the Android Gradle build refuses a malformed `SITE_URL`. Turnstile, Supabase behavior, and secrets unchanged.
+- **Follow-up, same day: "Stream has already been listened to" in `AuthGate.initState`.** App links come from a single-subscription stream (`appLinkStream`), and `AppShell` mounts a new `AuthGate` when it switches between the "managed on the web" screen and the buyer dock (for example on signing out of a Seller account). Gates now read `appLinksProvider`, one shared broadcast view of the source, so the launch link is still delivered once and later gates keep receiving links. Regression test reproduces the exact error without the fix. Flutter 290 tests, analyze clean.
+- **Verified:** Flutter 289 tests (config validation, the expected device configuration, the error screen in both languages, the login screen with a malformed and a valid `SITE_URL`), `flutter analyze`, Gradle evaluation with a bad and a good `SITE_URL`. **Pending:** rerun on the phone with `SITE_URL=http://localhost:3000`.
+
 ### Buyer dashboard — web and mobile (2026-11-17)
 
 - **Scope (project owner):** a dedicated buyer dashboard in the seller and administrator dashboards' design language; presentation only, reusing the existing pages, routes, APIs, and providers. Decisions: favorites and notifications move into the dashboard (`/account/favorites`, `/account/notifications`; `/favorites` and `/notifications` answer `308` to them, and the header heart and bell point there); the overview shows summary tiles; web and Flutter.

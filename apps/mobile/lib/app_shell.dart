@@ -69,7 +69,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         index: _index,
         children: [
           const StorefrontHomeScreen(),
-          FavoritesScreen(visible: _index == _favorites),
+          FavoritesScreen(visible: _index == _favorites, accountMenu: true),
           AuthGate(visible: _index == _account),
         ],
       ),

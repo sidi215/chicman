@@ -325,13 +325,16 @@ class _Results extends ConsumerWidget {
               const SizedBox(height: AppSpacing.s4),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                // Buttons may shrink and wrap with large system text.
                 children: [
-                  OutlinedButton(
-                    key: const Key('page-previous'),
-                    onPressed: page.page > 1
-                        ? () => onChange(filters.atPage(page.page - 1))
-                        : null,
-                    child: Text(t.previousPage),
+                  Flexible(
+                    child: OutlinedButton(
+                      key: const Key('page-previous'),
+                      onPressed: page.page > 1
+                          ? () => onChange(filters.atPage(page.page - 1))
+                          : null,
+                      child: Text(t.previousPage, textAlign: TextAlign.center),
+                    ),
                   ),
                   Flexible(
                     child: Text(
@@ -340,12 +343,14 @@ class _Results extends ConsumerWidget {
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
-                  OutlinedButton(
-                    key: const Key('page-next'),
-                    onPressed: page.page < page.pageCount
-                        ? () => onChange(filters.atPage(page.page + 1))
-                        : null,
-                    child: Text(t.nextPage),
+                  Flexible(
+                    child: OutlinedButton(
+                      key: const Key('page-next'),
+                      onPressed: page.page < page.pageCount
+                          ? () => onChange(filters.atPage(page.page + 1))
+                          : null,
+                      child: Text(t.nextPage, textAlign: TextAlign.center),
+                    ),
                   ),
                 ],
               ),

@@ -81,8 +81,9 @@ Future<void> _pump(
   AuthRepository? repository,
   Locale? locale,
   Stream<Uri>? links,
+  Size size = const Size(500, 1600),
 }) async {
-  await tester.binding.setSurfaceSize(const Size(500, 1600));
+  await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     ProviderScope(
@@ -487,6 +488,39 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Voile léger.'), findsOneWidget);
     });
+  });
+
+  group('large text (Android font size)', () {
+    for (final scale in [1.3, 2.0]) {
+      testWidgets('a listing fits a 320 px phone at ${scale}x text', (
+        tester,
+      ) async {
+        // Regression: a long price wrapped out of its card, and the page
+        // buttons overflowed their row.
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await _pump(
+          tester,
+          const ProductListScreen(initialFilters: CatalogFilters()),
+          size: const Size(320, 4000),
+          api: routedApi({
+            'GET /products': (_) => (
+              200,
+              _page([
+                _card(
+                  'a',
+                  name: 'Melhfa brodée à la main en voile de coton premium',
+                  price: '9999999999.99',
+                ),
+                _card('b', price: '125000.50', available: false),
+              ], total: 45),
+            ),
+          }),
+        );
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const Key('page-next')), findsOneWidget);
+      });
+    }
   });
 
   group('search (spec 18)', () {

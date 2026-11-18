@@ -33,7 +33,7 @@ class _AuthGateState extends ConsumerState<AuthGate> {
   @override
   void initState() {
     super.initState();
-    final links = ref.read(incomingLinksProvider);
+    final links = ref.read(appLinksProvider);
     final host = ref.read(appConfigProvider).appLinkHost;
     _links = links?.listen((uri) {
       final incoming = parseIncomingLink(uri, host: host);
