@@ -1,0 +1,41 @@
+# Production image of the Chicman API (apps/api): the API, the background
+# worker, and the operator commands (migrations, storage setup, reindex).
+# Build context: the repository root. Built by Render (render.yaml), which runs
+# `node scripts/start-api-and-worker.mjs` (migrations, then API + worker).
+#   docker build -f apps/api/Dockerfile.prod -t chicman-api:prod .
+#
+# The development image (apps/api/Dockerfile) runs TypeScript through tsx;
+# this one compiles once and runs plain Node with NODE_ENV=production, so the
+# API refuses to start without Redis, S3 storage, and a search engine setting
+# (MEILI_URL, or SEARCH_ENGINE=postgres) (config/env.ts).
+# No env file enters the image (/.dockerignore): configuration comes from the platform.
+FROM node:22.22.1-alpine3.23 AS base
+ENV PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH \
+    COREPACK_HOME=/opt/corepack \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+    TZ=UTC
+RUN corepack enable && corepack prepare pnpm@10.27.0 --activate && chmod -R a+rX /opt/corepack
+WORKDIR /app
+
+FROM base AS build
+# Dependency layer: only the manifests the API needs.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json apps/api/package.json
+COPY packages/shared/package.json packages/shared/package.json
+RUN pnpm install --frozen-lockfile --filter @chicman/api...
+COPY packages/shared packages/shared
+COPY apps/api apps/api
+# `build` = prisma generate + tsc → apps/api/dist (server.js, workers/index.js).
+RUN pnpm --filter @chicman/shared build && pnpm --filter @chicman/api build
+
+FROM base AS runtime
+ENV NODE_ENV=production
+# Development dependencies stay: the operator commands use the Prisma CLI
+# (`db:deploy`) and tsx (`storage:setup`, `search:reindex`).
+COPY --from=build --chown=node:node /app /app
+USER node
+WORKDIR /app/apps/api
+EXPOSE 4000
+# The worker service overrides this with `node dist/workers/index.js`.
+CMD ["node", "dist/server.js"]

@@ -32,12 +32,25 @@ import {
   type ProductOutcome,
 } from "../product-form"
 import { ProductFields, STATUS_VARIANT, useProductApi, type Notice } from "./product-shared"
+import { ModerationBadge, SellerModerationPanel } from "@/features/moderation/components/seller-moderation"
+import { useModerationMessages } from "@/features/moderation/messages"
+import { sellerModerationRules } from "@/features/moderation/moderation"
 
 type View = { state: "loading" } | { state: "ready"; product: SellerProductDetail } | { state: "failed"; failure: ProductFailure }
 type Mutate = (path: string, method: string, body?: unknown) => Promise<ProductOutcome<SellerProductDetail>>
 
 /** Failures after which the screen may be out of date. */
-const RELOAD_AFTER: readonly ProductFailure[] = ["status-conflict", "archived", "stock-conflict", "stock-managed-by-variants", "last-image"]
+const RELOAD_AFTER: readonly ProductFailure[] = [
+  "status-conflict",
+  "archived",
+  "stock-conflict",
+  "stock-managed-by-variants",
+  "last-image",
+  // Spec 19: the moderation state changed under the seller.
+  "under-review",
+  "removed",
+  "moderation-conflict",
+]
 
 /** Seller view of one product: details, editing, images, stock, variants, publication. */
 export function ProductDetailScreen({ productId }: { productId: string }) {
@@ -96,8 +109,18 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
       ) : null}
       {view.state === "ready" ? (
         <>
+          <SellerModerationPanel product={view.product} onChanged={load} />
           <Summary t={t} product={view.product} mutate={mutate} />
-          {view.product.status === "ARCHIVED" ? <ArchivedImages t={t} product={view.product} /> : (
+          {sellerModerationRules(view.product).readOnly ? (
+            // Removed by Chicman (spec 19): read-only, like an archived product.
+            <ArchivedImages t={t} product={view.product} />
+          ) : sellerModerationRules(view.product).stockOnly ? (
+            // Under review (PD-5): only stock can change.
+            <>
+              <ArchivedImages t={t} product={view.product} />
+              {view.product.variantCount === 0 ? <ProductStockSection t={t} product={view.product} mutate={mutate} /> : <VariantStockSection t={t} product={view.product} mutate={mutate} />}
+            </>
+          ) : view.product.status === "ARCHIVED" ? <ArchivedImages t={t} product={view.product} /> : (
             <>
               <EditForm t={t} product={view.product} mutate={mutate} />
               <ImagesSection
@@ -114,7 +137,9 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
               <VariantsSection t={t} product={view.product} mutate={mutate} />
             </>
           )}
-          {view.product.status === "ARCHIVED" && view.product.variants.length > 0 ? <ArchivedVariants t={t} variants={view.product.variants} /> : null}
+          {(view.product.status === "ARCHIVED" || sellerModerationRules(view.product).readOnly) && view.product.variants.length > 0 ? (
+            <ArchivedVariants t={t} variants={view.product.variants} />
+          ) : null}
         </>
       ) : null}
       <TextLink href="/seller/products">{t.backToList}</TextLink>
@@ -124,6 +149,8 @@ export function ProductDetailScreen({ productId }: { productId: string }) {
 
 function Summary({ t, product, mutate }: { t: ProductMessages; product: SellerProductDetail; mutate: Mutate }) {
   const locale = useLocale()
+  const moderationText = useModerationMessages()
+  const moderation = sellerModerationRules(product)
   const [notice, setNotice] = useState<Notice>(null)
   const [pending, setPending] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -144,6 +171,7 @@ function Summary({ t, product, mutate }: { t: ProductMessages; product: SellerPr
     <SectionCard title={product.name} description={t.statusHelp[product.status]}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={STATUS_VARIANT[product.status]}>{t.status[product.status]}</Badge>
+        <ModerationBadge status={product.moderation.status} />
         <Badge variant={product.available ? "outline" : "destructive"}>{product.available ? t.available : t.unavailable}</Badge>
         <Badge variant="outline">{t.categories[product.category]}</Badge>
       </div>
@@ -177,7 +205,9 @@ function Summary({ t, product, mutate }: { t: ProductMessages; product: SellerPr
       {actions.showZeroStockPublishNote ? <FormMessage tone="info">{t.publishZeroStockNote}</FormMessage> : null}
       {actions.showOutOfStockNote ? <p className="type-body-medium text-warning-text">{t.outOfStockNote}</p> : null}
       {notice ? <FormMessage tone={notice.tone}>{notice.text}</FormMessage> : null}
-      {actions.canRestore ? (
+      {moderation.readOnly || moderation.stockOnly ? (
+        <p className="type-body-medium text-muted-foreground">{moderation.readOnly ? moderationText.seller.lockedRemoved : moderationText.seller.lockedInReview}</p>
+      ) : actions.canRestore ? (
         <div className="flex flex-col gap-2">
           <p className="type-body-small text-muted-foreground">{t.restoreHint}</p>
           <Button className="self-start" disabled={pending} onClick={() => void act("/restore", t.restored)}>
@@ -571,6 +601,22 @@ function VariantsSection({ t, product, mutate }: { t: ProductMessages; product: 
           {t.addVariant}
         </Button>
       </form>
+    </SectionCard>
+  )
+}
+
+/** Variant stock while the product is under review (spec 19, PD-5): stock only. */
+function VariantStockSection({ t, product, mutate }: { t: ProductMessages; product: SellerProductDetail; mutate: Mutate }) {
+  return (
+    <SectionCard title={t.variantsTitle} description={t.stockVariantsHint}>
+      <ul className="flex flex-col gap-3">
+        {product.variants.map((variant) => (
+          <li key={variant.id} className="flex flex-col gap-2 rounded-2xl border border-border p-4">
+            <span className="type-label-large">{[variant.size, variant.color].filter((value) => value !== null).join(" · ")}</span>
+            <StockEditor t={t} stock={variant.stock} label={t.stockQuantity} onSave={(body) => mutate(`/variants/${variant.id}/stock`, "PUT", body)} />
+          </li>
+        ))}
+      </ul>
     </SectionCard>
   )
 }

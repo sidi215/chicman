@@ -31,6 +31,7 @@ import {
   toProductSummary,
   type MediaUrl,
 } from "./product-views.js";
+import { sellerModerationOf } from "./product-moderation.js";
 
 const statusConflict = (): HttpError => new HttpError(409, PRODUCT_ERROR_CODES.statusConflict);
 const variantNotFound = (): HttpError => notFound(PRODUCT_ERROR_CODES.variantNotFound);
@@ -72,7 +73,11 @@ export class ProductService {
   }
 
   async list(seller: ProductSeller, query: ProductListQuery): Promise<SellerProductListResponse> {
-    const where: Prisma.ProductWhereInput = { shopId: seller.shopId, ...(query.status === undefined ? {} : { status: query.status }) };
+    const where: Prisma.ProductWhereInput = {
+      shopId: seller.shopId,
+      ...(query.status === undefined ? {} : { status: query.status }),
+      ...(query.moderationStatus === undefined ? {} : { moderationStatus: query.moderationStatus }),
+    };
     const [products, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
@@ -83,8 +88,9 @@ export class ProductService {
       }),
       this.prisma.product.count({ where }),
     ]);
+    const moderation = await sellerModerationOf(this.prisma, products);
     return {
-      products: products.map((product) => toProductSummary(product, this.mediaUrl)),
+      products: products.map((product) => toProductSummary(product, this.mediaUrl, moderation.get(product.id))),
       page: query.page,
       pageSize: query.pageSize,
       total,

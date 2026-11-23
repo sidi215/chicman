@@ -310,6 +310,10 @@ describe("product management (spec 07, PostgreSQL)", { skip: databaseUrl === und
       );
       assert.equal(new Set(detail.variants.map((v) => v.id)).size, 3);
       assert.equal(detail.stock, 5);
+      // One value per attribute: a list is refused on create and update (QA-07).
+      await expectError(await post(`${base}/${product.id}/variants`, seller, { color: "bleu, noir" }), 400);
+      const variantId = detail.variants[0]?.id ?? "";
+      await expectError(await h.call(`${base}/${product.id}/variants/${variantId}`, seller.token, { method: "PATCH", body: { size: "M; L" } }), 400);
       assert.equal(detail.variantCount, 3);
     });
 

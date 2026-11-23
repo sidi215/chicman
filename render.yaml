@@ -1,0 +1,94 @@
+# Render Blueprint for the Chicman API (QA-01, free plan).
+# Runbook: infrastructure/render/README.md. The web app is on Netlify
+# (apps/web/netlify.toml); the database and auth are Supabase; media is
+# Cloudflare R2.
+#
+# Free-plan facts this file is built around:
+# - One free web service runs the API AND the background worker
+#   (apps/api/scripts/start-api-and-worker.mjs): workers are not free.
+# - Free services sleep after 15 idle minutes; an external 5-minute health
+#   ping keeps this one awake (about 744 of the 750 free hours a month), so
+#   the worker's jobs keep running. Create no other free service in this
+#   workspace.
+# - No pre-deploy command on free: migrations run at container start.
+# - No persistent disk: search is PostgreSQL (SEARCH_ENGINE=postgres).
+#
+# Values marked `sync: false` are entered in the Render dashboard when the
+# Blueprint is created; they never go in this file.
+services:
+  - type: web
+    name: chicman-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: main
+    dockerContext: .
+    dockerfilePath: ./apps/api/Dockerfile.prod
+    dockerCommand: node scripts/start-api-and-worker.mjs
+    healthCheckPath: /api/v1/health
+    # Deploys come only from CI (.github/workflows/ci.yml, job `deploy`):
+    # after every check passes on main, and only when the API changed, CI
+    # calls this service's deploy hook (repository secret
+    # RENDER_DEPLOY_HOOK_URL). Render never deploys a commit on its own.
+    autoDeployTrigger: "off"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Two Node processes share 512 MB.
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=192
+      - key: SEARCH_ENGINE
+        value: postgres
+      # Verify after the first deploy (README, step 7): Render appends to
+      # X-Forwarded-For; the hop count is not documented.
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: chicman-redis
+          property: connectionString
+      # Supabase session pooler URL (port 5432), README step 2.
+      - key: DATABASE_URL
+        sync: false
+      # https://<site>.netlify.app
+      - key: CORS_ORIGINS
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWKS_URL
+        sync: false
+      - key: SUPABASE_JWT_ISSUER
+        sync: false
+      - key: SUPABASE_JWT_AUDIENCE
+        value: authenticated
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      # Same value as on Netlify; at least 32 characters.
+      - key: CATALOG_INTERNAL_KEY
+        sync: false
+      # Cloudflare R2 (README step 3).
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_REGION
+        value: auto
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_UPLOADS_BUCKET
+        value: chicman-uploads
+      - key: S3_MEDIA_BUCKET
+        value: chicman-media
+      # https://pub-<id>.r2.dev
+      - key: MEDIA_PUBLIC_BASE_URL
+        sync: false
+
+  # Rate-limit counters (25 MB free; private network only). If it is lost,
+  # the API keeps enforcing the limits in memory (spec 03).
+  - type: keyvalue
+    name: chicman-redis
+    plan: free
+    region: frankfurt
+    ipAllowList: []
+    maxmemoryPolicy: noeviction

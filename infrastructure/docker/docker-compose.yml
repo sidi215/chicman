@@ -5,6 +5,10 @@
 #
 # Supabase Auth is a hosted service and is not run here.
 
+# Published ports listen on this machine only (DEV_BIND_ADDRESS, default
+# 127.0.0.1; QA-07): Redis has no password and Meilisearch uses a development
+# key. Set DEV_BIND_ADDRESS=0.0.0.0 in .env only on a trusted network, for
+# example to reach object storage from a phone without `adb reverse`.
 name: chicman
 
 services:
@@ -18,7 +22,7 @@ services:
       TZ: UTC
       PGTZ: UTC
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${DEV_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -32,7 +36,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${DEV_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -49,7 +53,7 @@ services:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-chicman-dev-master-key-change-me}
       MEILI_NO_ANALYTICS: "true"
     ports:
-      - "${MEILI_PORT:-7700}:7700"
+      - "${DEV_BIND_ADDRESS:-127.0.0.1}:${MEILI_PORT:-7700}:7700"
     volumes:
       - meilisearch-data:/meili_data
     healthcheck:
@@ -67,7 +71,7 @@ services:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-chicman}
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-chicman-dev-secret}
     ports:
-      - "${S3_PORT:-8333}:8333"
+      - "${DEV_BIND_ADDRESS:-127.0.0.1}:${S3_PORT:-8333}:8333"
     volumes:
       - object-storage-data:/data
 

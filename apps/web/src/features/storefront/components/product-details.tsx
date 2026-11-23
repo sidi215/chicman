@@ -11,6 +11,7 @@ import { Chip } from "@/components/ui/chip"
 import { TextLink } from "@/features/auth/components/text-link"
 import { AddToCart } from "@/features/cart/components/add-to-cart"
 import { FavoriteButton } from "@/features/favorites/components/favorite-button"
+import { ReportProductButton } from "@/features/moderation/components/report-product"
 import { localizedPath } from "@/lib/locale"
 import { useLocale } from "@/lib/locale-provider"
 import { formatMru } from "@/lib/money"
@@ -187,6 +188,8 @@ function ProductContent({ product, t }: { product: PublicProductDetail; t: Store
           </p>
         </section>
         <ShopInfo shop={product.shop} t={t} />
+        {/* Spec 19: buyers report a product; guests are sent to sign in. */}
+        <ReportProductButton productId={product.id} name={product.name} />
       </div>
     </div>
   )

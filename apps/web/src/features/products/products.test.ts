@@ -39,6 +39,7 @@ const PRODUCT: SellerProductDetail = {
   archivedAt: null,
   createdAt: "2026-11-08T10:00:00.000Z",
   updatedAt: "2026-11-08T10:00:00.000Z",
+  moderation: { status: "CLEAR", reasonCode: null, message: null, updatedAt: null },
 }
 const VALID = { name: "Melhfa", description: "Voile léger.", category: "SHOES", brand: "", price: "1 500,5" }
 const VARIANT: ProductVariantView = { id: "v", size: "M", color: null, stock: 1, available: true, createdAt: "", updatedAt: "" }
@@ -109,6 +110,15 @@ describe("stock and variants", () => {
     assert.deepEqual(buildVariantCreate({ size: " ", color: "" }, "1"), { ok: false, errors: "attributeRequired" })
     assert.deepEqual(buildVariantCreate({ size: "M", color: "" }, "-1"), { ok: false, errors: "invalidStock" })
     assert.deepEqual(buildVariantCreate({ size: "x".repeat(31), color: "" }, "1"), { ok: false, errors: "tooLong" })
+  })
+
+  it("a variant holds one size and one color, not a list (QA-07)", () => {
+    assert.deepEqual(buildVariantCreate({ size: "", color: "bleu, noir, blanc" }, "1"), { ok: false, errors: "singleValue" })
+    assert.deepEqual(buildVariantCreate({ size: "M; L", color: "" }, "1"), { ok: false, errors: "singleValue" })
+    assert.deepEqual(buildVariantCreate({ size: "", color: "أزرق، أسود" }, "1"), { ok: false, errors: "singleValue" })
+    assert.deepEqual(buildVariantUpdate({ size: "M", color: "vert, rouge" }, VARIANT), { ok: false, errors: "singleValue" })
+    // A slash is a single value: a size range or a two-tone color.
+    assert.deepEqual(buildVariantCreate({ size: "38/40", color: "noir/blanc" }, "1"), { ok: true, body: { size: "38/40", color: "noir/blanc", stock: 1 } })
   })
 
   it("variant updates send only changes", () => {

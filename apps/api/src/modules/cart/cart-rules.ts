@@ -2,7 +2,7 @@ import type { CartItemIssue } from "@chicman/shared";
 
 import { Prisma } from "../../generated/prisma/client.js";
 import { isQuantityAvailable } from "../inventory/availability.js";
-import { productVisibility } from "../products/product-visibility.js";
+import { assertNever, productVisibility, type ProductVisibility } from "../products/product-visibility.js";
 
 /** What the rules need to know about a line and the current state of its product. */
 export interface CartLineState {
@@ -13,6 +13,7 @@ export interface CartLineState {
   variantColor: string | null;
   product: {
     status: string;
+    moderationStatus: string;
     price: Prisma.Decimal;
     stock: number;
     hasActiveImage: boolean;
@@ -52,6 +53,27 @@ function selectedStock({ variantId, variantSize, variantColor, product }: CartLi
 type RemoveOnlyCode = Exclude<CartItemIssue["code"], "INSUFFICIENT_STOCK" | "PRICE_CHANGED">;
 
 /**
+ * The remove-only issue of each hidden visibility, exhaustively: a new
+ * visibility value fails to compile here instead of falling through as
+ * purchasable. A moderated product reads as unpublished: there is no public
+ * moderation code (spec 19), so older clients keep working.
+ */
+export function hiddenLineIssue(visibility: Exclude<ProductVisibility, "PUBLIC">): RemoveOnlyCode {
+  switch (visibility) {
+    case "MODERATED":
+      return "PRODUCT_UNPUBLISHED";
+    case "SHOP_NOT_APPROVED":
+      return "SHOP_UNAVAILABLE";
+    case "ARCHIVED":
+      return "PRODUCT_ARCHIVED";
+    case "NOT_PUBLISHED":
+      return "PRODUCT_UNPUBLISHED";
+    default:
+      return assertNever(visibility);
+  }
+}
+
+/**
  * A line that can no longer be bought shows the price the customer last saw. A
  * product's current price may not be public (a restored draft, for example), and
  * a price they cannot act on would only be noise.
@@ -69,10 +91,13 @@ const removeOnlyLine = (code: RemoveOnlyCode, line: CartLineState): CartLineEval
  * changes a quantity, a variant, or a stored price.
  */
 export function evaluateCartLine(line: CartLineState): CartLineEvaluation {
-  const visibility = productVisibility({ status: line.product.status, shopStatus: line.shopStatus, hasActiveImage: line.product.hasActiveImage });
-  if (visibility === "SHOP_NOT_APPROVED") return removeOnlyLine("SHOP_UNAVAILABLE", line);
-  if (visibility === "ARCHIVED") return removeOnlyLine("PRODUCT_ARCHIVED", line);
-  if (visibility === "NOT_PUBLISHED") return removeOnlyLine("PRODUCT_UNPUBLISHED", line);
+  const visibility = productVisibility({
+    status: line.product.status,
+    moderationStatus: line.product.moderationStatus,
+    shopStatus: line.shopStatus,
+    hasActiveImage: line.product.hasActiveImage,
+  });
+  if (visibility !== "PUBLIC") return removeOnlyLine(hiddenLineIssue(visibility), line);
 
   const stock = selectedStock(line);
   if (stock === null) return removeOnlyLine("VARIANT_UNAVAILABLE", line);

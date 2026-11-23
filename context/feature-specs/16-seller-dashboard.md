@@ -63,7 +63,7 @@ Requirements:
 - [x] An approved shop without a delivery fee sees the prompt to set one.
 - [x] Sellers can access only their own shop data.
 - [x] Product, order, delivery, COD, and notification sections use existing feature APIs.
-- [ ] Dashboard summaries match persisted data.
+- [x] Dashboard summaries match persisted data. *(Real-account verification reported done by the project owner on 2026-11-20, QA audit QA-02.)*
 - [x] Loading, empty, and error states are implemented.
 - [x] Responsive layout works at supported screen sizes.
 - [x] French and Arabic RTL layouts work correctly.

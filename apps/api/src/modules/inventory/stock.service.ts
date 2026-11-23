@@ -11,7 +11,8 @@ const stockConflict = (): HttpError => new HttpError(409, PRODUCT_ERROR_CODES.st
  * Seller stock updates (spec 07, section 7). Each one is a compare-and-set
  * under the product lock: the new value applies only if the stock is still
  * the value the seller saw. Negative values are refused by validation and by
- * a database constraint. Checkout reservation is out of scope here.
+ * a database constraint. Checkout reservation is out of scope here. Stock is
+ * the one write allowed while a product is `IN_REVIEW` (spec 19, PD-5).
  */
 export class StockService {
   private readonly mediaUrl: MediaUrl;
@@ -31,7 +32,7 @@ export class StockService {
       if (product.stock !== input.expectedStock) throw stockConflict();
       await tx.product.update({ where: { id: productId }, data: { stock: input.stock } });
       return loadProductDetail(tx, seller, productId, this.mediaUrl);
-    });
+    }, "stock");
   }
 
   /** Stock of one variant of this product. */
@@ -43,6 +44,6 @@ export class StockService {
       await tx.productVariant.update({ where: { id: variantId }, data: { stock: input.stock } });
       await touchProduct(tx, productId);
       return loadProductDetail(tx, seller, productId, this.mediaUrl);
-    });
+    }, "stock");
   }
 }

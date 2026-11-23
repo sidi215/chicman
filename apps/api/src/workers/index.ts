@@ -225,7 +225,8 @@ const searchConfig = loadWorkerSearchConfig(process.env);
 let searchIndexingSchedule: RetentionSchedule | null = null;
 let searchReconciliationSchedule: RetentionSchedule | null = null;
 if (searchConfig === undefined) {
-  console.warn("Search (MEILI_URL) is not configured: the search indexing jobs are disabled; changes stay queued");
+  if (process.env["SEARCH_ENGINE"] === "postgres") console.log("SEARCH_ENGINE=postgres: no search index to maintain; the search indexing jobs are off");
+  else console.warn("Search (MEILI_URL) is not configured: the search indexing jobs are disabled; changes stay queued");
 } else {
   // Indexing waits for each Meilisearch task, which takes longer than a search.
   const searchIndex = new MeilisearchProductIndex(new MeilisearchClient({ ...searchConfig, timeoutMs: Math.max(searchConfig.timeoutMs, 10_000) }));

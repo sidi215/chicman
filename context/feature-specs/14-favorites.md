@@ -6,6 +6,8 @@ Allow authenticated customers to save products they are interested in and manage
 
 ## Design & Architecture Decisions
 
+- **Spec 19 (product moderation, approved 2026-11-20, implemented 2026-11-20):** a moderated favorite shows `UNAVAILABLE` with its name but **no image** (and, as today, no price, shop, or link); adding one → `404`. Details: `19-product-moderation.md`, section 7.
+
 - Favorites belong to the authenticated customer.
 
 - **AT-1 (2026-11-13): account types implemented in the API, the web, and Flutter (phases 4, 7, 8).** Favorites are **Buyer only**: sellers and administrators get `403` and see no heart. The API (phase 4), the web (phase 7), and Flutter (phase 8) follow this. Details: `account-types-audit.md`.

@@ -34,8 +34,8 @@ export function buyerAreaOf(pathname: string): BuyerArea | null {
 /**
  * Whether `/account/*` shows the buyer shell: for a Buyer, and while the
  * account is still being read (most visitors here are buyers). Never without
- * an account (setup), and not for a Seller or an Administrator on the profile
- * page, which every type shares (Q2). Other pages send those away anyway.
+ * an account (setup). A Seller or an Administrator gets their own area's shell
+ * (`AccountAreaShell`) on the profile page every type shares (Q2).
  */
 export function showsBuyerShell(account: AccountState): boolean {
   if (account.state === "active") return account.accountType === "BUYER"

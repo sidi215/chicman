@@ -1,0 +1,203 @@
+# Continuous integration and delivery (QA-05).
+#
+# On every push and pull request to main or develop:
+#   - checks: workspace typecheck (including the design-token drift check),
+#     lint, web unit tests, and the web production build;
+#   - api:    every API suite against real PostgreSQL, Redis, Meilisearch, and
+#     S3-compatible storage (SeaweedFS). A skipped suite fails the job, except
+#     the Cloudflare R2 verification, which needs a real R2 account;
+#   - mobile: flutter analyze and flutter test.
+# On a push to main, once all three pass, `deploy` asks Render (API) and
+# Netlify (web) to deploy, each only if its part changed. The platforms do not
+# deploy on their own (render.yaml: autoDeployTrigger off; netlify.toml builds
+# only from its build hook), so nothing reaches production without green CI.
+# Until the hooks are configured (QA-01), `deploy` does nothing.
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: "22"
+  FLUTTER_VERSION: "3.44.4"
+
+jobs:
+  checks:
+    name: Typecheck, lint, web tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Builds the shared package, checks the generated design tokens, and
+      # typechecks every workspace package.
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm --filter @chicman/web test
+      - name: Web production build
+        run: pnpm --filter @chicman/web build
+        env:
+          # Placeholders: the build must succeed; nothing is deployed from here.
+          NEXT_PUBLIC_SITE_URL: https://chicman.example.invalid
+          NEXT_PUBLIC_API_URL: https://api.chicman.example.invalid
+          NEXT_PUBLIC_SUPABASE_URL: https://project.supabase.example.invalid
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ci-site-key
+          NEXT_PUBLIC_STORAGE_UPLOAD_ORIGIN: https://uploads.example.invalid
+          NEXT_PUBLIC_MEDIA_BASE_URL: https://media.example.invalid
+
+  api:
+    name: API tests (PostgreSQL, Redis, Meilisearch, S3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: chicman
+          POSTGRES_PASSWORD: chicman
+          POSTGRES_DB: chicman_test
+          TZ: UTC
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U chicman -d chicman_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://chicman:chicman@localhost:5432/chicman_test
+      REDIS_URL: redis://localhost:6379
+      TEST_MEILI_URL: http://localhost:7700
+      TEST_MEILI_API_KEY: chicman-ci-master-key-0123456789
+      TEST_S3_ENDPOINT: http://localhost:8333
+      TEST_S3_ACCESS_KEY_ID: chicman
+      TEST_S3_SECRET_ACCESS_KEY: chicman-ci-secret
+    steps:
+      - uses: actions/checkout@v4
+      # Service containers cannot take a command, so these two start here.
+      - name: Start Meilisearch and SeaweedFS
+        run: |
+          docker run -d --name meilisearch -p 7700:7700 \
+            -e MEILI_ENV=development -e MEILI_MASTER_KEY="${TEST_MEILI_API_KEY}" -e MEILI_NO_ANALYTICS=true \
+            getmeili/meilisearch:v1.15
+          docker run -d --name seaweedfs -p 8333:8333 \
+            -e AWS_ACCESS_KEY_ID="${TEST_S3_ACCESS_KEY_ID}" -e AWS_SECRET_ACCESS_KEY="${TEST_S3_SECRET_ACCESS_KEY}" \
+            chrislusf/seaweedfs:3.97 server -dir=/data -s3 -s3.port=8333
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:shared
+      - name: Apply migrations to the test database
+        run: pnpm --filter @chicman/api db:deploy
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+      - name: Wait for Meilisearch and SeaweedFS
+        run: |
+          for _ in $(seq 1 60); do curl -fsS http://localhost:7700/health >/dev/null 2>&1 && break; sleep 2; done
+          curl -fsS http://localhost:7700/health
+          # Any HTTP answer means the S3 gateway is up (anonymous requests get 403).
+          for _ in $(seq 1 60); do curl -s -o /dev/null http://localhost:8333/ && break; sleep 2; done
+          curl -s -o /dev/null -w "seaweedfs %{http_code}\n" http://localhost:8333/
+      - name: API tests
+        working-directory: apps/api
+        run: |
+          set -o pipefail
+          pnpm exec prisma generate
+          pnpm exec tsx --test --test-concurrency=1 --test-reporter=tap "test/**/*.test.ts" | tee api-tests.tap
+      - name: No skipped suite (except the R2 verification)
+        working-directory: apps/api
+        run: |
+          skipped="$(grep -E '# SKIP' api-tests.tap | grep -v 'Cloudflare R2' || true)"
+          if [ -n "${skipped}" ]; then
+            echo "::error::Test suites were skipped; CI must run every suite:"
+            echo "${skipped}"
+            exit 1
+          fi
+          grep -E '^# (tests|pass|fail|skipped)' api-tests.tap
+
+  mobile:
+    name: Flutter analyze and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  deploy:
+    name: Deploy (main only)
+    needs: [checks, api, mobile]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # One deployment at a time, never cancelled half-way.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: What changed
+        id: changes
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -z "${BEFORE}" ] || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            files="$(git ls-files)"
+          else
+            files="$(git diff --name-only "${BEFORE}" "${GITHUB_SHA}")"
+          fi
+          shared='^(packages/shared/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$)'
+          api=false; web=false
+          echo "${files}" | grep -qE "^apps/api/|^render\.yaml$|${shared}" && api=true
+          echo "${files}" | grep -qE "^apps/web/|${shared}" && web=true
+          echo "api=${api}" >> "${GITHUB_OUTPUT}"
+          echo "web=${web}" >> "${GITHUB_OUTPUT}"
+          echo "API changed: ${api}; web changed: ${web}"
+      - name: Deploy the API (Render deploy hook)
+        if: steps.changes.outputs.api == 'true'
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "${HOOK}" ]; then echo "RENDER_DEPLOY_HOOK_URL is not set: skipping (QA-01 not deployed yet)"; exit 0; fi
+          curl -fsS -X POST "${HOOK}" -o /dev/null && echo "Render deploy requested"
+      - name: Deploy the web app (Netlify build hook)
+        if: steps.changes.outputs.web == 'true'
+        env:
+          HOOK: ${{ secrets.NETLIFY_BUILD_HOOK_URL }}
+        run: |
+          if [ -z "${HOOK}" ]; then echo "NETLIFY_BUILD_HOOK_URL is not set: skipping (QA-01 not deployed yet)"; exit 0; fi
+          curl -fsS -X POST -d '{}' "${HOOK}?trigger_title=ci-${GITHUB_SHA::7}" -o /dev/null && echo "Netlify build requested"

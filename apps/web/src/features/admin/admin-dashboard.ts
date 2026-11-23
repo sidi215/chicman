@@ -23,17 +23,22 @@ import { buildDecision, type DecisionFormResult } from "./admin-shops"
 // Areas and navigation
 // ---------------------------------------------------------------------------
 
-export const ADMIN_AREAS = ["shops", "orders"] as const
+export const ADMIN_AREAS = ["shops", "orders", "products", "moderation", "profile"] as const
 export type AdminArea = (typeof ADMIN_AREAS)[number]
 
 export const ADMIN_AREA_HREF: Record<AdminArea, string> = {
   shops: "/admin/shops",
   orders: "/admin/orders",
+  products: "/admin/products",
+  moderation: "/admin/moderation",
+  // The profile page every account type shares (Q2): profile, language, appearance.
+  profile: "/account/profile",
 }
 
 /** The area a path belongs to, with or without the locale prefix; `null` outside the admin area. */
 export function adminAreaOf(pathname: string): AdminArea | null {
   const path = withoutLocale(pathname).replace(/\/+$/, "")
+  if (path === ADMIN_AREA_HREF.profile) return "profile"
   const segment = /^\/admin\/([^/]+)/.exec(path)?.[1] ?? ""
   return (ADMIN_AREAS as readonly string[]).includes(segment) ? (segment as AdminArea) : null
 }

@@ -14,26 +14,35 @@ import { TextLink } from "@/features/auth/components/text-link"
 import { useLocale } from "@/lib/locale-provider"
 import { formatMru } from "@/lib/money"
 
+import { ModerationBadge } from "@/features/moderation/components/seller-moderation"
+import { useModerationMessages } from "@/features/moderation/messages"
+import { SELLER_MODERATION_FILTERS, type SellerModerationFilter } from "@/features/moderation/moderation"
+
 import { useProductMessages } from "../messages"
 import type { ProductFailure } from "../product-form"
 import { STATUS_VARIANT, useProductApi } from "./product-shared"
 
 type View = { state: "loading" } | { state: "ready"; data: SellerProductListResponse } | { state: "failed"; failure: ProductFailure }
+/** A seller status, or a moderation state (spec 19: "Restreint", "En révision", "Retiré"). */
+type ListFilter = { kind: "status"; value: ProductStatus } | { kind: "moderation"; value: SellerModerationFilter } | null
 
 /** The seller's products, newest first, by status and page. */
-export function ProductList() {
+export function ProductList({ initialModeration = null }: { initialModeration?: SellerModerationFilter | null } = {}) {
   const locale = useLocale()
   const t = useProductMessages()
+  const moderationText = useModerationMessages()
   const { status, call } = useProductApi()
   const [view, setView] = useState<View>({ state: "loading" })
-  const [filter, setFilter] = useState<ProductStatus | null>(null)
+  const [filter, setFilter] = useState<ListFilter>(initialModeration === null ? null : { kind: "moderation", value: initialModeration })
   const [page, setPage] = useState(1)
   const [reloads, setReloads] = useState(0)
 
   useEffect(() => {
     if (status !== "signed-in") return
     let cancelled = false
-    const query = new URLSearchParams({ page: String(page), ...(filter === null ? {} : { status: filter }) })
+    const query = new URLSearchParams({ page: String(page) })
+    if (filter?.kind === "status") query.set("status", filter.value)
+    if (filter?.kind === "moderation") query.set("moderationStatus", filter.value)
     void call<SellerProductListResponse>(`/sellers/me/products?${query.toString()}`).then((outcome) => {
       if (cancelled) return
       setView(outcome.state === "ok" ? { state: "ready", data: outcome.data } : { state: "failed", failure: outcome.state })
@@ -43,7 +52,7 @@ export function ProductList() {
     }
   }, [status, call, filter, page, reloads])
 
-  const choose = (next: ProductStatus | null) => {
+  const choose = (next: ListFilter) => {
     setFilter(next)
     setPage(1)
     setView({ state: "loading" })
@@ -74,8 +83,15 @@ export function ProductList() {
             {t.filterAll}
           </Chip>
           {PRODUCT_STATUSES.map((value) => (
-            <Chip key={value} pressed={filter === value} onPressedChange={() => choose(value)}>
+            <Chip key={value} pressed={filter?.kind === "status" && filter.value === value} onPressedChange={() => choose({ kind: "status", value })}>
               {t.status[value]}
+            </Chip>
+          ))}
+        </div>
+        <div role="group" aria-label={moderationText.seller.filterLabel} className="flex flex-wrap gap-2">
+          {SELLER_MODERATION_FILTERS.map((value) => (
+            <Chip key={value} pressed={filter?.kind === "moderation" && filter.value === value} onPressedChange={() => choose({ kind: "moderation", value })}>
+              {moderationText.status[value]}
             </Chip>
           ))}
         </div>
@@ -125,6 +141,7 @@ export function ProductList() {
                     <span className="type-body-medium">{formatMru(product.price, locale)}</span>
                     <span className="flex flex-wrap items-center gap-2">
                       <Badge variant={STATUS_VARIANT[product.status]}>{t.status[product.status]}</Badge>
+                      <ModerationBadge status={product.moderation.status} />
                       <Badge variant={product.available ? "outline" : "destructive"}>{product.available ? t.available : t.unavailable}</Badge>
                       <span className="type-body-small text-muted-foreground">
                         {t.stockLabel} : {product.stock}

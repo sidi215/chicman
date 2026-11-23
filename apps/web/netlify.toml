@@ -1,0 +1,35 @@
+# Netlify site for the Chicman web app (QA-01, free plan; runbook:
+# infrastructure/render/README.md). In the Netlify UI, set the
+# **package directory** to `apps/web` and leave the base directory empty: paths
+# below are relative to the repository root (the base directory).
+#
+# Deploys come only from CI (.github/workflows/ci.yml, job `deploy`): after
+# every check passes on main, and only when the web app changed, CI calls this
+# site's build hook (repository secret NETLIFY_BUILD_HOOK_URL). A build started
+# by a git push is skipped by `ignore` below, so nothing deploys without green
+# CI. This also spends the free plan's 300 monthly credits only on real web
+# changes: no deploy previews or branch deploys.
+
+[build]
+  command = "pnpm --filter @chicman/shared build && pnpm --filter @chicman/web build"
+  publish = "apps/web/.next"
+  # Exit 0 = skip this build. Netlify sets INCOMING_HOOK_TITLE only for builds
+  # started by a build hook (CI); every other build is skipped.
+  ignore = "test -z \"$INCOMING_HOOK_TITLE\""
+
+[build.environment]
+  NODE_VERSION = "22"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+[context.deploy-preview]
+  ignore = "exit 0"
+
+[context.branch-deploy]
+  ignore = "exit 0"
+
+# Android App Links verification file (scripts/write-assetlinks.mjs).
+[[headers]]
+  for = "/.well-known/assetlinks.json"
+  [headers.values]
+    Content-Type = "application/json"
+    Cache-Control = "public, max-age=3600"

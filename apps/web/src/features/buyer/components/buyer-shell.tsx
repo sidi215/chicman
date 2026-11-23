@@ -7,17 +7,15 @@ import { Suspense, type ReactNode } from "react"
 
 import { BrandLogo } from "@/components/brand/brand-logo"
 import { InDashboard } from "@/components/layout/in-dashboard"
-import { ThemeSelector } from "@/components/theme/theme-selector"
 import { buttonVariants } from "@/components/ui/button"
 import { useAccount } from "@/features/auth/account-provider"
-import { AccountActions } from "@/features/auth/components/account-actions"
+import { SignOutAction } from "@/features/auth/components/account-actions"
 import { CartLink } from "@/features/cart/components/cart-link"
 import { favoritesBadge } from "@/features/favorites/favorites-logic"
 import { useFavorites } from "@/features/favorites/favorites-provider"
 import { NotificationsLink } from "@/features/notifications/components/notifications-link"
 import { unreadBadge } from "@/features/notifications/notifications-logic"
 import { useNotifications } from "@/features/notifications/notifications-provider"
-import { LanguageSwitch } from "@/features/storefront/components/language-switch"
 import { localizedPath } from "@/lib/locale"
 import { useLocale } from "@/lib/locale-provider"
 import { cn } from "@/lib/utils"
@@ -93,17 +91,17 @@ function BuyerHeader({ t }: { t: BuyerMessages }) {
           </Link>
           <span className="type-title-small text-muted-foreground">{t.areaTitle}</span>
         </div>
-        <div className="order-last basis-full sm:order-0 sm:ms-auto sm:basis-auto">
-          <ThemeSelector />
-        </div>
+        {/*
+          No profile, language, or appearance controls here: the side
+          navigation's Profile page (`/account/profile`) holds all three.
+        */}
         <div className="flex items-center gap-2">
-          <LanguageSwitch />
           <Link href={localizedPath(locale, "/products")} aria-label={t.storefront} title={t.storefront} className={buttonVariants({ variant: "outline", size: "icon-sm" })}>
             <Store aria-hidden className="size-icon-action" />
           </Link>
           <NotificationsLink href={BUYER_AREA_HREF.notifications} />
           <CartLink />
-          <AccountActions />
+          <SignOutAction />
         </div>
       </div>
     </header>

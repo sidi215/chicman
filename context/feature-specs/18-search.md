@@ -6,6 +6,8 @@ Provide a dedicated product search experience optimized for the Chicman catalog 
 
 ## Design & Architecture Decisions
 
+- **Spec 19 (product moderation, approved 2026-11-20, implemented 2026-11-20):** the `Product` search trigger's column list gains `moderationStatus`, so every moderation transition queues the product; the indexer removes or re-adds it through `PUBLIC_PRODUCT_WHERE`. Search documents carry no moderation data. Details: `19-product-moderation.md`, section 7.
+
 - PostgreSQL remains the authoritative source of product data.
 - Meilisearch is a derived search index, not the source of truth.
 - Product discovery endpoints and basic facets already belong to Spec 08. This feature must extend them without duplicating their existing responsibilities.
@@ -52,6 +54,7 @@ Requirements:
 
 - **Sold-out products (C8): kept indexed.** A published product at zero stock stays searchable and shows its unavailable state, as in the listings (spec 08). `availability=available` is honoured. A document is removed only when its product stops being public (`PUBLIC_PRODUCT_WHERE`: unpublished, archived, shop not approved, no active image).
 - **Fallback (Q16): a PostgreSQL match.** When Meilisearch is unavailable, the same request is answered by PostgreSQL: every word must appear (ignoring case) in the name, brand, description, or shop name, with the same filters, sorts, and pagination; relevance falls back to newest. The response says so (`search.degraded = true`) and clients show a notice.
+- **Free launch (QA-01, project owner, 2026-11-21): no Meilisearch in production.** With no free host offering a disk, `SEARCH_ENGINE=postgres` makes PostgreSQL the search engine: the fallback's word match answers every search and is **not** reported as degraded (no notice); the API refuses `MEILI_URL` with it, and the worker's indexing jobs are off (the queue keeps one row per changed product). Moving to Meilisearch later is configuration only: `SEARCH_ENGINE=meilisearch`, `MEILI_*`, then `search:reindex`. The hosting rule below applies when Meilisearch is used.
 - **Production hosting: self-hosted Docker.** Meilisearch runs as a container on the API's VPS with a persistent volume, reachable only on the private network, `MEILI_ENV=production` and a master key of at least 16 bytes. The API uses a search-only key, the worker an admin key.
 
 ## Verification Checklist

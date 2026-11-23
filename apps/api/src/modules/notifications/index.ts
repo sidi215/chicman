@@ -18,6 +18,11 @@ export {
   recordDeliveryDispatched,
   type DeliveryNotificationSubject,
 } from "./delivery-notifications.js";
+export {
+  productModerationPayload,
+  recordProductModerationNotification,
+  type ProductModerationNotification,
+} from "./product-notifications.js";
 export { NotificationService } from "./notification.service.js";
 export { NOTIFICATION_RETENTION_DAYS, notificationRetentionCutoff, purgeExpiredNotifications, type NotificationRetentionOptions } from "./notification-retention.js";
 export { createNotificationRouter, NOTIFICATION_WRITE_RATE_LIMIT, type NotificationDependencies } from "./notification.routes.js";

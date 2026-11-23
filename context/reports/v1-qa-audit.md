@@ -5,6 +5,12 @@
 **Commit audited:** `60ac066` on `develop` (working tree clean at the start of the audit)
 **Verdict:** **QA FAIL** (see section 14). The core marketplace logic tested well. V1 still cannot launch: required launch infrastructure is missing, the real-account journeys have never been run, one mobile-web layout defect remains, and the owner has not decided part of the V1 scope.
 
+> **Update 2026-11-20 (project owner decisions after the audit):**
+> - **QA-02 closed.** The project owner reports that the real-account end-to-end verification (section 5 workflows, web and Android) is done. The auditor did not observe it.
+> - **QA-03 decided.** Individual product moderation is **V1**. Customer oversight, marketplace statistics, category CRUD, and ratings and reviews are **post-V1**. The scope gap is closed, but V1 now requires a feature that is neither designed nor built. It is tracked as **QA-08 (High)** below, with its design open as O11.
+> - **Verdict unchanged: QA FAIL.** QA-01 (Critical) and QA-08 (High) remain. QA-04 and QA-05 (Medium) are unchanged.
+> - Docs updated: `project-overview.md`, `architecture.md`, `ui-context.md`, `business-decisions-features-10-18.md` (O4, O10, new O11), specs 16 and 17, `progress-tracker.md`.
+
 ---
 
 ## 1. Executive summary
@@ -217,6 +223,8 @@ Console: the only errors on `/login` come from inside Cloudflare's Turnstile ifr
 
 ### QA-01 — Launch prerequisites incomplete: public email delivery and production deployment (Critical)
 
+**Status 2026-11-21:** artifacts implemented for a free-provider launch (owner decisions: free providers only; Render for the API; Netlify for the web; PostgreSQL search): `render.yaml`, `apps/api/Dockerfile.prod`, the API + worker launcher, `SEARCH_ENGINE=postgres`, `apps/web/netlify.toml` and the `assetlinks.json` build step, the nightly encrypted backup workflow, Android release signing, and the runbook `infrastructure/render/README.md`. Verified locally: the production image runs as on Render (migrations at start, API and worker, about 220 MB, health `ok`, search not degraded; graceful stop exits 0; a crashed process stops the container for a restart); config and search tests (46/46) and the API typecheck pass. Not verifiable without the accounts: the Render and Netlify deploys, Netlify's pnpm monorepo build, and the proxy hop counts (`TRUST_PROXY_HOPS`). **Still open until the owner provisions the services** and the runbook's checks (step 7) pass on the live URLs. (An earlier self-hosted VM variant of 2026-11-20 was replaced the next day.)
+
 - **Platform:** all.
 - **Evidence:**
   - `progress-tracker.md`: "Development uses Supabase's default email provider (team addresses only)"; Resend SMTP, the domain, and templates are "pending domain setup".
@@ -251,7 +259,30 @@ Console: the only errors on `/login` come from inside Cloudflare's Turnstile ifr
 - **Actual:** neither. An administrator cannot remove an abusive product or look up a customer.
 - **Impact:** no moderation tool exists for illegal or counterfeit listings. The only lever is suspending the whole shop.
 
+**Status 2026-11-20:** QA-02 is **closed**; the project owner reports the real-account verification done. QA-03 is **decided** by the project owner: product moderation is V1; customer oversight, statistics, category CRUD, and reviews are post-V1. The remaining gap is QA-08.
+
+### QA-08 — Individual product moderation required in V1 but not designed or built (High; added 2026-11-20)
+
+- **Platform:** API and web (admin).
+- **Evidence:**
+  - Owner decision of 2026-11-20: "Administrators must be able to moderate individual marketplace products" (V1).
+  - Spec 17: moderation needs a product state or actor that spec 07's lifecycle does not have. Its design is open as O11 (`business-decisions-features-10-18.md`).
+  - No admin product route exists: the route inventory in section 4 lists `/admin/shops…` and `/admin/orders…` only.
+- **Expected:** an administrator can take a single non-compliant product off the marketplace, with an audit record, without suspending the whole shop.
+- **Actual:** the only lever is shop suspension (D8), which also cancels the shop's open orders.
+- **Impact:** a required V1 capability is missing, and a single bad listing cannot be handled proportionately.
+- **Status 2026-11-20:** specified and approved (`feature-specs/19-product-moderation.md`, O11 resolved). Still **open** until built and verified.
+- **Status 2026-11-22: closed.** Built; manual checks and review done by the project owner.
+
 ### QA-04 — Mobile-web storefront header overflows; sign-in button off-screen (Medium)
+
+**Status 2026-11-22: fixed and verified.**
+- **Root cause (measured in the live page):** the header's actions group (language, "Vendre sur Chicman", bell, favorites, cart, register, login) was a non-wrapping flex row whose content is 490 px in French and 459 px in Arabic. As a flex item with `min-width: auto` it could not shrink below that content in the 343 px available at 390 px, and no ancestor clips horizontally (`overflow-x: visible` on the row, container, header, and body), so the page widened by 131/100 px (the audit's 116/85 px plus the 15 px scrollbar). Restoring the committed class in the live DOM reproduced exactly those figures.
+- **An earlier uncommitted attempt** (`basis-full flex-wrap` on the actions) removed the overflow but, from 640 to about 1100 px, left the wrapped actions line start-aligned under an end-aligned theme selector.
+- **Fix:** the actions wrap (`flex-wrap`, `min-w-0`), and the row is end-aligned (`justify-end`) with the logo pushing the rest away (`me-auto`): on one line the theme and actions sit together at the end; on their own line the actions stay end-aligned. Logical properties, so Arabic mirrors it.
+- **Verified (Playwright, dev server, guest):** home, listing, and search pages, French and Arabic, 16 widths from 320 to 1440 px (96 cases): no page-level horizontal scroll, every header control inside the viewport, no overlapping controls, the actions ending at the content edge, sign-in present. Screenshots at 390, 768, and 1280 px checked. Web lint, typecheck, and tests (317) pass. Not covered: signed-in header variants (the fix does not depend on the content) and real devices.
+
+> **Fixed 2026-11-20 (spec 19 final review, not committed):** below `sm` the actions row takes its own full-width line and wraps (`basis-full flex-wrap justify-end min-w-0`); every action stays visible. Measured on the production build: 0 px overflow for guest, Buyer, Seller, and Administrator, French and Arabic, at 320, 375, 390, and 1280 px, every header action inside the viewport. Not re-tested by the independent QA.
 
 - **Platform:** web, phone widths (all widths below about 500 px), French and Arabic, guest. Tablet (768) and desktop are fine.
 - **Evidence:** `apps/web/src/features/storefront/components/storefront-header.tsx:138`. The actions row `div.flex.items-center.gap-2` (language, "Vendre sur Chicman", bell, favorites, cart, account action) does not wrap or collapse. It measured 490 px in a 390 px viewport after AT-1 added the always-visible "Vendre sur Chicman" link. Measured: `scrollWidth - innerWidth` = 116 px (French) and 85 px (Arabic) on `/` and `/products`.
@@ -266,6 +297,8 @@ Console: the only errors on `/login` come from inside Cloudflare's Turnstile ifr
 
 ### QA-05 — No CI, and one test suite always silently skips (Medium)
 
+**Status 2026-11-22: fixed.** `.github/workflows/ci.yml` runs typecheck, lint, web tests, the web production build, every API suite against real PostgreSQL, Redis, Meilisearch, and SeaweedFS (a skipped suite fails the job, except the R2 verification that needs a real account), and Flutter analyze and tests. A `deploy` job, on `main` only and after all three pass, calls the Render and Netlify hooks for the parts that changed; both platforms no longer deploy on their own. `retention-worker.test.ts` now loads `.env`. Verified locally: every CI step passes (API 752/752 with only the R2 skip, in an environment without `.env`; web 317; Flutter 315; typecheck, lint, web build); `actionlint` reports nothing. The live GitHub run happens on the next push.
+
 - **Platform:** repository and release process.
 - **Evidence:**
   - No `.github/workflows`.
@@ -278,6 +311,8 @@ Console: the only errors on `/login` come from inside Cloudflare's Turnstile ifr
 
 ### QA-06 — Search `total` overcounts while the index is stale (Low)
 
+**Status 2026-11-22: fixed.** The catalog reads every candidate from the engine (up to Meilisearch's own 1,000-hit maximum), keeps the ones PostgreSQL still shows, and counts and pages that list: the total and the pages are exact even with stale documents. The test that asserted the old count now asserts 2, and a paging test was added. Search suites pass, including real Meilisearch (65/65).
+
 - **Platform:** API; affects web and Flutter result counts and pagination.
 - **Evidence:** `catalog.service.ts` `searchList` returns `total: hits.total` from Meilisearch after PostgreSQL drops hidden IDs. SEARCH-1: `total` 3 with 1 product shown.
 - **Reproduction:** archive a product; before the worker's next 10 s run, search for its name. The count includes it.
@@ -285,6 +320,8 @@ Console: the only errors on `/login` come from inside Cloudflare's Turnstile ifr
 - **Actual:** "Résultats : N" can exceed the cards shown, and a page can be short. Documented as accepted in the code comment; self-heals within about 10 s.
 
 ### QA-07 — Informational
+
+**Status 2026-11-22: all five addressed.** (1) A variant's size and color refuse list separators (`,` `;` `،` `؛`) on the API and the web form, with a French and Arabic message; spec 07 updated; existing values are not rewritten. (2) The overview's order-confirmation wording matches spec 15. (3) Spec 10 and spec 06 checklists ticked, with the tests that prove them. (4) The development Compose file publishes ports on `127.0.0.1` by default (`DEV_BIND_ADDRESS`); running containers change on their next recreation. (5) `image_picker` and its iOS photo permission text removed (14 lockfile entries, removals only); Flutter analyze and tests pass.
 
 1. **Free-text colors produce messy facets.** Live `/products/facets` returns colors `"bleu, noir, blanch"` (one variant holding a list, misspelled) next to `"Noir"`. Consider guidance or normalization in the seller form.
 2. **Customer gets no notification at placement.** The overview lists "Order confirmation notifications", but spec 15 sends `SHOP_ORDER_PLACED` to the seller only; the buyer sees the confirmation screen. The behaviour matches the spec; align the overview's wording.
@@ -299,8 +336,9 @@ Console: the only errors on `/login` come from inside Cloudflare's Turnstile ifr
 | ID | Severity | Business impact |
 |---|---|---|
 | QA-01 | Critical | No public registration and no production deployment; V1 cannot launch |
-| QA-02 | High | Integration defects could reach the first real customers unseen |
-| QA-03 | High | Announced V1 capability (admin customer and product management, reviews) is missing or unscoped; no listing moderation |
+| QA-02 | ~~High~~ Closed 2026-11-20 | Real-account verification reported done by the project owner |
+| QA-03 | ~~High~~ Decided 2026-11-20 | Scope decided; the remaining gap is QA-08 |
+| QA-08 | High | Required V1 product moderation is missing; a bad listing can only be handled by suspending the whole shop |
 | QA-04 | Medium | First impression on phones; sign-in hidden |
 | QA-05 | Medium | Regressions can merge undetected; the worker single-writer guarantee is untested in routine runs |
 | QA-06 | Low | Brief count mismatch in search results |
@@ -348,7 +386,13 @@ The independent probes used for this audit are kept outside the repository, in t
 
 ---
 
+**Order as of 2026-11-20:** items 1 and 5 are done (scope decided; real-account checks reported done). Next: decide O11 and build product moderation (QA-08), then QA-01, QA-04, and QA-05.
+
 ## 14. Final decision
+
+**2026-11-22:** QA-05, QA-06, and QA-07 fixed; QA-08 built and its manual checks done by the project owner. QA-01 (deployment) is deferred by the owner until after a security audit, so the verdict stays **QA FAIL** for launch until QA-01 passes. QA-04 fixed and verified the same day, and QA-08 reviewed and closed: **QA-01 is the only open finding.**
+
+**Re-evaluated 2026-11-20: still QA FAIL.** QA-01 (Critical) and QA-08 (High) are open. The verdict can move to **QA PASS WITH CONDITIONS** once QA-01 is done for a staging environment, product moderation (QA-08) is specified and built, and QA-04 is fixed. The text below is the original verdict of 2026-11-17.
 
 **QA FAIL**
 

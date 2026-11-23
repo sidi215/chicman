@@ -1,7 +1,7 @@
 import type { Prisma } from "../../generated/prisma/client.js";
 
 /** What a notification may point at. Opening it goes through that resource's own route. */
-export type NotificationResource = { type: "SHOP" | "SHOP_ORDER"; id: string };
+export type NotificationResource = { type: "SHOP" | "SHOP_ORDER" | "PRODUCT"; id: string };
 
 export interface NotificationRecord {
   recipientUserId: string;

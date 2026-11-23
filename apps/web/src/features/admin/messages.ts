@@ -95,7 +95,7 @@ export const ADMIN_MESSAGES = {
     } satisfies Record<DecisionErrorKey, string>,
     // Navigation and lists (spec 17)
     navLabel: "Navigation de l'administration",
-    nav: { shops: "Boutiques", orders: "Commandes" } satisfies Record<AdminArea, string>,
+    nav: { shops: "Boutiques", orders: "Commandes", products: "Produits", moderation: "Modération", profile: "Profil" } satisfies Record<AdminArea, string>,
     filterAll: "Toutes",
     search: "Rechercher",
     searchShops: "Nom ou ville de la boutique",
@@ -288,7 +288,7 @@ export const ADMIN_MESSAGES = {
     } satisfies Record<DecisionErrorKey, string>,
     // Navigation and lists (spec 17)
     navLabel: "تصفّح الإدارة",
-    nav: { shops: "المتاجر", orders: "الطلبات" } satisfies Record<AdminArea, string>,
+    nav: { shops: "المتاجر", orders: "الطلبات", products: "المنتجات", moderation: "الإشراف", profile: "الملف الشخصي" } satisfies Record<AdminArea, string>,
     filterAll: "الكل",
     search: "بحث",
     searchShops: "اسم المتجر أو مدينته",

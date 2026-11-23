@@ -17,7 +17,15 @@ import { describeError } from "../../../lib/describe-error.js";
 import { forbidden, HttpError, notFound } from "../../../lib/http-error.js";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import type { ObjectStorage } from "../../shops/logo/object-storage.js";
-import { isShopStillApproved, lockProduct, productArchived, productNotFound, touchProduct, type ProductSeller } from "../product-lock.js";
+import {
+  isShopStillApproved,
+  lockProduct,
+  moderationWriteError,
+  productArchived,
+  productNotFound,
+  touchProduct,
+  type ProductSeller,
+} from "../product-lock.js";
 import { loadProductDetail, mediaUrlBuilder, type MediaUrl } from "../product-views.js";
 import { imageProcessing } from "../../media/index.js";
 import { normalizeProductImage, type ProductImageNormalization } from "./image-normalizer.js";
@@ -49,6 +57,12 @@ class ImageReclaimedError extends Error {}
 class ShopNotEligibleError extends Error {}
 /** The product was archived (or is gone) since the upload began. */
 class ProductNotEditableError extends Error {}
+/** The product went under review or was removed since the upload began (spec 19). */
+class ProductModeratedError extends Error {
+  constructor(readonly httpError: HttpError) {
+    super(httpError.code);
+  }
+}
 /** The product reached its image limit since the upload began. */
 class ImageLimitError extends Error {}
 
@@ -91,8 +105,10 @@ export class ProductImageService {
 
   /** Records the upload and returns a presigned PUT for its staging key. */
   async requestUpload(seller: ProductSeller, productId: string, input: ProductImageUploadRequestInput): Promise<ProductImageUploadResponse> {
-    const product = await this.prisma.product.findFirst({ where: { id: productId, shopId: seller.shopId }, select: { status: true } });
+    const product = await this.prisma.product.findFirst({ where: { id: productId, shopId: seller.shopId }, select: { status: true, moderationStatus: true } });
     if (product === null) throw productNotFound();
+    const moderation = moderationWriteError(product.moderationStatus, "content");
+    if (moderation !== null) throw moderation;
     if (product.status === "ARCHIVED") throw productArchived();
     const active = await this.prisma.productImage.count({ where: { productId, status: "ACTIVE" } });
     if (active >= PRODUCT_MAX_IMAGES) throw limitReached();
@@ -130,8 +146,10 @@ export class ProductImageService {
   /** Completes an upload (idempotent) and returns the updated product. */
   async complete(seller: ProductSeller, productId: string, uploadId: string): Promise<SellerProductDetail> {
     if (!UUID.test(uploadId)) throw uploadNotFound();
-    const product = await this.prisma.product.findFirst({ where: { id: productId, shopId: seller.shopId }, select: { status: true } });
+    const product = await this.prisma.product.findFirst({ where: { id: productId, shopId: seller.shopId }, select: { status: true, moderationStatus: true } });
     if (product === null) throw productNotFound();
+    const moderation = moderationWriteError(product.moderationStatus, "content");
+    if (moderation !== null) throw moderation;
     if (product.status === "ARCHIVED") throw productArchived();
 
     const claim = await this.claim(uploadId, productId);
@@ -245,6 +263,8 @@ export class ProductImageService {
       if (!(await isShopStillApproved(tx, seller.shopId))) throw new ShopNotEligibleError();
       const product = await lockProduct(tx, seller.shopId, productId);
       if (product === null || product.status === "ARCHIVED") throw new ProductNotEditableError();
+      const moderation = moderationWriteError(product.moderationStatus, "content");
+      if (moderation !== null) throw new ProductModeratedError(moderation);
 
       const active = await tx.productImage.aggregate({
         where: { productId, status: "ACTIVE" },
@@ -284,12 +304,18 @@ export class ProductImageService {
       }
       throw limitReached();
     }
-    if (error instanceof ImageReclaimedError || error instanceof ShopNotEligibleError || error instanceof ProductNotEditableError) {
+    if (
+      error instanceof ImageReclaimedError ||
+      error instanceof ShopNotEligibleError ||
+      error instanceof ProductNotEditableError ||
+      error instanceof ProductModeratedError
+    ) {
       if (await this.releaseImage(imageId)) await this.deleteOwnObject(imageId, objectKey);
       const code = error instanceof ImageReclaimedError ? "LEASE_EXPIRED" : "NOT_ELIGIBLE";
       const returned = await this.returnToPending(uploadId, attempt, code);
       if (returned && error instanceof ShopNotEligibleError) throw forbidden();
       if (returned && error instanceof ProductNotEditableError) throw productArchived();
+      if (returned && error instanceof ProductModeratedError) throw error.httpError;
       return this.currentState(seller, productId, uploadId);
     }
     // A database error after the write. Only a released row has its bytes

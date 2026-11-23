@@ -54,3 +54,4 @@ apps/api/src/generated/
 
 # MapLibre worker copied from node_modules by apps/web/scripts/copy-maplibre-worker.mjs
 apps/web/public/maplibre/
+apps/web/public/.well-known/

@@ -37,14 +37,22 @@ describe("seller areas by shop status", () => {
 
   it("keeps applicants and users without a shop to the application and status pages", () => {
     for (const access of ["none", "PENDING", "REJECTED"] as const) {
-      assert.deepEqual([...sellerAreas(access)], ["overview", "shop", "notifications"])
+      assert.deepEqual([...sellerAreas(access)], ["overview", "shop", "notifications", "profile"])
       for (const area of OPERATIONS) assert.equal(isAreaAllowed(area, access), false, `${access} ${area}`)
     }
   })
 
   it("leaves a suspended shop only its deliveries to finish (D8)", () => {
-    assert.deepEqual([...sellerAreas("SUSPENDED")], ["overview", "shop", "deliveries", "notifications"])
+    assert.deepEqual([...sellerAreas("SUSPENDED")], ["overview", "shop", "deliveries", "notifications", "profile"])
     for (const area of ["products", "orders", "payments"] as const) assert.equal(isAreaAllowed(area, "SUSPENDED"), false)
+  })
+
+  it("offers the shared profile page in every shop status, as the buyer and administrator areas do", () => {
+    for (const access of ["none", "PENDING", "REJECTED", "APPROVED", "SUSPENDED"] as const) assert.equal(isAreaAllowed("profile", access), true, access)
+    assert.equal(SELLER_AREA_HREF.profile, "/account/profile")
+    assert.equal(sellerAreaOf("/account/profile"), "profile")
+    assert.equal(sellerAreaOf("/ar/account/profile/"), "profile")
+    assert.equal(sellerAreaOf("/account/orders"), null)
   })
 
   it("maps shop states to access", () => {

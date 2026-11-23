@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../cart/presentation/cart_widgets.dart';
 import '../../favorites/presentation/favorite_button.dart';
+import '../../moderation/presentation/report_product.dart';
 import '../application/catalog_providers.dart';
 import '../domain/catalog.dart';
 import 'catalog_messages.dart';
@@ -137,6 +138,9 @@ class _Content extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.s4),
         _ShopInfo(shop: product.shop),
+        const SizedBox(height: AppSpacing.s2),
+        // Spec 19: buyers report a product; guests are sent to sign in.
+        ReportProductButton(productId: product.id, name: product.name),
         SizedBox(height: MediaQuery.paddingOf(context).bottom),
       ],
     );

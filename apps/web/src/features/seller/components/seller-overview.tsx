@@ -24,7 +24,10 @@ import { formatMru } from "@/lib/money"
 import { cn } from "@/lib/utils"
 
 import { useSellerMessages, type SellerMessages } from "../messages"
-import { needsDeliveryFee, SELLER_AREA_HREF, sellerOrderCountPath, sellerProductCountPath } from "../seller-dashboard"
+import { fillText, useModerationMessages } from "@/features/moderation/messages"
+import { sellerModeratedProductsHref } from "@/features/moderation/moderation"
+
+import { needsDeliveryFee, SELLER_AREA_HREF, sellerModeratedCountPath, sellerOrderCountPath, sellerProductCountPath } from "../seller-dashboard"
 import { useSellerShop } from "../seller-shop-provider"
 
 const STATUS_VARIANT: Record<ShopStatus, ComponentProps<typeof Badge>["variant"]> = {
@@ -43,6 +46,8 @@ interface Summary {
   inProgressDeliveries: Figure<number>
   publishedProducts: Figure<number>
   draftProducts: Figure<number>
+  restrictedProducts: Figure<number>
+  inReviewProducts: Figure<number>
   payments: Figure<SellerPaymentSummary>
 }
 
@@ -52,6 +57,8 @@ const LOADING: Summary = {
   inProgressDeliveries: undefined,
   publishedProducts: undefined,
   draftProducts: undefined,
+  restrictedProducts: undefined,
+  inReviewProducts: undefined,
   payments: undefined,
 }
 
@@ -82,6 +89,8 @@ function useApprovedSummary(): { summary: Summary; retry: () => void } {
     read<SellerInProgressDeliveriesResponse, "inProgressDeliveries">("inProgressDeliveries", IN_PROGRESS_DELIVERIES_PATH, (data) => data.deliveries.length)
     read<SellerProductListResponse, "publishedProducts">("publishedProducts", sellerProductCountPath("PUBLISHED"), (data) => data.total)
     read<SellerProductListResponse, "draftProducts">("draftProducts", sellerProductCountPath("DRAFT"), (data) => data.total)
+    read<SellerProductListResponse, "restrictedProducts">("restrictedProducts", sellerModeratedCountPath("RESTRICTED"), (data) => data.total)
+    read<SellerProductListResponse, "inReviewProducts">("inReviewProducts", sellerModeratedCountPath("IN_REVIEW"), (data) => data.total)
     read<SellerPaymentSummary, "payments">("payments", paymentSummaryPath(defaultSummaryPeriod()), (data) => data)
     return () => {
       cancelled = true
@@ -127,6 +136,9 @@ function ApprovedSummary({ shop, t }: { shop: OwnerShopResponse; t: SellerMessag
   const failed = Object.values(summary).some((figure) => figure === null)
   const payments = summary.payments
   const noProducts = summary.publishedProducts === 0 && summary.draftProducts === 0
+  const moderationT = useModerationMessages()
+  const { restrictedProducts: restricted, inReviewProducts: inReview } = summary
+  const moderated = restricted === undefined || inReview === undefined ? undefined : restricted === null || inReview === null ? null : restricted + inReview
 
   return (
     <>
@@ -157,6 +169,17 @@ function ApprovedSummary({ shop, t }: { shop: OwnerShopResponse; t: SellerMessag
           <Tile title={t.tiles.unread} value={String(unread)} href={SELLER_AREA_HREF.notifications} t={t} />
           <Tile title={t.tiles.publishedProducts} value={countText(summary.publishedProducts)} href={SELLER_AREA_HREF.products} t={t} />
           <Tile title={t.tiles.draftProducts} value={countText(summary.draftProducts)} href={SELLER_AREA_HREF.products} t={t} />
+          <Tile
+            title={moderationT.seller.overviewTile}
+            value={countText(moderated)}
+            detail={
+              typeof restricted === "number" && typeof inReview === "number"
+                ? fillText(moderationT.seller.overviewDetail, { restricted: String(restricted), inReview: String(inReview) })
+                : undefined
+            }
+            href={sellerModeratedProductsHref(restricted === 0 && inReview !== 0 ? "IN_REVIEW" : "RESTRICTED")}
+            t={t}
+          />
           <Tile
             title={t.tiles.toCollect}
             value={payments === undefined || payments === null ? payments : formatMru(payments.pending.total, locale)}

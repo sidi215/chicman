@@ -113,6 +113,20 @@ const ACCESS: Record<string, Access> = {
   "GET /api/v1/admin/orders/:shopOrderId": "admin",
   "POST /api/v1/admin/orders/:shopOrderId/cancel": "admin",
   "POST /api/v1/admin/orders/:shopOrderId/payment/notes": "admin",
+
+  // Product moderation (spec 19).
+  "POST /api/v1/customers/me/product-reports": "buyer",
+  "GET /api/v1/sellers/me/products/:productId/moderation": "seller",
+  "POST /api/v1/sellers/me/products/:productId/moderation/resubmit": "approvedSeller",
+  "GET /api/v1/admin/products": "admin",
+  "GET /api/v1/admin/products/:productId": "admin",
+  "POST /api/v1/admin/products/:productId/moderation/restrict": "admin",
+  "POST /api/v1/admin/products/:productId/moderation/request-correction": "admin",
+  "POST /api/v1/admin/products/:productId/moderation/restore": "admin",
+  "POST /api/v1/admin/products/:productId/moderation/remove": "admin",
+  "GET /api/v1/admin/moderation/cases": "admin",
+  "GET /api/v1/admin/moderation/cases/:caseId": "admin",
+  "POST /api/v1/admin/moderation/cases/:caseId/dismiss": "admin",
 };
 
 /** The route lister sees every router under `/api/v1`; the auth router is mounted at `/api/v1/auth`. */

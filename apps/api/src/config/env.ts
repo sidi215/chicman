@@ -128,9 +128,16 @@ const envSchema = z.object({
   // undeliverable automatically (D5, spec 12). Read when the failure is
   // recorded: changing it never moves existing deadlines.
   DELIVERY_FAILED_AUTO_CLOSE_DAYS: optionalPositiveInt(DEFAULT_DELIVERY_FAILED_AUTO_CLOSE_DAYS),
+  // Which engine answers product searches (spec 18). `meilisearch` (default):
+  // Meilisearch, required in production, with the PostgreSQL fallback flagged
+  // `degraded`. `postgres`: PostgreSQL is the search, deliberately (the
+  // free-provider launch, QA-01, 2026-11-20): no MEILI_* settings, and
+  // searches are not reported as degraded.
+  SEARCH_ENGINE: z.enum(["meilisearch", "postgres"]).optional().default("meilisearch"),
   // Meilisearch (spec 18): the product search index, derived from PostgreSQL.
-  // Required in production; elsewhere searches use the PostgreSQL fallback
-  // without it. The API should use a search-only key, the worker an admin key.
+  // Required in production with SEARCH_ENGINE=meilisearch; elsewhere searches
+  // use the PostgreSQL fallback without it. The API should use a search-only
+  // key, the worker an admin key.
   MEILI_URL: z.string().trim().optional(),
   MEILI_API_KEY: z.string().trim().optional(),
   MEILI_PRODUCTS_INDEX: z
@@ -151,6 +158,11 @@ const envSchema = z.object({
   CHECKOUT_RATE_LIMIT_PER_USER: optionalPositiveInt(20),
   CHECKOUT_RATE_LIMIT_PER_IP: optionalPositiveInt(60),
   CHECKOUT_RATE_LIMIT_WINDOW_MS: optionalPositiveInt(600_000),
+
+  // Product report limits (spec 19, section 4): server configuration, like checkout's.
+  PRODUCT_REPORT_RATE_LIMIT_PER_USER: optionalPositiveInt(10),
+  PRODUCT_REPORT_RATE_LIMIT_PER_IP: optionalPositiveInt(30),
+  PRODUCT_REPORT_RATE_LIMIT_WINDOW_MS: optionalPositiveInt(86_400_000),
 });
 
 /** Object storage keys; validated as a group (see `parseStorageConfig`). */
@@ -196,12 +208,16 @@ export interface AppConfig {
   };
   /** `undefined`: storage not configured (logo routes → `503`; not allowed in production). */
   storage: StorageConfig | undefined;
-  /** `undefined`: no search engine; searches use the PostgreSQL fallback (not allowed in production). */
+  /** `postgres`: PostgreSQL is the search engine by choice (`search` is then `undefined`). */
+  searchEngine: "meilisearch" | "postgres";
+  /** `undefined`: no search engine; searches use PostgreSQL (with `meilisearch`, not allowed in production). */
   search: SearchConfig | undefined;
   logo: LogoTimingConfig;
   orders: { responseTimeoutHours: number };
   delivery: { failedAutoCloseDays: number };
   checkout: { rateLimit: { perUser: number; perIp: number; windowMs: number } };
+  /** Buyer product reports (spec 19): default 10 per user and 30 per IP per 24 hours. */
+  productReports: { rateLimit: { perUser: number; perIp: number; windowMs: number } };
 }
 
 export interface StorageConfig {
@@ -255,12 +271,19 @@ function parseStorageConfig(env: ParsedEnv): { storage: StorageConfig | undefine
   };
 }
 
-/** The search engine settings; without `MEILI_URL` there is none (an error in production). */
-function parseSearchConfig(env: Pick<ParsedEnv, "NODE_ENV" | "MEILI_URL" | "MEILI_API_KEY" | "MEILI_PRODUCTS_INDEX" | "MEILI_TIMEOUT_MS">): {
+/**
+ * The search engine settings. `SEARCH_ENGINE=postgres` means none, by choice,
+ * and refuses MEILI_URL so the two cannot disagree. Otherwise, without
+ * `MEILI_URL` there is none (an error in production).
+ */
+function parseSearchConfig(env: Pick<ParsedEnv, "NODE_ENV" | "SEARCH_ENGINE" | "MEILI_URL" | "MEILI_API_KEY" | "MEILI_PRODUCTS_INDEX" | "MEILI_TIMEOUT_MS">): {
   search: SearchConfig | undefined;
   errors: string[];
 } {
   const url = env.MEILI_URL ?? "";
+  if (env.SEARCH_ENGINE === "postgres") {
+    return { search: undefined, errors: url === "" ? [] : ["  - MEILI_URL: must be empty when SEARCH_ENGINE=postgres"] };
+  }
   if (url === "") {
     return { search: undefined, errors: env.NODE_ENV === "production" ? ["  - MEILI_URL: the search engine is required in production"] : [] };
   }
@@ -335,6 +358,7 @@ export function loadConfig(source: NodeJS.ProcessEnv): AppConfig {
       authTimeoutMs: env.SUPABASE_AUTH_TIMEOUT_MS,
     },
     storage,
+    searchEngine: env.SEARCH_ENGINE,
     search,
     logo: {
       completionLeaseMs: env.LOGO_COMPLETION_LEASE_MS,
@@ -347,6 +371,13 @@ export function loadConfig(source: NodeJS.ProcessEnv): AppConfig {
         perUser: env.CHECKOUT_RATE_LIMIT_PER_USER,
         perIp: env.CHECKOUT_RATE_LIMIT_PER_IP,
         windowMs: env.CHECKOUT_RATE_LIMIT_WINDOW_MS,
+      },
+    },
+    productReports: {
+      rateLimit: {
+        perUser: env.PRODUCT_REPORT_RATE_LIMIT_PER_USER,
+        perIp: env.PRODUCT_REPORT_RATE_LIMIT_PER_IP,
+        windowMs: env.PRODUCT_REPORT_RATE_LIMIT_WINDOW_MS,
       },
     },
   };
@@ -380,7 +411,7 @@ export function loadWorkerStorageConfig(source: NodeJS.ProcessEnv): { storage: S
 /** Search engine settings for the worker process and the reindex script. */
 export function loadWorkerSearchConfig(source: NodeJS.ProcessEnv): SearchConfig | undefined {
   const env = envSchema
-    .pick({ NODE_ENV: true, MEILI_URL: true, MEILI_API_KEY: true, MEILI_PRODUCTS_INDEX: true, MEILI_TIMEOUT_MS: true })
+    .pick({ NODE_ENV: true, SEARCH_ENGINE: true, MEILI_URL: true, MEILI_API_KEY: true, MEILI_PRODUCTS_INDEX: true, MEILI_TIMEOUT_MS: true })
     .safeParse(source);
   if (!env.success) throw new Error("Invalid worker configuration: search settings (MEILI_*)");
   const { search, errors } = parseSearchConfig(env.data);

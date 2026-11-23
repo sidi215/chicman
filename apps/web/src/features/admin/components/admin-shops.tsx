@@ -14,6 +14,9 @@ import { TextLink } from "@/features/auth/components/text-link"
 import { formatDateTime } from "@/features/shop/messages"
 import { useLocale } from "@/lib/locale-provider"
 
+import { useModerationMessages } from "@/features/moderation/messages"
+import { adminShopProductsHref } from "@/features/moderation/moderation"
+
 import { ADMIN_SHOP_FILTERS, adminShopHref, adminShopListPath, adminShopOrdersHref, pageCount, type AdminShopFilter } from "../admin-dashboard"
 import { availableDecisions, buildDecision, reasonFieldFor, type AdminOutcome, type ShopDecisionAction } from "../admin-shops"
 import { useAdminMessages } from "../messages"
@@ -122,6 +125,7 @@ export function AdminShopList() {
 export function AdminShopDetail({ shopId }: { shopId: string }) {
   const locale = useLocale()
   const t = useAdminMessages()
+  const moderationText = useModerationMessages()
   const { status, call } = useAdminApi()
   const [outcome, setOutcome] = useState<AdminOutcome<AdminShopDetailResponse> | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -204,6 +208,8 @@ export function AdminShopDetail({ shopId }: { shopId: string }) {
             ))}
           </dl>
           <TextLink href={adminShopOrdersHref(shop.id)}>{t.shopOrdersLink}</TextLink>
+          {/* Spec 19: the shop's products, for inspection and moderation. */}
+          <TextLink href={adminShopProductsHref(shop.id)}>{moderationText.admin.shopProducts}</TextLink>
         </CardContent>
       </Card>
 

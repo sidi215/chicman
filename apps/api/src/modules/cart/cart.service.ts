@@ -16,7 +16,7 @@ import type { PrismaClient } from "../../lib/prisma.js";
 import { isQuantityAvailable } from "../inventory/availability.js";
 import { isShopStillApproved } from "../products/product-lock.js";
 import { mediaUrlBuilder, type MediaUrl } from "../products/product-views.js";
-import { productVisibility } from "../products/product-visibility.js";
+import { mayShowProductImage, productVisibility } from "../products/product-visibility.js";
 import { CART_LINE_ORDER as LINE_ORDER, cartLineInclude as lineInclude, cartLineProduct as productState, cartLineState as lineState, type CartLine as Line } from "./cart-lines.js";
 import { evaluateCartLine } from "./cart-rules.js";
 
@@ -60,7 +60,12 @@ export class CartService {
       const cartId = await this.lockOrCreateCart(tx, userId);
       const product = await this.lockedProduct(tx, input.productId);
       if (product === null) throw notFound(PRODUCT_ERROR_CODES.notFound);
-      const visibility = productVisibility({ status: product.status, shopStatus: product.shop.status, hasActiveImage: product.images.length > 0 });
+      const visibility = productVisibility({
+        status: product.status,
+        moderationStatus: product.moderationStatus,
+        shopStatus: product.shop.status,
+        hasActiveImage: product.images.length > 0,
+      });
       if (visibility !== "PUBLIC") throw notFound(PRODUCT_ERROR_CODES.notFound);
 
       const variant = this.chosenVariant(product, input.variantId);
@@ -211,7 +216,8 @@ export class CartService {
         productId: product.id,
         variantId: line.variantId,
         name: product.name,
-        imageUrl: product.images[0] === undefined ? null : this.mediaUrl(product.images[0].objectKey),
+        // A moderated product shows no image outside order history (spec 19).
+        imageUrl: product.images[0] === undefined || !mayShowProductImage(product) ? null : this.mediaUrl(product.images[0].objectKey),
         size: line.variantSize,
         color: line.variantColor,
         quantity: line.quantity,

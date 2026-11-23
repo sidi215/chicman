@@ -440,8 +440,8 @@ Administration and audit:
 
 Order chain additions (D2, D8, 2026-11-09; not implemented yet):
 - [x] An approved shop can set and change its delivery fee (≥ 0, not cleared once set); each change writes a `ShopFieldChangeEvent`; a suspended shop cannot change it. *(Built with spec 10, 2026-11-09: API, owner and admin views, web dashboard; `test/checkout.test.ts`.)*
-- [ ] Suspension cancels the shop's pending and not-yet-dispatched shop orders in the same transaction (stock returned, payments cancelled, customers notified), and a failure there rolls back the suspension.
-- [ ] A suspended owner can finish only deliveries already under way; every other seller operation stays `403`.
+- [x] Suspension cancels the shop's pending and not-yet-dispatched shop orders in the same transaction (stock returned, payments cancelled, customers notified), and a failure there rolls back the suspension. *(`test/orders.test.ts`: the suspension transaction and its rollback; QA audit probe EDGE-5, 2026-11-17.)*
+- [x] A suspended owner can finish only deliveries already under way; every other seller operation stays `403`. *(`test/delivery.test.ts`, suspended shops (D8); `test/orders.test.ts`; QA audit probe EDGE-5.)*
 
 ## Logo Normalization Verification (2026-11-08)
 

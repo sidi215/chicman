@@ -50,9 +50,11 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 1. Administrator accesses the administration dashboard.
 2. Reviews and manages shop registration applications.
 3. Approves or rejects seller accounts.
-4. Oversees customers, sellers, products, and orders.
+4. Oversees sellers, products, and orders, and moderates individual products.
 5. Monitors marketplace activities and handles reported issues.
-6. Manages platform categories and general marketplace settings.
+6. Manages general marketplace settings.
+
+> **V1 scope decisions (project owner, 2026-11-20):** in V1, administrators moderate individual marketplace products. Dedicated customer management, marketplace statistics, administrator-managed category CRUD, and product ratings and reviews are **post-V1**. Product categories stay the fixed list of spec 07. Record: `business-decisions-features-10-18.md` (O4, O10, O11). Moderation behavior: `feature-specs/19-product-moderation.md` (approved 2026-11-20).
 
 ## Features
 
@@ -77,7 +79,7 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 - Product details and image galleries.
 - Product size and color variations.
 - Seller/shop information.
-- Product ratings and reviews.
+- Product ratings and reviews (post-V1, owner decision 2026-11-20).
 - Favorites and wishlist.
 - Support for affordable, mid-range, and premium products.
 
@@ -135,7 +137,7 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 ### Notifications
 
 - Account emails: email confirmation and password recovery (sent by Supabase Auth).
-- Order confirmation notifications.
+- Order confirmation: the customer sees the confirmation screen at placement, and each seller receives an in-app notification of the new order (spec 15; the customer is notified of every later decision and delivery step).
 - Seller acceptance and rejection notifications.
 - Order status updates.
 - Delivery notifications.
@@ -145,13 +147,14 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 
 - Admin dashboard.
 - Seller/shop application management.
-- Customer management.
+- Customer management (post-V1: no dedicated customer-management capability in V1).
 - Seller management.
-- Product and category management.
+- Individual product moderation (V1).
+- Category management (post-V1: no administrator-managed category CRUD in V1; categories are a fixed list).
 - Order monitoring.
 - Reported issue management.
 - Marketplace configuration.
-- Platform activity overview.
+- Platform activity overview (post-V1: no dedicated marketplace analytics or statistics dashboard in V1).
 
 ## Scope
 
@@ -189,6 +192,7 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 - Advanced marketing automation.
 - Native desktop applications.
 - Phone-number authentication, phone OTP verification, and SMS delivery in the initial version (phone verification may be added later).
+- Post-V1 (project owner, 2026-11-20): dedicated administrator customer management, a marketplace statistics or analytics dashboard, administrator-managed category CRUD, and product ratings and reviews.
 
 ## Success Criteria
 
@@ -206,4 +210,4 @@ A multi-vendor fashion e-commerce platform designed for the Mauritanian market, 
 12. Web and mobile applications provide consistent functionality and visual identity.
 13. The platform supports French and Arabic, including proper RTL layouts.
 14. Product prices and delivery fees are displayed consistently in MRU.
-15. Administrators can manage shops, customers, products, and marketplace orders from a central dashboard.
+15. Administrators can manage shops, moderate individual products, and oversee marketplace orders from a central dashboard. (Customer management and statistics are post-V1; owner decision 2026-11-20.)

@@ -292,7 +292,7 @@ Update `context/progress-tracker.md` after implementation.
 - [x] One checkout supports products from multiple shops.
 - [x] Separate seller orders are created under one checkout.
 - [x] Each seller order starts as `PENDING` with a response deadline.
-- [ ] Sellers can only access their own orders. *(No seller order route exists yet: spec 11. Checkout exposes nothing to sellers except their own `SHOP_ORDER_PLACED` notification record.)*
+- [x] Sellers can only access their own orders. *(Spec 11's seller routes resolve shop orders through the seller's own shop: another shop's is `404` and unchanged, `test/orders.test.ts`; confirmed by the QA audit's independent probe E2E-1, 2026-11-17.)*
 - [x] COD is the only payment method, and one `PENDING` payment is created per shop order.
 - [x] Delivery fees are calculated separately per shop, once per shop order, and a shop without a fee blocks checkout.
 - [x] The backend calculates all final totals; changed totals or fees are refused with `409` and nothing is written.

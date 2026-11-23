@@ -18,7 +18,7 @@ interface NotificationRow {
   id: string;
   type: string;
   payload: unknown;
-  resourceType: "SHOP" | "SHOP_ORDER" | null;
+  resourceType: "SHOP" | "SHOP_ORDER" | "PRODUCT" | null;
   resourceId: string | null;
   createdAt: Date;
   readAt: Date | null;
@@ -75,6 +75,7 @@ function toItem(row: NotificationRow): NotificationItem {
   const audience = audienceOf(row);
   let resource: NotificationItem["resource"] = null;
   if (row.resourceType === "SHOP" && row.resourceId !== null) resource = { type: "SHOP", id: row.resourceId };
+  if (row.resourceType === "PRODUCT" && row.resourceId !== null) resource = { type: "PRODUCT", id: row.resourceId };
   if (row.resourceType === "SHOP_ORDER" && row.resourceId !== null) {
     resource = { type: "SHOP_ORDER", id: row.resourceId, orderId: audience === "CUSTOMER" ? row.customerOrderId : null };
   }

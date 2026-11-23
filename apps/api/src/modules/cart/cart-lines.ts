@@ -10,6 +10,7 @@ export const cartLineProduct = {
   id: true,
   name: true,
   status: true,
+  moderationStatus: true,
   price: true,
   stock: true,
   images: { ...activeImages, take: 1, select: { objectKey: true } },
@@ -34,6 +35,7 @@ export function cartLineState(line: CartLine): CartLineState {
     variantColor: line.variantColor,
     product: {
       status: product.status,
+      moderationStatus: product.moderationStatus,
       price: product.price,
       stock: product.stock,
       hasActiveImage: product.images.length > 0,
