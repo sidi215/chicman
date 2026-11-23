@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../buyer/presentation/account_drawer.dart';
 import '../../cart/presentation/cart_widgets.dart';
 import '../../catalog/domain/catalog.dart';
 import '../../catalog/presentation/catalog_widgets.dart';
@@ -15,9 +16,17 @@ import 'favorites_messages.dart';
 /// destination: it reads the list again each time it becomes [visible], so
 /// prices and availability are current.
 class FavoritesScreen extends ConsumerStatefulWidget {
-  const FavoritesScreen({super.key, this.visible = true});
+  const FavoritesScreen({
+    super.key,
+    this.visible = true,
+    this.accountMenu = false,
+  });
 
   final bool visible;
+
+  /// As a dock tab, the screen offers the account drawer. Opened as a page
+  /// (from the drawer itself), it keeps its back button instead.
+  final bool accountMenu;
 
   @override
   ConsumerState<FavoritesScreen> createState() => _FavoritesScreenState();
@@ -64,6 +73,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
     final t = FavoritesMessages.of(context);
     final view = ref.watch(favoritesProvider);
     return Scaffold(
+      drawer: widget.accountMenu ? const AccountDrawer() : null,
       appBar: AppBar(title: Text(t.title), actions: const [CartAction()]),
       body: switch (view.kind) {
         FavoritesViewKind.loading => const Center(

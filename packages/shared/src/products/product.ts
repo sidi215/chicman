@@ -9,6 +9,7 @@ import {
   LOGO_UPLOAD_URL_TTL_SECONDS,
 } from "../shops/constants.js";
 import { MONEY_PATTERN, moneyAmountSchema } from "../money.js";
+import type { SellerProductModeration } from "../moderation/moderation.js";
 import { plainText } from "../shops/schemas.js";
 
 /** Product management (spec 07). */
@@ -118,8 +119,19 @@ const name = plainText(1, PRODUCT_FIELD_LIMITS.name);
 const description = plainText(1, PRODUCT_FIELD_LIMITS.description, { multiline: true });
 const brand = plainText(1, PRODUCT_FIELD_LIMITS.brand);
 const category = z.enum(PRODUCT_CATEGORIES);
-const size = plainText(1, PRODUCT_FIELD_LIMITS.size);
-const color = plainText(1, PRODUCT_FIELD_LIMITS.color);
+/**
+ * List separators (Latin and Arabic comma and semicolon). A variant has one
+ * size and one color (spec 07, section 4): "bleu, noir" is two variants, and a
+ * list would make a facet of its own (QA-07). `/` stays allowed ("38/40",
+ * "noir/blanc" are single values).
+ */
+export const VARIANT_VALUE_LIST_SEPARATORS = /[,;\u060C\u061B]/;
+/** The Zod issue message when a size or color holds a list. */
+export const VARIANT_SINGLE_VALUE_MESSAGE = "variant_single_value";
+const singleValue = (max: number) =>
+  plainText(1, max).refine((value) => !VARIANT_VALUE_LIST_SEPARATORS.test(value), { message: VARIANT_SINGLE_VALUE_MESSAGE });
+const size = singleValue(PRODUCT_FIELD_LIMITS.size);
+const color = singleValue(PRODUCT_FIELD_LIMITS.color);
 
 /*
  * Every object schema is strict: `shopId`, `status`, owner IDs, timestamps,
@@ -152,6 +164,8 @@ export type ProductUpdateInput = z.output<typeof productUpdateSchema>;
 /** `GET /sellers/me/products` query string. */
 export const productListQuerySchema = z.strictObject({
   status: z.enum(PRODUCT_STATUSES).optional(),
+  /** Spec 19: "Restreint", "En révision", "Retiré" filters (and `CLEAR`). */
+  moderationStatus: z.enum(["CLEAR", "RESTRICTED", "IN_REVIEW", "REMOVED"]).optional(),
   page: z.coerce.number().int().min(1).max(1_000_000).default(1),
   pageSize: z.coerce.number().int().min(1).max(PRODUCT_LIST_MAX_PAGE_SIZE).default(PRODUCT_LIST_DEFAULT_PAGE_SIZE),
 });
@@ -233,6 +247,8 @@ export interface SellerProductSummary {
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Spec 19: the administrator's moderation state and its seller-facing reason. */
+  moderation: SellerProductModeration;
 }
 
 export interface SellerProductDetail extends SellerProductSummary {

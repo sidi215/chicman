@@ -10,6 +10,8 @@ Customers can manage a cart without immediately placing an order.
 
 ## Design & Architecture Decisions
 
+- **Spec 19 (product moderation, approved 2026-11-20, implemented 2026-11-20):** adding a moderated product → `404`; an existing line shows the existing remove-only `PRODUCT_UNPUBLISHED` issue with no image. No new issue code. Details: `19-product-moderation.md`, section 7.
+
 ### 1. Cart ownership
 
 - A cart belongs to one authenticated customer.

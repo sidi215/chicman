@@ -6,7 +6,7 @@ import type { PrismaClient } from "../../lib/prisma.js";
 import { productAvailability } from "../inventory/availability.js";
 import { publicSummaryInclude, toPublicProductSummary } from "../products/catalog.service.js";
 import { mediaUrlBuilder, type MediaUrl } from "../products/product-views.js";
-import { PUBLIC_PRODUCT_WHERE, productVisibility } from "../products/product-visibility.js";
+import { assertNever, mayShowProductImage, PUBLIC_PRODUCT_WHERE, productVisibility } from "../products/product-visibility.js";
 
 /** The product as the card needs it, plus the shop status for the visibility rule. */
 const favoriteInclude = {
@@ -89,12 +89,28 @@ export class FavoriteService {
       productId,
       addedAt: createdAt.toISOString(),
       name: product.name,
-      imageUrl: mainImageKey === undefined ? null : this.mediaUrl(mainImageKey),
+      // A moderated product keeps its name but shows no image (spec 19).
+      imageUrl: mainImageKey === undefined || !mayShowProductImage(product) ? null : this.mediaUrl(mainImageKey),
     };
-    const visibility = productVisibility({ status: product.status, shopStatus: product.shop.status, hasActiveImage: mainImageKey !== undefined });
+    const visibility = productVisibility({
+      status: product.status,
+      moderationStatus: product.moderationStatus,
+      shopStatus: product.shop.status,
+      hasActiveImage: mainImageKey !== undefined,
+    });
     // The price, shop, and link of a hidden product stay private, and so does the reason it is hidden.
-    if (visibility !== "PUBLIC") return { ...base, state: "UNAVAILABLE", product: null };
-    const { available } = productAvailability(product.stock, product.variants);
-    return { ...base, state: available ? "AVAILABLE" : "SOLD_OUT", product: toPublicProductSummary(product, this.mediaUrl) };
+    switch (visibility) {
+      case "MODERATED":
+      case "SHOP_NOT_APPROVED":
+      case "ARCHIVED":
+      case "NOT_PUBLISHED":
+        return { ...base, state: "UNAVAILABLE", product: null };
+      case "PUBLIC": {
+        const { available } = productAvailability(product.stock, product.variants);
+        return { ...base, state: available ? "AVAILABLE" : "SOLD_OUT", product: toPublicProductSummary(product, this.mediaUrl) };
+      }
+      default:
+        return assertNever(visibility);
+    }
   }
 }

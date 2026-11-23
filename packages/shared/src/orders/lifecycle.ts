@@ -103,6 +103,8 @@ export const adminOrderListQuerySchema = z
   .strictObject({
     status: shopOrderStatus.optional(),
     shopId: z.uuid().optional(),
+    /** Spec 19: shop orders containing this product (the moderation case page). */
+    productId: z.uuid().optional(),
     reference: orderReferenceSearchSchema.optional(),
     from: z.iso.date().optional(),
     to: z.iso.date().optional(),

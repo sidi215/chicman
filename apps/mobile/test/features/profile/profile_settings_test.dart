@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
 import '../auth/fakes.dart';
+import '../buyer/drawer_helpers.dart';
 
 const _config = AppConfig(
   supabaseUrl: 'https://p.supabase.co',
@@ -43,13 +44,7 @@ Map<String, Object?> _account({
 ApiClient _api(List<http.Request> requests, {(int, Object?)? patch}) {
   var stored = _account();
   return routedApi({
-    'GET /auth/session': (_) => (
-      200,
-      {
-        'userId': 'u1',
-        'accountType': 'BUYER',
-      },
-    ),
+    'GET /auth/session': (_) => (200, {'userId': 'u1', 'accountType': 'BUYER'}),
     'GET /accounts/me': (_) => (200, stored),
     'PATCH /accounts/me': (request) {
       if (patch != null) return patch;
@@ -81,8 +76,7 @@ Future<FakeAuthRepository> _openSettings(
     ),
   );
   await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const Key('account-profile-settings')));
-  await tester.pumpAndSettle();
+  await tapDrawerItem(tester, const Key('account-profile-settings'));
   return repository;
 }
 

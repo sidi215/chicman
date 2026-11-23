@@ -1,16 +1,14 @@
 "use client"
 
-import { ShoppingBag, Store, type LucideIcon } from "lucide-react"
+import { Package, ShieldAlert, ShoppingBag, Store, UserRound, type LucideIcon } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Suspense, type ReactNode } from "react"
 
 import { BrandLogo } from "@/components/brand/brand-logo"
-import { ThemeSelector } from "@/components/theme/theme-selector"
 import { buttonVariants } from "@/components/ui/button"
 import { useAccountMessages } from "@/features/auth/account-messages"
-import { AccountActions } from "@/features/auth/components/account-actions"
-import { LanguageSwitch } from "@/features/storefront/components/language-switch"
+import { SignOutAction } from "@/features/auth/components/account-actions"
 import { localizedPath } from "@/lib/locale"
 import { useLocale } from "@/lib/locale-provider"
 import { cn } from "@/lib/utils"
@@ -18,11 +16,12 @@ import { cn } from "@/lib/utils"
 import { ADMIN_AREA_HREF, ADMIN_AREAS, adminAreaOf, type AdminArea } from "../admin-dashboard"
 import { useAdminMessages } from "../messages"
 
-const AREA_ICON: Record<AdminArea, LucideIcon> = { shops: Store, orders: ShoppingBag }
+const AREA_ICON: Record<AdminArea, LucideIcon> = { shops: Store, orders: ShoppingBag, products: Package, moderation: ShieldAlert, profile: UserRound }
 
 /**
- * The administrator areas built so far (spec 17): shops (spec 06) and orders
- * (specs 11–13). Users, products, statistics, and categories wait for O4 and O10.
+ * The administrator areas (spec 17): shops (spec 06), orders (specs 11–13),
+ * and product inspection and moderation (spec 19). Customer oversight,
+ * statistics, and categories are post-V1.
  */
 function AdminNav({ active }: { active: AdminArea | null }) {
   const t = useAdminMessages()
@@ -78,15 +77,16 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </Link>
             <span className="type-title-small text-muted-foreground">{t.adminArea}</span>
           </div>
-          <div className="order-last basis-full sm:order-0 sm:ms-auto sm:basis-auto">
-            <ThemeSelector />
-          </div>
+          {/*
+            No profile, language, or appearance controls here: the side
+            navigation's Profile page (`/account/profile`) holds all three,
+            as in the buyer and seller areas.
+          */}
           <div className="flex items-center gap-2">
-            <LanguageSwitch />
             <Link href={localizedPath(locale, "/")} aria-label={t.storefrontLink} title={t.storefrontLink} className={buttonVariants({ variant: "outline", size: "icon-sm" })}>
               <Store aria-hidden className="size-icon-action" />
             </Link>
-            <AccountActions />
+            <SignOutAction />
           </div>
         </div>
       </header>

@@ -127,6 +127,7 @@ export const PRODUCT_MESSAGES = {
     variantErrors: {
       attributeRequired: "Indiquez une taille, une couleur ou les deux.",
       tooLong: "Taille : 30 caractères maximum. Couleur : 50 caractères maximum.",
+      singleValue: "Une seule taille et une seule couleur par variante : créez une variante par couleur (sans virgule).",
       invalidStock: "Saisissez un nombre entier entre 0 et 1 000 000.",
     } satisfies Record<VariantErrorKey, string>,
     failures: {
@@ -144,6 +145,9 @@ export const PRODUCT_MESSAGES = {
       "variant-limit": "Ce produit a atteint le maximum de 100 variantes.",
       "variant-attribute-required": "Indiquez une taille, une couleur ou les deux.",
       "image-limit": "Ce produit a atteint le maximum de 10 images.",
+      "under-review": "Ce produit est en révision par Chicman : seul le stock peut être modifié.",
+      removed: "Ce produit a été retiré par Chicman : il ne peut plus être modifié.",
+      "moderation-conflict": "L'état de modération de ce produit a changé. La page a été actualisée.",
       "rate-limited": "Trop de tentatives. Réessayez dans quelques minutes.",
       unavailable: "Service momentanément indisponible. Réessayez.",
       error: "Une erreur est survenue. Réessayez.",
@@ -271,6 +275,7 @@ export const PRODUCT_MESSAGES = {
     variantErrors: {
       attributeRequired: "حدد مقاسًا أو لونًا أو كليهما.",
       tooLong: "المقاس: 30 حرفًا كحد أقصى. اللون: 50 حرفًا كحد أقصى.",
+      singleValue: "مقاس واحد ولون واحد لكل متغير: أنشئ متغيرًا لكل لون (بدون فاصلة).",
       invalidStock: "أدخل عددًا صحيحًا بين 0 و1000000.",
     } satisfies Record<VariantErrorKey, string>,
     failures: {
@@ -288,6 +293,9 @@ export const PRODUCT_MESSAGES = {
       "variant-limit": "بلغ هذا المنتج الحد الأقصى وهو 100 نوع.",
       "variant-attribute-required": "حدد مقاسًا أو لونًا أو كليهما.",
       "image-limit": "بلغ هذا المنتج الحد الأقصى وهو 10 صور.",
+      "under-review": "هذا المنتج قيد المراجعة لدى شيكمان: يمكن تعديل المخزون فقط.",
+      removed: "حذفت شيكمان هذا المنتج: لم يعد بالإمكان تعديله.",
+      "moderation-conflict": "تغيرت حالة الإشراف على هذا المنتج. تم تحديث الصفحة.",
       "rate-limited": "محاولات كثيرة جدًا. حاول مرة أخرى بعد بضع دقائق.",
       unavailable: "الخدمة غير متاحة مؤقتًا. حاول مرة أخرى.",
       error: "حدث خطأ. حاول مرة أخرى.",

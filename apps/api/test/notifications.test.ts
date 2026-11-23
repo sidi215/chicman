@@ -29,9 +29,12 @@ dotenv.config({ quiet: true });
 const databaseUrl = process.env["TEST_DATABASE_URL"];
 
 describe("notification contract (spec 15)", () => {
-  it("lists every type of section 5 once", () => {
+  it("lists every type of section 5 once, plus spec 19's four seller product types", () => {
     assert.equal(new Set(NOTIFICATION_TYPES).size, NOTIFICATION_TYPES.length);
-    assert.equal(NOTIFICATION_TYPES.length, 16);
+    assert.equal(NOTIFICATION_TYPES.length, 20);
+    for (const type of ["PRODUCT_RESTRICTED", "PRODUCT_CORRECTION_REQUESTED", "PRODUCT_RESTORED", "PRODUCT_REMOVED"]) {
+      assert.ok((NOTIFICATION_TYPES as readonly string[]).includes(type), type);
+    }
   });
 
   it("bounds the page size and refuses unknown parameters", () => {

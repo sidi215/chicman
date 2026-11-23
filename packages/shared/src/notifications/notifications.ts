@@ -15,6 +15,7 @@ import type {
   ShopOrderResponseReminderPayload,
 } from "../orders/lifecycle.js";
 import { ORDER_NOTIFICATION_TYPES, type ShopOrderPlacedPayload } from "../orders/orders.js";
+import { PRODUCT_MODERATION_NOTIFICATION_TYPES, type ProductModerationNotificationPayload } from "../moderation/moderation.js";
 import type { ShopStatus } from "../auth/roles.js";
 import { SHOP_NOTIFICATION_TYPES } from "../shops/constants.js";
 
@@ -27,7 +28,12 @@ import { SHOP_NOTIFICATION_TYPES } from "../shops/constants.js";
  */
 
 /** Every notification type (spec 15, section 5). */
-export const NOTIFICATION_TYPES = [...SHOP_NOTIFICATION_TYPES, ...ORDER_NOTIFICATION_TYPES, ...DELIVERY_NOTIFICATION_TYPES] as const;
+export const NOTIFICATION_TYPES = [
+  ...SHOP_NOTIFICATION_TYPES,
+  ...ORDER_NOTIFICATION_TYPES,
+  ...DELIVERY_NOTIFICATION_TYPES,
+  ...PRODUCT_MODERATION_NOTIFICATION_TYPES,
+] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
 /** Owner payload of the six shop decisions (spec 06). Never a reason, a note, or an administrator. */
@@ -60,6 +66,10 @@ export interface NotificationPayloads {
   DELIVERY_ATTEMPT_FAILED: DeliveryAttemptFailedPayload;
   DELIVERY_COMPLETED: DeliveryCompletedPayload;
   DELIVERY_CLOSED_UNDELIVERABLE: DeliveryClosedUndeliverablePayload;
+  PRODUCT_RESTRICTED: ProductModerationNotificationPayload;
+  PRODUCT_CORRECTION_REQUESTED: ProductModerationNotificationPayload;
+  PRODUCT_RESTORED: ProductModerationNotificationPayload;
+  PRODUCT_REMOVED: ProductModerationNotificationPayload;
 }
 
 /**
@@ -80,7 +90,7 @@ export const CUSTOMER_ONLY_NOTIFICATION_TYPES = [
 /** Types sent to the customer or the seller of a shop order (section 5): the shop order decides which. */
 export const SHARED_ORDER_NOTIFICATION_TYPES = ["SHOP_ORDER_CANCELLED", "SHOP_ORDER_EXPIRED"] as const satisfies readonly NotificationType[];
 
-export const NOTIFICATION_RESOURCE_TYPES = ["SHOP", "SHOP_ORDER"] as const;
+export const NOTIFICATION_RESOURCE_TYPES = ["SHOP", "SHOP_ORDER", "PRODUCT"] as const;
 export type NotificationResourceType = (typeof NOTIFICATION_RESOURCE_TYPES)[number];
 
 /**
@@ -89,7 +99,11 @@ export type NotificationResourceType = (typeof NOTIFICATION_RESOURCE_TYPES)[numb
  * `orderId` is given to the customer only, for the customer order page; the
  * seller opens the shop order by its own ID.
  */
-export type NotificationResource = { type: "SHOP"; id: string } | { type: "SHOP_ORDER"; id: string; orderId: string | null };
+export type NotificationResource =
+  | { type: "SHOP"; id: string }
+  | { type: "SHOP_ORDER"; id: string; orderId: string | null }
+  /** The seller's own product (spec 19), opened through the seller product routes. */
+  | { type: "PRODUCT"; id: string };
 
 interface NotificationItemOf<T extends NotificationType> {
   id: string;

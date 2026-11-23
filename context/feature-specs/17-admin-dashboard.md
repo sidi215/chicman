@@ -17,11 +17,12 @@ Provide platform administrators with a secure web workspace to oversee Chicman, 
   - Shop application review and decisions.
   - Shop suspension and reinstatement.
   - Shop change-request review.
-  - User and account oversight. **Unresolved (O4):** what it shows and its data source (`User` stores no email; the API has no Supabase secret key).
-  - Product moderation and platform catalog oversight. **Unresolved (O4, audit C12):** moderation needs a product state or actor that spec 07's lifecycle does not have. Not built until decided.
+  - User and account oversight. **Post-V1 (project owner, 2026-11-20; O4):** no dedicated customer-management capability in V1.
+  - Individual product moderation. **In V1 (project owner, 2026-11-20; O4).** Specified in `19-product-moderation.md` (approved 2026-11-20; O11 resolved). Built 2026-11-20 (`/admin/products`, `/admin/moderation`).
   - Order and delivery oversight (approved scope below).
-  - Platform category management, where supported. **Unresolved (O10, audit C13):** categories are a fixed list (spec 07), so none is supported today.
-  - Basic marketplace statistics. **Unresolved (O4):** definitions and periods.
+  - Platform category management. **Post-V1 (project owner, 2026-11-20; O10):** no administrator-managed category CRUD in V1; categories stay the fixed list of spec 07.
+  - Basic marketplace statistics. **Post-V1 (project owner, 2026-11-20; O4):** no dedicated marketplace analytics or statistics dashboard in V1.
+- **Not in V1 (project owner, 2026-11-20):** product ratings and reviews (O10), so there is nothing to moderate there.
 - **Order and delivery oversight (D6, D9, D11, approved 2026-11-09).** The rules and routes belong to specs 11 and 13; this feature provides the screens.
   - **Read:** all shop orders, with their items, delivery snapshot, history, delivery attempts, payment, payment events, and stock movements (`GET /api/v1/admin/orders…`, spec 11).
   - **Cancel:** a shop order that is `PENDING`, or `CONFIRMED` with the delivery not yet out for delivery, with a required internal reason (10–500) and an optional internal note. The customer sees only "Annulée par Chicman" (spec 11).
@@ -56,10 +57,10 @@ Requirements:
 - Provide shop application review with the required decision reasons.
 - Provide suspension, reinstatement, and change-request decisions according to Spec 06.
 - Preserve audit history and prevent unauthorized modification of historical decisions.
-- Provide safe order and delivery oversight as approved above. User and product oversight wait for O4.
+- Provide safe order and delivery oversight as approved above. Individual product moderation is required in V1 and specified in spec 19 (approved 2026-11-20). User oversight is post-V1.
 - Avoid exposing sensitive authentication information or internal data unnecessarily.
 - Make administrative lists searchable, filterable, and paginated where appropriate.
-- Use real persisted data for statistics.
+- Use real persisted data for statistics (post-V1).
 - Do not create a public admin registration flow.
 
 ## Verification Checklist
@@ -70,16 +71,16 @@ Requirements:
 - [x] All required administrative reasons are validated. *(Shared schemas, used by the API and by the web forms before sending.)*
 - [x] Administrative actions are audited. *(`ShopStatusEvent`, change requests, `ShopOrderStatusEvent`, `PaymentEvent` `ADMIN_NOTE`.)*
 - [x] Non-admin users cannot perform administrative operations.
-- [ ] User and product management preserve ownership and protected fields. *(Not built: waits for O4.)*
+- [x] Product moderation preserves ownership and protected fields. *(V1; spec 19, built 2026-11-20: moderation writes only the moderation state, its case, and its event; seller fields, ownership, and orders are untouched. User management is post-V1.)*
 - [x] Order and delivery oversight does not bypass normal business invariants: administrators can only read, cancel before dispatch, and annotate payments, never on their own shop.
-- [ ] Statistics use real data and correct definitions. *(Not built: waits for O4.)*
+- Statistics use real data and correct definitions. *(Post-V1 by the owner's decision of 2026-11-20; not a V1 check.)*
 - [x] Lists support appropriate filtering and pagination.
 - [x] French and Arabic RTL support works. *(Every text exists in both languages, checked by a test; browser checks with a real administrator passed, reported by the project owner on 2026-11-14.)*
 - [x] API and web tests cover authorization and administrative workflows.
 
 ## Implementation Notes (2026-11-14)
 
-- **Scope built:** the approved parts only. Shop review, suspension, reinstatement, and change requests already existed from spec 06 (API and web); order and delivery oversight routes from specs 11 and 13. This feature adds the admin area navigation, the order oversight screens, and search and pagination on the lists. **Not built:** user oversight, product moderation, and statistics (O4), category management (O10).
+- **Scope built:** the approved parts only. Shop review, suspension, reinstatement, and change requests already existed from spec 06 (API and web); order and delivery oversight routes from specs 11 and 13. This feature adds the admin area navigation, the order oversight screens, and search and pagination on the lists. **Not built:** user oversight, product moderation, and statistics (O4), category management (O10). *(2026-11-20, project owner: product moderation is V1, specified in spec 19 (approved 2026-11-20), and not built yet; user oversight, statistics, and category management are post-V1.)*
 - **Shared (`packages/shared/src/admin/admin.ts`):** `adminShopListQuerySchema` (`status`, `openChangeRequest`, `q` plain text 1–100, `page`, `pageSize` default 20, at most 50), `normalizeOrderReferenceSearch` and `orderReferenceSearchSchema`. `AdminShopListResponse` now carries `page`, `pageSize`, `total`. `adminOrderListQuerySchema` (spec 11) gains `reference`.
 - **API (no new route, no migration):** `GET /admin/shops` validates with the shared schema; `q` matches the shop name or city (case-insensitive, contains); paginated, still oldest change first. The old `limit` parameter is refused (`400`; only the web used it). `GET /admin/orders?reference=` matches order references containing the code: case-insensitive, spaces ignored, with or without `CM-`, 3–10 letters or digits (`400` otherwise).
 - **Web:** `features/admin/admin-dashboard.ts` (areas, list queries checked with the API's schemas, paths, cancellation and payment-note bodies), `components/admin-shared.tsx` (session-guarded API hook, reason form, pagination), `components/admin-orders.tsx`. `AdminShell` has a navigation (Boutiques, Commandes). `/admin/shops`: search, an "all" filter, result count, pages; the shop detail links to the shop's orders. `/admin/orders`: status chips, reference search, placement days (UTC), the shop filter from `?shopId=`, pages. `/admin/orders/[shopOrderId]`: shop and customer, decision (with internal reason and note), items and amounts, the delivery snapshot, the delivery record (attempts with actors, history, automatic closure), the payment and its events, the order history, stock movements; the cancellation form only when the API says `canCancel`, and the payment note form (`403` on an owned shop is explained). No other action is offered.

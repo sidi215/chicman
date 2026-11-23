@@ -128,14 +128,28 @@ export function StorefrontHeader() {
     // Sticky only where the header leaves room for the products.
     <header className="z-20 border-b border-border bg-surface md:sticky md:top-0">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-page-gutter py-3">
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <Link href={localizedPath(locale, "/")} aria-label={t.home} className="rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+        {/*
+          QA-04: the actions group (language, sell, bell, favorites, cart,
+          account) is wider than a phone (about 490 px in French). As a
+          non-wrapping flex item it could not shrink below its content
+          (`min-width: auto`) and widened the page. Now it wraps, and the row
+          is end-aligned with the logo pushing the rest away (`me-auto`): on
+          one line, the theme and the actions sit together at the end; when the
+          actions take their own line (phones, tablets), they stay end-aligned.
+          Logical margins and alignment, so Arabic mirrors it.
+        */}
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+          <Link
+            href={localizedPath(locale, "/")}
+            aria-label={t.home}
+            className="me-auto rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
             <BrandLogo label={t.brand} />
           </Link>
-          <div className="order-last basis-full sm:order-0 sm:ms-auto sm:basis-auto">
+          <div className="order-last basis-full sm:order-0 sm:basis-auto">
             <ThemeSelector />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 basis-full flex-wrap items-center justify-end gap-2 sm:basis-auto">
             <LanguageSwitch />
             <BuyerActions />
             <AccountAction />

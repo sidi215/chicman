@@ -49,6 +49,10 @@ export const NOTIFICATION_MESSAGES = {
       DELIVERY_ATTEMPT_FAILED: "Livraison non aboutie",
       DELIVERY_COMPLETED: "Commande livrée",
       DELIVERY_CLOSED_UNDELIVERABLE: "Commande non livrée",
+      PRODUCT_RESTRICTED: "Produit restreint",
+      PRODUCT_CORRECTION_REQUESTED: "Nouvelle correction demandée",
+      PRODUCT_RESTORED: "Produit rétabli",
+      PRODUCT_REMOVED: "Produit retiré",
     } satisfies Record<NotificationType, string>,
     bodies: {
       shop: "Boutique {shop}.",
@@ -61,6 +65,9 @@ export const NOTIFICATION_MESSAGES = {
       cancelledWithReason: "Commande {reference} · {shop}, annulée par {by}. Motif : {reason}.",
       dispatched: "Commande {reference} · {shop} : tentative de livraison n° {attempt}.",
       completed: "Commande {reference} · {shop} : {amount} payés à la livraison.",
+      productReason: "{product} · Motif : {reason}. {message}",
+      productRestored: "{product} est de nouveau visible si sa publication le permet.",
+      productRestoredWithMessage: "{product} est de nouveau visible si sa publication le permet. {message}",
     },
     failures: {
       "rate-limited": "Trop de requêtes. Patientez quelques instants, puis réessayez.",
@@ -106,6 +113,10 @@ export const NOTIFICATION_MESSAGES = {
       DELIVERY_ATTEMPT_FAILED: "لم يتم التوصيل",
       DELIVERY_COMPLETED: "تم توصيل الطلب",
       DELIVERY_CLOSED_UNDELIVERABLE: "تعذّر توصيل الطلب",
+      PRODUCT_RESTRICTED: "تم تقييد منتج",
+      PRODUCT_CORRECTION_REQUESTED: "طُلب تصحيح جديد",
+      PRODUCT_RESTORED: "أُعيد إظهار منتج",
+      PRODUCT_REMOVED: "تم حذف منتج",
     } satisfies Record<NotificationType, string>,
     bodies: {
       shop: "المتجر {shop}.",
@@ -118,6 +129,9 @@ export const NOTIFICATION_MESSAGES = {
       cancelledWithReason: "الطلب {reference} · {shop}، ألغاه {by}. السبب: {reason}.",
       dispatched: "الطلب {reference} · {shop}: محاولة التوصيل رقم {attempt}.",
       completed: "الطلب {reference} · {shop}: تم دفع {amount} عند الاستلام.",
+      productReason: "{product} · السبب: {reason}. {message}",
+      productRestored: "{product} ظاهر من جديد إذا سمح نشره بذلك.",
+      productRestoredWithMessage: "{product} ظاهر من جديد إذا سمح نشره بذلك. {message}",
     },
     failures: {
       "rate-limited": "طلبات كثيرة جدًا. انتظر قليلًا ثم أعد المحاولة.",

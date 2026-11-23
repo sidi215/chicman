@@ -32,6 +32,27 @@ describe("API configuration", () => {
     assert.deepEqual(duplicateEnvKeys(file).sort(), ["A", "B"]);
   });
 
+  describe("product report limits (spec 19)", () => {
+    const db = { ...base, DATABASE_URL: "postgresql://u:p@localhost:5442/chicman" };
+
+    it("defaults to 10 per user and 30 per IP per 24 hours, and reads configured values", () => {
+      assert.deepEqual(loadConfig({ ...db }).productReports.rateLimit, { perUser: 10, perIp: 30, windowMs: 86_400_000 });
+      const config = loadConfig({
+        ...db,
+        PRODUCT_REPORT_RATE_LIMIT_PER_USER: "2",
+        PRODUCT_REPORT_RATE_LIMIT_PER_IP: "3",
+        PRODUCT_REPORT_RATE_LIMIT_WINDOW_MS: "1000",
+      });
+      assert.deepEqual(config.productReports.rateLimit, { perUser: 2, perIp: 3, windowMs: 1000 });
+    });
+
+    it("refuses values that are not positive integers at startup", () => {
+      for (const key of ["PRODUCT_REPORT_RATE_LIMIT_PER_USER", "PRODUCT_REPORT_RATE_LIMIT_PER_IP", "PRODUCT_REPORT_RATE_LIMIT_WINDOW_MS"]) {
+        assert.throws(() => loadConfig({ ...db, [key]: "0" }), new RegExp(key), key);
+      }
+    });
+  });
+
   describe("order chain settings (specs 10, 11, and 12)", () => {
     const db = { ...base, DATABASE_URL: "postgresql://u:p@localhost:5442/chicman" };
 
@@ -149,6 +170,16 @@ describe("API configuration", () => {
     it("is required in production", () => {
       assert.throws(() => loadConfig(production), /MEILI_URL: the search engine is required in production/);
       assert.equal(loadConfig({ ...production, MEILI_URL: "http://meilisearch:7700" }).search?.url, "http://meilisearch:7700");
+      assert.equal(loadConfig({ ...production, MEILI_URL: "http://meilisearch:7700" }).searchEngine, "meilisearch");
+    });
+
+    it("SEARCH_ENGINE=postgres: production runs without Meilisearch, and MEILI_URL is refused (QA-01)", () => {
+      const postgres = loadConfig({ ...production, SEARCH_ENGINE: "postgres" });
+      assert.equal(postgres.searchEngine, "postgres");
+      assert.equal(postgres.search, undefined);
+      assert.throws(() => loadConfig({ ...production, SEARCH_ENGINE: "postgres", MEILI_URL: "http://m:7700" }), /MEILI_URL: must be empty when SEARCH_ENGINE=postgres/);
+      assert.equal(loadWorkerSearchConfig({ NODE_ENV: "production", SEARCH_ENGINE: "postgres" }), undefined);
+      assert.throws(() => loadConfig({ ...production, SEARCH_ENGINE: "elastic" }), /SEARCH_ENGINE/);
     });
 
     it("loads defaults and overrides, and refuses invalid values without echoing the key", () => {

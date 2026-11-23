@@ -75,7 +75,7 @@ void main() {
 
   testWidgets('a restored session opens the account directly', (tester) async {
     await pumpApp(tester, repository: FakeAuthRepository(restored: _restored));
-    expect(find.text('Mon compte'), findsOneWidget);
+    expect(find.byKey(const Key('buyer-dashboard')), findsOneWidget);
     expect(find.text('Connecté en tant que aicha@example.com'), findsOneWidget);
     expect(
       find.text('Téléphone de contact (non vérifié) : +22222123456'),
@@ -103,7 +103,7 @@ void main() {
     await tester.tap(find.byKey(const Key('login-submit')));
     await tester.pumpAndSettle();
     expect(repository.calls, ['signIn aicha@example.com']);
-    expect(find.text('Mon compte'), findsOneWidget);
+    expect(find.byKey(const Key('buyer-dashboard')), findsOneWidget);
   });
 
   testWidgets('an unconfirmed email cannot log in and can resend', (
@@ -271,6 +271,44 @@ void main() {
         expect(repository.calls, contains('signOut'));
       });
     }
+
+    testWidgets(
+      'signing out of a non-buyer account remounts the gate without re-listening to the link stream',
+      (tester) async {
+        // Regression (SM A165F): "Stream has already been listened to" in
+        // AuthGate.initState. App links arrive on a single-subscription
+        // stream, and the shell mounts a new AuthGate when it switches from
+        // the "managed on the web" screen to the buyer dock.
+        final repository = FakeAuthRepository(restored: _restored);
+        final links = StreamController<Uri>();
+        addTearDown(links.close);
+        await pumpApp(
+          tester,
+          repository: repository,
+          home: const AppShell(),
+          links: links.stream,
+          api: routedApi({
+            'GET /auth/session': (_) =>
+                (200, {'userId': 'u1', 'accountType': 'SELLER'}),
+          }),
+        );
+        expect(find.byKey(const Key('managed-on-web')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('managed-on-web-logout')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const Key('dock-home')), findsOneWidget);
+
+        // The new gate still receives links.
+        links.add(
+          Uri.parse(
+            'https://$_host/auth/callback#token_hash=${'e' * 56}&type=email',
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(repository.calls, ['signOut', 'verify email']);
+      },
+    );
 
     testWidgets('a seller registration is completed on the web, not here', (
       tester,
@@ -461,7 +499,7 @@ void main() {
     expect(repository.calls, ['verify recovery', 'updatePassword']);
     await tester.tap(find.byKey(const Key('new-password-continue')));
     await tester.pumpAndSettle();
-    expect(find.text('Mon compte'), findsOneWidget);
+    expect(find.byKey(const Key('buyer-dashboard')), findsOneWidget);
   });
 
   testWidgets(

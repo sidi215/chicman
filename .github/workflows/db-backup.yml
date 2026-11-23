@@ -1,0 +1,55 @@
+# Nightly backup of the production database (QA-01, free providers).
+# Supabase's free plan offers no downloadable backups, so this job dumps the
+# application schema, encrypts it, and keeps it 14 days as a workflow
+# artifact (private to the repository's collaborators).
+#
+# Secrets (repository → Settings → Secrets and variables → Actions):
+#   PRODUCTION_DATABASE_URL  the Supabase session pooler URL (as on Render)
+#   BACKUP_PASSPHRASE        a long random passphrase, also kept offline;
+#                            without it a backup cannot be restored
+#
+# Scheduled workflows run from the default branch (main) only.
+# Restore: infrastructure/render/README.md, "Backups".
+name: Database backup
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Dump and encrypt
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL}" ] || [ -z "${BACKUP_PASSPHRASE}" ]; then
+            echo "::error::PRODUCTION_DATABASE_URL and BACKUP_PASSPHRASE secrets are required"
+            exit 1
+          fi
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          # pg_dump 17 reads any older server too. Only the application schema.
+          docker run --rm -e DATABASE_URL postgres:17-alpine \
+            sh -c 'pg_dump --format=custom --no-owner --no-privileges --schema=public "$DATABASE_URL"' > db.dump
+          test -s db.dump
+          gpg --batch --yes --pinentry-mode loopback --passphrase "${BACKUP_PASSPHRASE}" \
+            --symmetric --cipher-algo AES256 --output "chicman-${stamp}.dump.gpg" db.dump
+          rm -f db.dump
+          echo "STAMP=${stamp}" >> "${GITHUB_ENV}"
+          ls -l chicman-*.dump.gpg
+
+      - name: Keep for 14 days
+        uses: actions/upload-artifact@v4
+        with:
+          name: chicman-db-${{ env.STAMP }}
+          path: chicman-*.dump.gpg
+          retention-days: 14
+          if-no-files-found: error

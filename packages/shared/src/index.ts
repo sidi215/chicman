@@ -21,3 +21,4 @@ export * from "./checkout/checkout.js";
 export * from "./favorites/favorites.js";
 export * from "./notifications/notifications.js";
 export * from "./admin/admin.js";
+export * from "./moderation/moderation.js";

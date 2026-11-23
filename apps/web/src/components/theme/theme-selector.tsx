@@ -33,7 +33,9 @@ export function ThemeSelector({ className }: { className?: string }) {
         const next: unknown = value[0]
         if (isThemePreference(next)) setPreference(next)
       }}
-      className={cn("inline-flex h-control-sm items-center gap-1 rounded-full bg-muted p-1", className)}
+      // Never wider than its container; below `sm` the options are tighter, so
+      // all three labels fit at 320 px, even beside a desktop scrollbar.
+      className={cn("inline-flex h-control-sm max-w-full items-center gap-1 rounded-full bg-muted p-1", className)}
     >
       {THEME_PREFERENCES.map((option) => {
         const Icon = ICONS[option]
@@ -41,7 +43,7 @@ export function ThemeSelector({ className }: { className?: string }) {
           <Toggle
             key={option}
             value={option}
-            className="inline-flex h-full items-center gap-1.5 rounded-full px-3 type-label-medium text-muted-foreground transition-colors outline-none select-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 data-pressed:bg-surface data-pressed:text-foreground data-pressed:shadow-sm"
+            className="inline-flex h-full min-w-0 items-center gap-1 rounded-full px-2.5 type-label-medium whitespace-nowrap sm:gap-1.5 sm:px-3 text-muted-foreground transition-colors outline-none select-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 data-pressed:bg-surface data-pressed:text-foreground data-pressed:shadow-sm"
           >
             <Icon className="size-icon-inline" aria-hidden />
             {labels[option]}

@@ -18,8 +18,8 @@ import '../../orders/application/order_providers.dart';
 import '../../orders/domain/orders.dart';
 import '../../orders/presentation/order_messages.dart';
 import '../../orders/presentation/order_screens.dart';
-import '../../profile/presentation/profile_settings_screen.dart';
 import '../domain/buyer_dashboard.dart';
+import 'account_drawer.dart';
 import 'buyer_messages.dart';
 
 void _open(BuildContext context, Widget screen) =>
@@ -40,6 +40,8 @@ class BuyerDashboardScreen extends ConsumerWidget {
     final account = ref.watch(customerAccountProvider).value;
     final theme = Theme.of(context);
     return Scaffold(
+      // The account options live in the drawer (opened from the app bar).
+      drawer: const AccountDrawer(),
       appBar: AppBar(
         title: Text(t.areaTitle),
         actions: const [NotificationsAction(), CartAction()],
@@ -81,13 +83,21 @@ class BuyerDashboardScreen extends ConsumerWidget {
                 ),
               ),
             ],
+            // The phone is unverified contact information (spec 04): the
+            // label says so. It moved here from the removed section list.
+            if (account != null)
+              Text(
+                '${AuthMessages.of(context).contactPhone} : ${account.phone == null || account.phone!.isEmpty ? t.noPhone : account.phone}',
+                key: const Key('buyer-contact-phone'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
             const SizedBox(height: AppSpacing.s4),
             const _AddressPrompt(),
             const _Summary(),
             const SizedBox(height: AppSpacing.s4),
             const _RecentOrders(),
-            const SizedBox(height: AppSpacing.s4),
-            const _Sections(),
             const SizedBox(height: AppSpacing.s4),
             FilledButton.tonal(
               key: const Key('account-logout'),
@@ -247,14 +257,24 @@ class _Summary extends ConsumerWidget {
         onTap: () => _open(context, const AddressListScreen()),
       ),
     ];
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: AppSpacing.s3,
-      crossAxisSpacing: AppSpacing.s3,
-      childAspectRatio: 1.15,
-      children: tiles,
+    // Two per row, each row as tall as its tallest tile: a fixed aspect
+    // ratio cut the content off with large system text.
+    Widget row(Widget start, Widget end) => IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: start),
+          const SizedBox(width: AppSpacing.s3),
+          Expanded(child: end),
+        ],
+      ),
+    );
+    return Column(
+      children: [
+        row(tiles[0], tiles[1]),
+        const SizedBox(height: AppSpacing.s3),
+        row(tiles[2], tiles[3]),
+      ],
     );
   }
 }
@@ -299,9 +319,13 @@ class _RecentOrders extends ConsumerWidget {
                             style: theme.textTheme.titleSmall,
                           ),
                         ),
-                        Text(
-                          orderT.price(order.total),
-                          style: theme.textTheme.titleSmall,
+                        const SizedBox(width: AppSpacing.s2),
+                        Flexible(
+                          child: Text(
+                            orderT.price(order.total),
+                            textAlign: TextAlign.end,
+                            style: theme.textTheme.titleSmall,
+                          ),
                         ),
                       ],
                     ),
@@ -350,14 +374,13 @@ class _RecentOrders extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
+            // Wraps the link under the title when both do not fit.
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: AppSpacing.s2,
               children: [
-                Expanded(
-                  child: Text(
-                    t.recentTitle,
-                    style: theme.textTheme.titleMedium,
-                  ),
-                ),
+                Text(t.recentTitle, style: theme.textTheme.titleMedium),
                 TextButton(
                   key: const Key('account-orders'),
                   onPressed: () => _open(context, const OrderListScreen()),
@@ -368,85 +391,6 @@ class _RecentOrders extends ConsumerWidget {
             content,
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// The dashboard's areas, as the web's side navigation: one entry each.
-class _Sections extends ConsumerWidget {
-  const _Sections();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = BuyerMessages.of(context);
-    final theme = Theme.of(context);
-    final account = ref.watch(customerAccountProvider).value;
-    final phone = account?.phone;
-    Widget entry(
-      Key key,
-      IconData icon,
-      String label,
-      VoidCallback onTap, {
-      String? subtitle,
-    }) => ListTile(
-      key: key,
-      leading: Icon(icon, size: AppIconSize.action),
-      title: Text(label),
-      subtitle: subtitle == null ? null : Text(subtitle),
-      trailing: const Icon(Icons.chevron_right, size: AppIconSize.action),
-      onTap: onTap,
-    );
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.s4,
-              AppSpacing.s4,
-              AppSpacing.s4,
-              AppSpacing.s1,
-            ),
-            child: Text(t.sectionsTitle, style: theme.textTheme.titleMedium),
-          ),
-          entry(
-            const Key('buyer-section-orders'),
-            Icons.inventory_2_outlined,
-            t.orders,
-            () => _open(context, const OrderListScreen()),
-          ),
-          entry(
-            const Key('buyer-section-favorites'),
-            Icons.favorite_border,
-            t.favorites,
-            () => _open(context, const FavoritesScreen()),
-          ),
-          entry(
-            const Key('account-addresses'),
-            Icons.location_on_outlined,
-            t.addresses,
-            () => _open(context, const AddressListScreen()),
-          ),
-          entry(
-            const Key('buyer-section-notifications'),
-            Icons.notifications_none,
-            t.notifications,
-            () => openNotifications(context),
-          ),
-          entry(
-            const Key('account-profile-settings'),
-            Icons.person_outline,
-            t.profile,
-            () => _open(context, const ProfileSettingsScreen()),
-            // The phone is unverified contact information (spec 04): the label says so.
-            subtitle: account == null
-                ? null
-                : '${AuthMessages.of(context).contactPhone} : ${phone == null || phone.isEmpty ? t.noPhone : phone}',
-          ),
-        ],
       ),
     );
   }

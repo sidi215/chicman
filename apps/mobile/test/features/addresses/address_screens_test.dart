@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
 import '../auth/fakes.dart';
+import '../buyer/drawer_helpers.dart';
 import 'fake_map.dart';
 
 const _config = AppConfig(
@@ -50,13 +51,7 @@ ApiClient _api(
   List<http.Request> requests,
   List<Map<String, Object?>> stored,
 ) => routedApi({
-  'GET /auth/session': (_) => (
-    200,
-    {
-      'userId': 'u1',
-      'accountType': 'BUYER',
-    },
-  ),
+  'GET /auth/session': (_) => (200, {'userId': 'u1', 'accountType': 'BUYER'}),
   'GET /accounts/me': (_) => (
     200,
     {
@@ -136,6 +131,8 @@ void main() {
       await tester.tap(find.byKey(const Key('account-address-prompt-later')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('account-address-prompt')), findsNothing);
+      // The addresses stay one tap away, in the account drawer.
+      await openAccountDrawer(tester);
       expect(find.byKey(const Key('account-addresses')), findsOneWidget);
     },
   );
@@ -260,8 +257,7 @@ void main() {
         _address('a2', landmark: 'Second'),
       ];
       await _open(tester, _api(requests, stored));
-      await tester.tap(find.byKey(const Key('account-addresses')));
-      await tester.pumpAndSettle();
+      await tapDrawerItem(tester, const Key('account-addresses'));
       expect(find.text('Par défaut'), findsOneWidget);
       expect(find.byKey(const Key('address-default-a1')), findsNothing);
 

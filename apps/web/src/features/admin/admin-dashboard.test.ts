@@ -34,6 +34,9 @@ describe("admin areas", () => {
     assert.equal(adminAreaOf("/admin"), null)
     assert.equal(adminAreaOf("/admin/users"), null)
     assert.equal(adminAreaOf("/seller/orders"), null)
+    // The shared profile page (profile, language, appearance) is in the side navigation.
+    assert.equal(adminAreaOf("/account/profile"), "profile")
+    assert.equal(adminAreaOf("/account/orders"), null)
   })
 
   it("links every area and names it in both languages", () => {

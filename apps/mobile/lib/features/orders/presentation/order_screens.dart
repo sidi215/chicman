@@ -474,7 +474,14 @@ class _ItemRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.s2),
-          Text(t.price(item.lineTotal), style: theme.textTheme.titleSmall),
+          // May wrap on a narrow screen with large text instead of overflowing.
+          Flexible(
+            child: Text(
+              t.price(item.lineTotal),
+              textAlign: TextAlign.end,
+              style: theme.textTheme.titleSmall,
+            ),
+          ),
         ],
       ),
     );
@@ -497,11 +504,14 @@ class _AmountRow extends StatelessWidget {
         children: [
           Expanded(child: Text(label, style: theme.textTheme.bodyMedium)),
           const SizedBox(width: AppSpacing.s2),
-          Text(
-            amount,
-            style: emphasized
-                ? theme.textTheme.titleLarge
-                : theme.textTheme.titleSmall,
+          Flexible(
+            child: Text(
+              amount,
+              textAlign: TextAlign.end,
+              style: emphasized
+                  ? theme.textTheme.titleLarge
+                  : theme.textTheme.titleSmall,
+            ),
           ),
         ],
       ),

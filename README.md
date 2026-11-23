@@ -114,7 +114,7 @@ flutter run \
 
 `API_BASE_URL=http://10.0.2.2:4000` reaches the host API from the Android emulator. `SITE_URL` is the email-callback base and the App Links host. `TURNSTILE_SITE_KEY` is optional (empty disables Turnstile). The same values can be kept in `apps/mobile/.env` (git-ignored, public values only) and passed with `flutter run --dart-define-from-file=.env --dart-define=API_BASE_URL=http://10.0.2.2:4000 --dart-define=SITE_URL=http://localhost:3000`. The session is stored in platform secure storage (Android Keystore, iOS Keychain). On iOS, set the `APP_LINK_HOST` build setting for Universal Links.
 
-**`SITE_URL` is required with `TURNSTILE_SITE_KEY`:** without it the app shows a configuration error and sends no login or sign-up request.
+**`SITE_URL` is required with `TURNSTILE_SITE_KEY`:** without it the app shows a configuration error and sends no login or sign-up request. `SUPABASE_URL`, `API_BASE_URL`, and `SITE_URL` must be `http`/`https` URLs with a host: a malformed value (for example `htt://localhost:3000`) stops the Android build, and the app opens on a "Configuration invalide" screen naming the value instead of starting.
 
 #### Running on an Android phone
 

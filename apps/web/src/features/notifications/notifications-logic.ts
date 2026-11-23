@@ -6,6 +6,8 @@ import { formatDateTime } from "@/lib/date-time"
 import { formatMru } from "@/lib/money"
 import { DELIVERY_FAILURE_TEXT, ORDER_MESSAGES } from "@/features/orders/messages"
 import { accountOrderHref, sellerOrderHref } from "@/features/orders/order-logic"
+import { MODERATION_MESSAGES } from "@/features/moderation/messages"
+import { sellerProductHref } from "@/features/moderation/moderation"
 
 import { NOTIFICATION_MESSAGES, type NotificationMessages } from "./messages"
 
@@ -64,6 +66,8 @@ export function notificationHref(item: NotificationItem): string | null {
   const resource = item.resource
   if (resource === null) return null
   if (resource.type === "SHOP") return "/seller/shop"
+  // The seller's own product (spec 19): its page checks ownership again.
+  if (resource.type === "PRODUCT") return sellerProductHref(resource.id)
   if (item.audience === "CUSTOMER") return resource.orderId === null ? null : accountOrderHref(resource.orderId)
   return sellerOrderHref(resource.id)
 }
@@ -159,6 +163,18 @@ export function describeNotification(item: NotificationItem, locale: Locale): No
         title: t.titles.DELIVERY_COMPLETED,
         body: fill(t.bodies.completed, { reference: item.payload.orderReference, shop: item.payload.shopName, amount: formatMru(item.payload.amountCollected, locale) }),
       }
+    case "PRODUCT_RESTRICTED":
+    case "PRODUCT_CORRECTION_REQUESTED":
+    case "PRODUCT_REMOVED":
+    case "PRODUCT_RESTORED": {
+      const { productName, reasonCode, sellerMessage } = item.payload
+      const message = sellerMessage ?? ""
+      if (reasonCode === null) {
+        return { title: t.titles[item.type], body: fill(message === "" ? t.bodies.productRestored : t.bodies.productRestoredWithMessage, { product: productName, message }) }
+      }
+      const reason = MODERATION_MESSAGES[locale].sellerReasons[reasonCode]
+      return { title: t.titles[item.type], body: fill(t.bodies.productReason, { product: productName, reason, message }).trim() }
+    }
     default:
       // A type from a newer API: shown generically until the client knows it.
       return { title: t.unknownTitle, body: "" }

@@ -58,6 +58,12 @@ const ignoringCase = (value: string): Prisma.StringNullableFilter<"ProductVarian
 /** `contains` ignoring case, with `%` and `_` matching only themselves (see `ignoringCase`). */
 const containing = (value: string) => ({ contains: value.replace(/[\\%_]/g, "\\$&"), mode: "insensitive" as const });
 
+/**
+ * Candidates read from the search engine per search: Meilisearch's default
+ * `maxTotalHits`, so every match it can return is counted and paged here.
+ */
+export const SEARCH_CANDIDATE_LIMIT = 1000;
+
 /** Words of a fallback search; more add little and cost a join each. */
 export const FALLBACK_SEARCH_MAX_WORDS = 8;
 
@@ -157,31 +163,47 @@ export class CatalogService {
    * A search (spec 18). The engine only chooses and orders product IDs: each
    * one is read again from PostgreSQL with `catalogWhere` (public visibility
    * and every filter), so a stale or wrong document can never show a hidden
-   * product, and cards always carry current prices and availability. A
-   * document not yet removed from the index can make a page shorter until the
-   * worker catches up. Without the engine, PostgreSQL answers alone.
+   * product, and cards always carry current prices and availability. The
+   * total and the pages count only visible products, so a document not yet
+   * removed from the index changes nothing a customer sees (QA-06). Without
+   * the engine, PostgreSQL answers alone.
    */
   private async searchList(query: SearchQuery): Promise<PublicProductListResponse> {
-    const hits = (await this.search?.find(query)) ?? null;
+    // Every candidate (up to Meilisearch's own maximum), not one page: the
+    // page is cut after PostgreSQL has re-checked each one.
+    const hits = (await this.search?.find({ ...query, page: 1, pageSize: SEARCH_CANDIDATE_LIMIT })) ?? null;
     if (hits === null) {
-      return { ...(await this.pageOf(query, { AND: [catalogWhere(query), searchTextWhere(query.q)] })), search: { degraded: true } };
+      // Degraded only when an engine exists and failed (or is not configured):
+      // without one (SEARCH_ENGINE=postgres), PostgreSQL is the search.
+      const degraded = this.search !== undefined;
+      return { ...(await this.pageOf(query, { AND: [catalogWhere(query), searchTextWhere(query.q)] })), search: { degraded } };
     }
-    const rows =
+    // Which candidates are visible now, in the engine's order. The count and
+    // the page come from this list, so a stale document never inflates the
+    // total or shortens a page (QA-06).
+    const visible =
       hits.ids.length === 0
+        ? new Set<string>()
+        : new Set(
+            (await this.prisma.product.findMany({ where: { AND: [catalogWhere(query), { id: { in: hits.ids } }] }, select: { id: true } })).map(
+              ({ id }) => id,
+            ),
+          );
+    const ordered = hits.ids.filter((id) => visible.has(id));
+    const pageIds = ordered.slice((query.page - 1) * query.pageSize, query.page * query.pageSize);
+    const rows =
+      pageIds.length === 0
         ? []
-        : await this.prisma.product.findMany({
-            where: { AND: [catalogWhere(query), { id: { in: hits.ids } }] },
-            include: publicSummaryInclude,
-          });
+        : await this.prisma.product.findMany({ where: { AND: [catalogWhere(query), { id: { in: pageIds } }] }, include: publicSummaryInclude });
     const byId = new Map(rows.map((row) => [row.id, row]));
     return {
-      products: hits.ids.flatMap((id) => {
+      products: pageIds.flatMap((id) => {
         const row = byId.get(id);
         return row === undefined ? [] : [this.toSummary(row)];
       }),
       page: query.page,
       pageSize: query.pageSize,
-      total: hits.total,
+      total: ordered.length,
       search: { degraded: false },
     };
   }

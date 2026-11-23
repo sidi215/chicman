@@ -25,7 +25,7 @@ function line(overrides: Partial<Omit<CartLineState, "product">> & { product?: P
     variantColor: null,
     shopStatus: "APPROVED",
     ...rest,
-    product: { status: "PUBLISHED", price: money("1500.00"), stock: 5, hasActiveImage: true, variants: [], ...product },
+    product: { status: "PUBLISHED", moderationStatus: "CLEAR", price: money("1500.00"), stock: 5, hasActiveImage: true, variants: [], ...product },
   };
 }
 

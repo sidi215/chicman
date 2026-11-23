@@ -45,6 +45,21 @@ const SAMPLES: NotificationItem[] = [
   item({ type: "DELIVERY_ATTEMPT_FAILED", payload: { orderReference: "CM-1", shopName: "Boutique Alpha", reasonCode: "CUSTOMER_ABSENT" } }),
   item({ type: "DELIVERY_COMPLETED", payload: { orderReference: "CM-1", shopName: "Boutique Alpha", amountCollected: "3100.00" } }),
   item({ type: "DELIVERY_CLOSED_UNDELIVERABLE", payload: { orderReference: "CM-1", shopName: "Boutique Alpha" } }),
+  // Spec 19: seller product moderation.
+  ...(["PRODUCT_RESTRICTED", "PRODUCT_CORRECTION_REQUESTED", "PRODUCT_REMOVED"] as const).map((type) =>
+    item({
+      type,
+      audience: "SELLER",
+      resource: { type: "PRODUCT", id: "p1" },
+      payload: { productId: "p1", productName: "Robe brodée", reasonCode: "MISLEADING_INFORMATION", sellerMessage: "Corrigez la description." },
+    })
+  ),
+  item({
+    type: "PRODUCT_RESTORED",
+    audience: "SELLER",
+    resource: { type: "PRODUCT", id: "p1" },
+    payload: { productId: "p1", productName: "Robe brodée", reasonCode: null, sellerMessage: null },
+  }),
 ]
 
 describe("notification texts (spec 15)", () => {
@@ -74,6 +89,19 @@ describe("notification texts (spec 15)", () => {
     assert.match(completed.body, /3 100,00 MRU/)
     const change = describeNotification(SAMPLES.find(({ type }) => type === "SHOP_CHANGE_REQUEST_APPROVED")!, "fr")
     assert.match(change.body, /nom de la boutique, ville/)
+  })
+
+  it("renders moderation notifications with the translated reason and the message, and opens the seller product (spec 19)", () => {
+    const restricted = SAMPLES.find(({ type }) => type === "PRODUCT_RESTRICTED")!
+    const fr = describeNotification(restricted, "fr")
+    assert.match(fr.body, /Robe brodée/)
+    assert.match(fr.body, /Informations trompeuses/)
+    assert.match(fr.body, /Corrigez la description\./)
+    assert.doesNotMatch(fr.body, /MISLEADING_INFORMATION/)
+    assert.match(describeNotification(restricted, "ar").body, /معلومات مضلِّلة/)
+    assert.equal(notificationHref(restricted), "/seller/products/p1")
+    const restored = describeNotification(SAMPLES.find(({ type }) => type === "PRODUCT_RESTORED")!, "fr")
+    assert.match(restored.body, /Robe brodée est de nouveau visible/)
   })
 
   it("falls back to a generic title for a type from a newer API", () => {

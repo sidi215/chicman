@@ -10,6 +10,8 @@ This feature covers product information, product images, variants, pricing, and 
 
 ## Design & Architecture Decisions
 
+- **Spec 19 (product moderation, approved 2026-11-20, implemented 2026-11-20):** an admin-owned `Product.moderationStatus` (`CLEAR`, `RESTRICTED`, `IN_REVIEW`, `REMOVED`) is added beside the seller status, which is unchanged. Seller writes: all allowed while `RESTRICTED`; only stock while `IN_REVIEW` (`409 PRODUCT_UNDER_REVIEW`); none once `REMOVED` (`409 PRODUCT_REMOVED`). Enforced in `withLockedProduct`/`withEditableProduct`. Details: `19-product-moderation.md`, section 3.3.
+
 ### 1. Product ownership
 
 - Every product belongs to exactly one shop.
@@ -55,6 +57,8 @@ Products may have variants such as:
 - Color.
 
 Each variant must have its own identifier and stock quantity.
+
+A variant has **one** size and **one** color (QA-07, 2026-11-22): list separators (`,` `;` and the Arabic `،` `؛`) are refused in either, so "bleu, noir" becomes two variants and the storefront's color facet stays one value per entry. `/` stays allowed ("38/40", "noir/blanc"). Enforced by the shared variant schema on the API and the web form. Existing values are not rewritten; the seller corrects them by editing the variant.
 
 A product without variants can have stock managed directly at product level.
 

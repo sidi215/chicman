@@ -12,6 +12,7 @@ import { createCheckoutRouter, type CheckoutDependencies } from "./modules/check
 import { createAccountRouter, type AccountDependencies } from "./modules/accounts/index.js";
 import { createDeliveryRouter, type DeliveryDependencies } from "./modules/delivery/index.js";
 import { createFavoriteRouter, type FavoriteDependencies } from "./modules/favorites/index.js";
+import { createModerationRouter, type ModerationDependencies } from "./modules/moderation/index.js";
 import { createNotificationRouter, type NotificationDependencies } from "./modules/notifications/index.js";
 import { createOrderRouter, type OrderDependencies } from "./modules/orders/index.js";
 import { createPaymentRouter, type PaymentDependencies } from "./modules/payments/index.js";
@@ -47,13 +48,15 @@ export interface AppOptions {
   favorites?: FavoriteDependencies;
   /** The user's in-app notifications (spec 15). */
   notifications?: NotificationDependencies;
+  /** Product moderation and buyer reports (spec 19). */
+  moderation?: ModerationDependencies;
   /** Express `trust proxy` hops, so `req.ip` is the client address. */
   trustProxyHops?: number;
   /** Extra routers mounted under `/api/v1` (feature modules, test fixtures). */
   routers?: (guards: AuthGuards) => Router[];
 }
 
-export function createApp({ corsOrigins, auth, accounts, addresses, shops, admin, products, catalog, cart, checkout, orders, delivery, payments, favorites, notifications, trustProxyHops, routers }: AppOptions): Express {
+export function createApp({ corsOrigins, auth, accounts, addresses, shops, admin, products, catalog, cart, checkout, orders, delivery, payments, favorites, notifications, moderation, trustProxyHops, routers }: AppOptions): Express {
   const app = express();
   const guards = createAuthGuards(auth);
 
@@ -81,6 +84,7 @@ export function createApp({ corsOrigins, auth, accounts, addresses, shops, admin
   if (payments !== undefined) app.use("/api/v1", createPaymentRouter(guards, payments));
   if (favorites !== undefined) app.use("/api/v1", createFavoriteRouter(guards, favorites));
   if (notifications !== undefined) app.use("/api/v1", createNotificationRouter(guards, notifications));
+  if (moderation !== undefined) app.use("/api/v1", createModerationRouter(guards, moderation));
   for (const router of routers?.(guards) ?? []) app.use("/api/v1", router);
 
   app.use(notFoundHandler);

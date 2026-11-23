@@ -17,6 +17,7 @@ import { CheckoutService } from "./modules/checkout/index.js";
 import { PrismaAccountRepository } from "./modules/accounts/index.js";
 import { DeliveryLifecycle, DeliveryQueries } from "./modules/delivery/index.js";
 import { StockService } from "./modules/inventory/index.js";
+import { ModerationLifecycle, ModerationQueries, ProductReportService } from "./modules/moderation/index.js";
 import { NotificationService } from "./modules/notifications/index.js";
 import { OrderQueries, ShopOrderLifecycle } from "./modules/orders/index.js";
 import { PaymentService } from "./modules/payments/index.js";
@@ -68,14 +69,20 @@ if (config.nodeEnv === "production" && config.catalogInternalKey === undefined) 
 
 // Search (spec 18): the engine only orders IDs; PostgreSQL re-checks every
 // result and answers alone while the engine is unavailable.
-if (config.search === undefined) {
+// With SEARCH_ENGINE=postgres there is no engine at all: PostgreSQL is the
+// search by choice, so results are not reported as degraded.
+if (config.searchEngine === "postgres") {
+  console.log("SEARCH_ENGINE=postgres: product searches are answered by PostgreSQL.");
+} else if (config.search === undefined) {
   console.warn("MEILI_URL is not set: searches use the PostgreSQL fallback (development only).");
 }
-const productSearch = new ProductSearch(
-  config.search === undefined ? undefined : new MeilisearchProductIndex(new MeilisearchClient(config.search)),
-);
+const productSearch =
+  config.searchEngine === "postgres"
+    ? undefined
+    : new ProductSearch(config.search === undefined ? undefined : new MeilisearchProductIndex(new MeilisearchClient(config.search)));
 
 const cartService = new CartService(prisma, mediaPublicBaseUrl);
+const moderationQueries = new ModerationQueries(prisma, mediaPublicBaseUrl);
 
 const app = createApp({
   corsOrigins: config.corsOrigins,
@@ -116,6 +123,13 @@ const app = createApp({
   payments: { payments: new PaymentService(prisma) },
   favorites: { favorites: new FavoriteService(prisma, mediaPublicBaseUrl), rateLimiter },
   notifications: { notifications: new NotificationService(prisma), rateLimiter },
+  moderation: {
+    lifecycle: new ModerationLifecycle(prisma, moderationQueries),
+    queries: moderationQueries,
+    reports: new ProductReportService(prisma),
+    rateLimiter,
+    reportRateLimit: config.productReports.rateLimit,
+  },
 });
 
 const server = app.listen(config.port, () => {

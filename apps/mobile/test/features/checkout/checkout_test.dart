@@ -619,31 +619,37 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('fits a 320 px phone without overflow', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(320, 2600));
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            sharedPreferencesProvider.overrideWithValue(null),
-            authRepositoryProvider.overrideWithValue(_signedIn()),
-            apiClientProvider.overrideWithValue(
-              routedApi({
-                'GET /customers/me/checkout': (_) => (200, _summary()),
-              }),
+    for (final scale in [1.0, 1.3, 2.0]) {
+      testWidgets('fits a 320 px phone without overflow at ${scale}x text', (
+        tester,
+      ) async {
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await tester.binding.setSurfaceSize(const Size(320, 2600));
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              sharedPreferencesProvider.overrideWithValue(null),
+              authRepositoryProvider.overrideWithValue(_signedIn()),
+              apiClientProvider.overrideWithValue(
+                routedApi({
+                  'GET /customers/me/checkout': (_) => (200, _summary()),
+                }),
+              ),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.light,
+              supportedLocales: const [Locale('fr'), Locale('ar')],
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
+              home: const CheckoutScreen(),
             ),
-          ],
-          child: MaterialApp(
-            theme: AppTheme.light,
-            supportedLocales: const [Locale('fr'), Locale('ar')],
-            localizationsDelegates: GlobalMaterialLocalizations.delegates,
-            home: const CheckoutScreen(),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      expect(tester.takeException(), isNull);
-    });
+        );
+        await tester.pumpAndSettle();
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 }
 

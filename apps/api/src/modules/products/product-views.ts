@@ -1,4 +1,6 @@
 import type {
+  ProductModerationStatus,
+  SellerProductModeration,
   ProductCategory,
   ProductImageContentType,
   ProductImageView,
@@ -10,6 +12,7 @@ import type {
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isStockAvailable, productAvailability } from "../inventory/availability.js";
 import { productNotFound, type ProductSeller } from "./product-lock.js";
+import { CLEAR_MODERATION, sellerModerationOf } from "./product-moderation.js";
 
 /** Builds the public URL of a media key. */
 export type MediaUrl = (objectKey: string) => string;
@@ -42,6 +45,7 @@ function summaryFields(
   variants: readonly { stock: number }[],
   mainImageKey: string | undefined,
   mediaUrl: MediaUrl,
+  moderation: SellerProductModeration,
 ): SellerProductSummary {
   const { stock, available } = productAvailability(product.stock, variants);
   return {
@@ -59,19 +63,22 @@ function summaryFields(
     archivedAt: product.archivedAt?.toISOString() ?? null,
     createdAt: product.createdAt.toISOString(),
     updatedAt: product.updatedAt.toISOString(),
+    moderation: { ...moderation, status: product.moderationStatus as ProductModerationStatus },
   };
 }
 
 export function toProductSummary(
   product: Prisma.ProductGetPayload<{ include: typeof productSummaryInclude }>,
   mediaUrl: MediaUrl,
+  moderation: SellerProductModeration = CLEAR_MODERATION,
 ): SellerProductSummary {
-  return summaryFields(product, product.variants, product.images[0]?.objectKey, mediaUrl);
+  return summaryFields(product, product.variants, product.images[0]?.objectKey, mediaUrl, moderation);
 }
 
 export function toProductDetail(
   product: Prisma.ProductGetPayload<{ include: typeof productDetailInclude }>,
   mediaUrl: MediaUrl,
+  moderation: SellerProductModeration = CLEAR_MODERATION,
 ): SellerProductDetail {
   const images: ProductImageView[] = product.images.map((image) => ({
     id: image.id,
@@ -83,7 +90,7 @@ export function toProductDetail(
     height: image.height,
   }));
   return {
-    ...summaryFields(product, product.variants, product.images[0]?.objectKey, mediaUrl),
+    ...summaryFields(product, product.variants, product.images[0]?.objectKey, mediaUrl, moderation),
     description: product.description,
     images,
     variants: product.variants.map((variant) => ({
@@ -107,5 +114,6 @@ export async function loadProductDetail(
 ): Promise<SellerProductDetail> {
   const product = await db.product.findFirst({ where: { id: productId, shopId: seller.shopId }, include: productDetailInclude });
   if (product === null) throw productNotFound();
-  return toProductDetail(product, mediaUrl);
+  const moderation = await sellerModerationOf(db, [product]);
+  return toProductDetail(product, mediaUrl, moderation.get(product.id));
 }

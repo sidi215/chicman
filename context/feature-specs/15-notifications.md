@@ -8,6 +8,8 @@ Provide a consistent notification system that informs customers, sellers, and ad
 
 ## Design & Architecture Decisions
 
+- **Spec 19 (product moderation, approved 2026-11-20, implemented 2026-11-20):** four seller-audience types (`PRODUCT_RESTRICTED`, `PRODUCT_CORRECTION_REQUESTED`, `PRODUCT_RESTORED`, `PRODUCT_REMOVED`) and a `PRODUCT` resource type, recorded with `recordNotification` in the moderation transaction (key `<type>:<event ID>:<seller>`). Web seller center only (O6.2). Details: `19-product-moderation.md`, section 6.
+
 ### 1. What already exists (extend it; do not duplicate it)
 
 - **Table:** `Notification` (`userId`, `type` `VARCHAR(64)`, `payload` JSON, `createdAt`, `deliveredAt`, `readAt`; `apps/api/prisma/schema.prisma`).

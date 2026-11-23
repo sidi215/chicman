@@ -9,7 +9,7 @@ import { withoutLocale } from "@/lib/locale"
  * hiding a link is never the security control.
  */
 
-export const SELLER_AREAS = ["overview", "shop", "products", "orders", "deliveries", "payments", "notifications"] as const
+export const SELLER_AREAS = ["overview", "shop", "products", "orders", "deliveries", "payments", "notifications", "profile"] as const
 export type SellerArea = (typeof SELLER_AREAS)[number]
 
 export const SELLER_AREA_HREF: Record<SellerArea, string> = {
@@ -20,6 +20,8 @@ export const SELLER_AREA_HREF: Record<SellerArea, string> = {
   deliveries: "/seller/deliveries",
   payments: "/seller/payments",
   notifications: "/seller/notifications",
+  // The profile page every account type shares (Q2): profile, language, appearance.
+  profile: "/account/profile",
 }
 
 /** What the shell knows about the signed-in user's shop. */
@@ -39,11 +41,11 @@ export type SellerAccess = ShopStatus | "none"
  * the status page and the deliveries to finish (D8, spec 12 section 8).
  */
 const AREAS_BY_ACCESS: Record<SellerAccess, readonly SellerArea[]> = {
-  none: ["overview", "shop", "notifications"],
-  PENDING: ["overview", "shop", "notifications"],
-  REJECTED: ["overview", "shop", "notifications"],
+  none: ["overview", "shop", "notifications", "profile"],
+  PENDING: ["overview", "shop", "notifications", "profile"],
+  REJECTED: ["overview", "shop", "notifications", "profile"],
   APPROVED: SELLER_AREAS,
-  SUSPENDED: ["overview", "shop", "deliveries", "notifications"],
+  SUSPENDED: ["overview", "shop", "deliveries", "notifications", "profile"],
 }
 
 export function sellerAreas(access: SellerAccess): readonly SellerArea[] {
@@ -65,6 +67,7 @@ export function sellerAccess(shop: SellerShopState): SellerAccess | null {
 export function sellerAreaOf(pathname: string): SellerArea | null {
   const path = withoutLocale(pathname).replace(/\/+$/, "")
   if (path === "/seller") return "overview"
+  if (path === SELLER_AREA_HREF.profile) return "profile"
   const match = /^\/seller\/([^/]+)/.exec(path)
   const segment = match?.[1]
   return (SELLER_AREAS as readonly string[]).includes(segment ?? "") && segment !== "overview" ? (segment as SellerArea) : null
@@ -96,3 +99,6 @@ export const SELLER_SHOP_PATH = "/sellers/me/shop"
 /** One row is enough: the summaries read only the lists' `total`. */
 export const sellerOrderCountPath = (status: "PENDING" | "CONFIRMED"): string => `/sellers/me/orders?status=${status}&page=1&pageSize=1`
 export const sellerProductCountPath = (status: "PUBLISHED" | "DRAFT"): string => `/sellers/me/products?status=${status}&page=1&pageSize=1`
+/** Spec 19: products restricted or under review, for the overview count. */
+export const sellerModeratedCountPath = (moderationStatus: "RESTRICTED" | "IN_REVIEW"): string =>
+  `/sellers/me/products?moderationStatus=${moderationStatus}&page=1&pageSize=1`

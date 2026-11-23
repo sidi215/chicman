@@ -9,8 +9,21 @@ export const TEST_SHOP_FIELDS = {
   address: "Tevragh Zeina, rue 42",
 } as const;
 
-/** Deletes every row of the test database, children before parents. */
+/**
+ * Deletes every row of the test database, children before parents.
+ *
+ * Moderation reports and events are immutable (spec 19, triggers refuse UPDATE
+ * and DELETE). The test-only bypass is `session_replication_role = replica`,
+ * which skips triggers for this transaction only; PostgreSQL lets only a
+ * superuser set it, so production roles (never superusers) cannot.
+ */
 export async function resetDatabase(prisma: PrismaClient): Promise<void> {
+  await prisma.$transaction([
+    prisma.$executeRawUnsafe(`SET LOCAL session_replication_role = replica`),
+    prisma.productModerationEvent.deleteMany(),
+    prisma.productReport.deleteMany(),
+    prisma.productModerationCase.deleteMany(),
+  ]);
   await prisma.deliveryStatusEvent.deleteMany();
   await prisma.deliveryAttempt.deleteMany();
   await prisma.delivery.deleteMany();

@@ -1,18 +1,16 @@
 "use client"
 
-import { Bell, LayoutDashboard, Package, ShoppingBag, Store, Truck, Wallet, type LucideIcon } from "lucide-react"
+import { Bell, LayoutDashboard, Package, ShoppingBag, Store, Truck, UserRound, Wallet, type LucideIcon } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Suspense, useEffect, useRef, type ReactNode } from "react"
 
 import { BrandLogo } from "@/components/brand/brand-logo"
-import { ThemeSelector } from "@/components/theme/theme-selector"
 import { buttonVariants } from "@/components/ui/button"
-import { AccountActions } from "@/features/auth/components/account-actions"
+import { SignOutAction } from "@/features/auth/components/account-actions"
 import { NotificationsLink } from "@/features/notifications/components/notifications-link"
 import { unreadBadge } from "@/features/notifications/notifications-logic"
 import { useNotifications } from "@/features/notifications/notifications-provider"
-import { LanguageSwitch } from "@/features/storefront/components/language-switch"
 import { useLocale } from "@/lib/locale-provider"
 import { localizedPath } from "@/lib/locale"
 import { cn } from "@/lib/utils"
@@ -29,12 +27,13 @@ const AREA_ICON: Record<SellerArea, LucideIcon> = {
   deliveries: Truck,
   payments: Wallet,
   notifications: Bell,
+  profile: UserRound,
 }
 
 /** The areas the shop's status opens; only the overview and the shop page until the status is known. */
 function SellerNav({ access, active, t }: { access: SellerAccess | null; active: SellerArea | null; t: SellerMessages }) {
   const { unread } = useNotifications()
-  const areas = access === null ? (["overview", "shop", "notifications"] as const) : sellerAreas(access)
+  const areas = access === null ? (["overview", "shop", "notifications", "profile"] as const) : sellerAreas(access)
   return (
     <nav aria-label={t.navLabel} className="md:sticky md:top-4">
       <ul className="-mx-page-gutter flex gap-2 overflow-x-auto px-page-gutter pb-1 [scrollbar-width:none] md:mx-0 md:flex-col md:gap-1 md:overflow-visible md:px-0">
@@ -76,16 +75,17 @@ function SellerHeader({ t }: { t: SellerMessages }) {
           </Link>
           <span className="type-title-small text-muted-foreground">{t.areaTitle}</span>
         </div>
-        <div className="order-last basis-full sm:order-0 sm:ms-auto sm:basis-auto">
-          <ThemeSelector />
-        </div>
+        {/*
+          No profile, language, or appearance controls here: the side
+          navigation's Profile page (`/account/profile`) holds all three,
+          as in the buyer and administrator areas.
+        */}
         <div className="flex items-center gap-2">
-          <LanguageSwitch />
           <Link href={localizedPath(locale, "/")} aria-label={t.storefront} title={t.storefront} className={buttonVariants({ variant: "outline", size: "icon-sm" })}>
             <Store aria-hidden className="size-icon-action" />
           </Link>
           <NotificationsLink href={SELLER_AREA_HREF.notifications} />
-          <AccountActions />
+          <SignOutAction />
         </div>
       </div>
     </header>

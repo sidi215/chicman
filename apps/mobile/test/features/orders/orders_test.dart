@@ -128,8 +128,9 @@ Future<void> _pump(
   required Widget home,
   AuthRepository? repository,
   Locale? locale,
+  Size size = const Size(500, 2200),
 }) async {
-  await tester.binding.setSurfaceSize(const Size(500, 2200));
+  await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     ProviderScope(
@@ -653,6 +654,24 @@ void main() {
       );
       expect(tester.takeException(), isNull);
     });
+
+    for (final scale in [1.3, 2.0]) {
+      testWidgets('order detail fits a 320 px phone at ${scale}x text', (
+        tester,
+      ) async {
+        // Regression: the amount rows overflowed with large system text.
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await _pump(
+          tester,
+          size: const Size(320, 4000),
+          home: const OrderDetailScreen(orderId: _orderId),
+          client: MockClient((_) async => _json(200, _order([_shopOrder()]))),
+        );
+        expect(tester.takeException(), isNull);
+        expect(find.byType(OrderLabelChip), findsWidgets);
+      });
+    }
 
     testWidgets('shows the Arabic layout right to left', (tester) async {
       await _pump(

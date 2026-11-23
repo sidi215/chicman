@@ -9,6 +9,13 @@ import { AdminShopQueries } from "../../src/modules/admin/index.js";
 import { CartService, type CartServiceFaults } from "../../src/modules/cart/index.js";
 import { FavoriteService, type FavoriteServiceFaults } from "../../src/modules/favorites/index.js";
 import { NotificationService } from "../../src/modules/notifications/index.js";
+import {
+  ModerationLifecycle,
+  ModerationQueries,
+  ProductReportService,
+  type ModerationLifecycleFaults,
+  type ProductReportFaults,
+} from "../../src/modules/moderation/index.js";
 import { CheckoutService, type CheckoutServiceFaults } from "../../src/modules/checkout/index.js";
 import { DeliveryLifecycle, DeliveryQueries, type DeliveryLifecycleFaults } from "../../src/modules/delivery/index.js";
 import { StockService } from "../../src/modules/inventory/index.js";
@@ -101,6 +108,8 @@ export interface HarnessFaults {
   checkout: CheckoutServiceFaults;
   orders: ShopOrderLifecycleFaults;
   delivery: DeliveryLifecycleFaults;
+  moderation: ModerationLifecycleFaults;
+  reports: ProductReportFaults;
 }
 
 export const CATALOG_INTERNAL_KEY = "k".repeat(32);
@@ -108,11 +117,13 @@ export const CATALOG_INTERNAL_KEY = "k".repeat(32);
 export const CHECKOUT_RESPONSE_TIMEOUT_HOURS = 48;
 export const CHECKOUT_RATE_LIMIT = { perUser: 20, perIp: 60, windowMs: 600_000 };
 export const DELIVERY_FAILED_AUTO_CLOSE_DAYS = 7;
+/** The configuration defaults (`config/env.ts`, spec 19). */
+export const PRODUCT_REPORT_RATE_LIMIT = { perUser: 10, perIp: 30, windowMs: 86_400_000 };
 
 export class ShopHarness {
   readonly jwks = new TestJwksServer();
   readonly storage = new FakeObjectStorage();
-  readonly faults: HarnessFaults = { shop: {}, lifecycle: {}, logo: {}, address: {}, productImage: {}, cart: {}, favorites: {}, checkout: {}, orders: {}, delivery: {} };
+  readonly faults: HarnessFaults = { shop: {}, lifecycle: {}, logo: {}, address: {}, productImage: {}, cart: {}, favorites: {}, checkout: {}, orders: {}, delivery: {}, moderation: {}, reports: {} };
   prisma!: PrismaClient;
   app!: RunningApp;
   logos!: LogoService;
@@ -130,6 +141,8 @@ export class ShopHarness {
   checkoutRateLimiter: RateLimiter = new MemoryRateLimiter();
   /** Replaceable, so a test can exhaust the order write limit. */
   orderRateLimiter: RateLimiter = new MemoryRateLimiter();
+  /** Replaceable, so a test can exhaust the product report limit (spec 19). */
+  reportRateLimiter: RateLimiter = new MemoryRateLimiter();
   /** The lifecycle the routes use, for the worker jobs in tests. */
   orderLifecycle!: ShopOrderLifecycle;
   /** The delivery lifecycle the routes use, for the closure job in tests. */
@@ -247,6 +260,19 @@ export class ShopHarness {
         notifications: new NotificationService(this.prisma),
         rateLimiter: { hit: (key, limit, windowMs) => this.notificationRateLimiter.hit(key, limit, windowMs) },
       },
+      moderation: (() => {
+        const queries = new ModerationQueries(this.prisma, MEDIA_BASE_URL);
+        return {
+          lifecycle: new ModerationLifecycle(this.prisma, queries, this.faults.moderation),
+          queries,
+          reports: new ProductReportService(this.prisma, this.faults.reports),
+          rateLimiter: {
+            hit: (key: string, limit: number, windowMs: number) =>
+              key.startsWith("product-report:") ? this.reportRateLimiter.hit(key, limit, windowMs) : this.productRateLimiter.hit(key, limit, windowMs),
+          },
+          reportRateLimit: PRODUCT_REPORT_RATE_LIMIT,
+        };
+      })(),
     });
   }
 
@@ -276,6 +302,7 @@ export class ShopHarness {
     this.notificationRateLimiter = new MemoryRateLimiter();
     this.checkoutRateLimiter = new MemoryRateLimiter();
     this.orderRateLimiter = new MemoryRateLimiter();
+    this.reportRateLimiter = new MemoryRateLimiter();
     this.searchEngine = undefined;
     this.searchLog.length = 0;
     await resetDatabase(this.prisma);

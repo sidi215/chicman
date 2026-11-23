@@ -16,6 +16,7 @@ import 'package:http/http.dart' as http;
 
 import '../addresses/fake_map.dart';
 import '../auth/fakes.dart';
+import 'drawer_helpers.dart';
 
 const _config = AppConfig(
   supabaseUrl: 'https://p.supabase.co',
@@ -96,8 +97,12 @@ ApiClient _api({
   'GET /customers/me/cart': (_) => (200, {'shops': <Object?>[]}),
 }, requests: requests);
 
-Future<void> _open(WidgetTester tester, ApiClient api) async {
-  await tester.binding.setSurfaceSize(const Size(600, 2600));
+Future<void> _open(
+  WidgetTester tester,
+  ApiClient api, {
+  Size size = const Size(600, 2600),
+}) async {
+  await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     ProviderScope(
@@ -217,31 +222,31 @@ void main() {
       );
     });
 
-    testWidgets('opens the existing screens from the tiles and sections', (
-      tester,
-    ) async {
-      await _open(
-        tester,
-        _api(
-          orders: [
-            _order('1', ['AWAITING_SHOP']),
-          ],
-          total: 1,
-        ),
-      );
-      await tester.tap(find.byKey(const Key('buyer-tile-orders')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('orders-list')), findsOneWidget);
-      tester.state<NavigatorState>(find.byType(Navigator).first).pop();
-      await tester.pumpAndSettle();
+    testWidgets(
+      'opens the existing screens from the tiles and the account drawer',
+      (tester) async {
+        await _open(
+          tester,
+          _api(
+            orders: [
+              _order('1', ['AWAITING_SHOP']),
+            ],
+            total: 1,
+          ),
+        );
+        await tester.tap(find.byKey(const Key('buyer-tile-orders')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('orders-list')), findsOneWidget);
+        tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('account-addresses')));
-      await tester.pumpAndSettle();
-      expect(find.byType(AddressListScreen), findsOneWidget);
-      tester.state<NavigatorState>(find.byType(Navigator).first).pop();
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('buyer-dashboard')), findsOneWidget);
-    });
+        await tapDrawerItem(tester, const Key('account-addresses'));
+        expect(find.byType(AddressListScreen), findsOneWidget);
+        tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('buyer-dashboard')), findsOneWidget);
+      },
+    );
 
     testWidgets('no order, no address, and a failed read are each explained', (
       tester,
@@ -262,6 +267,28 @@ void main() {
         findsOneWidget,
       );
     });
+
+    for (final scale in [1.3, 2.0]) {
+      testWidgets('fits a 320 px phone at ${scale}x text', (tester) async {
+        // Regression: the tiles' fixed aspect ratio and the recent orders
+        // header overflowed with large system text.
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await _open(
+          tester,
+          _api(
+            addresses: [_address(label: 'Maison de la famille')],
+            orders: [
+              _order('1', ['AWAITING_SHOP', 'OUT_FOR_DELIVERY']),
+            ],
+            total: 12,
+          ),
+          size: const Size(320, 4000),
+        );
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const Key('buyer-tile-address')), findsOneWidget);
+      });
+    }
 
     testWidgets('reads right to left in Arabic', (tester) async {
       tester.platformDispatcher.localesTestValue = const [Locale('ar')];

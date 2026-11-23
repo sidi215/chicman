@@ -27,8 +27,8 @@ import {
   type SearchHits,
   type SearchQuery,
 } from "../src/modules/search/index.js";
-import { searchTextWhere } from "../src/modules/products/index.js";
-import { ShopHarness, type Actor } from "./helpers/shop-harness.js";
+import { CatalogService, searchTextWhere } from "../src/modules/products/index.js";
+import { MEDIA_BASE_URL, ShopHarness, type Actor } from "./helpers/shop-harness.js";
 
 dotenv.config({ quiet: true });
 const databaseUrl = process.env["TEST_DATABASE_URL"];
@@ -382,6 +382,49 @@ describe("search indexing and results (spec 18, PostgreSQL)", { skip: databaseUr
     });
   });
 
+  describe("product moderation (spec 19)", () => {
+    const restrictBody = {
+      expectedStatus: "CLEAR",
+      sellerReasonCode: "COUNTERFEIT",
+      sellerMessage: "Ce produit semble être une contrefaçon.",
+      internalReason: "Vérifié par l'équipe de modération.",
+    };
+
+    it("queues every transition: a restriction removes the document, a restoration re-adds it", async () => {
+      const admin = await h.actor("ADMIN");
+      const item = await product({ name: "Robe modérée" });
+      await drain();
+      assert.equal(index.documents.has(item.id), true);
+
+      assert.equal((await h.call(`/admin/products/${item.id}/moderation/restrict`, admin.token, { method: "POST", body: restrictBody })).status, 200);
+      assert.deepEqual(await queued(), [item.id], "the trigger watches moderationStatus");
+      await drain();
+      assert.equal(index.documents.has(item.id), false);
+
+      const restore = { expectedStatus: "RESTRICTED", internalReason: "Restauration après vérification." };
+      assert.equal((await h.call(`/admin/products/${item.id}/moderation/restore`, admin.token, { method: "POST", body: restore })).status, 200);
+      assert.deepEqual(await queued(), [item.id]);
+      await drain();
+      assert.equal(index.documents.has(item.id), true);
+      // No moderation data in search documents.
+      assert.equal(/moderation|RESTRICTED|CLEAR/i.test(JSON.stringify(index.documents.get(item.id))), false);
+    });
+
+    it("excludes a moderated product a stale engine still returns", async () => {
+      const admin = await h.actor("ADMIN");
+      const visible = await product({ name: "Robe visible" });
+      const moderated = await product({ name: "Robe restreinte" });
+      await drain();
+      h.searchEngine = index;
+      assert.equal((await h.call(`/admin/products/${moderated.id}/moderation/restrict`, admin.token, { method: "POST", body: restrictBody })).status, 200);
+      // The index has not caught up: the engine still returns the moderated product.
+      assert.equal(index.documents.has(moderated.id), true);
+      const body = await search("q=robe");
+      assert.deepEqual(body.products.map((p) => p.id), [visible.id]);
+      assert.ok(!JSON.stringify(body).includes(moderated.id));
+    });
+  });
+
   describe("failures and recovery", () => {
     it("keeps failed tasks with a growing delay and an error code, then retries them", async () => {
       const item = await product();
@@ -454,8 +497,19 @@ describe("search indexing and results (spec 18, PostgreSQL)", { skip: databaseUr
       const body = await search("q=robe");
       assert.deepEqual(new Set(body.products.map((item) => item.id)), new Set([first.id, second.id]));
       assert.deepEqual(body.search, { degraded: false });
-      assert.equal(body.total, 4);
+      // Only visible products are counted (QA-06).
+      assert.equal(body.total, 2);
       assert.ok(!JSON.stringify(body).includes(hidden.id));
+
+      // Pages are cut after the check: full pages, and the last one is where the total says.
+      const page1 = await search("q=robe&pageSize=1&page=1");
+      const page2 = await search("q=robe&pageSize=1&page=2");
+      const page3 = await search("q=robe&pageSize=1&page=3");
+      assert.equal(page1.products.length, 1);
+      assert.equal(page2.products.length, 1);
+      assert.equal(page3.products.length, 0);
+      assert.deepEqual(new Set([page1.products[0]?.id, page2.products[0]?.id]), new Set([first.id, second.id]));
+      assert.equal(page2.total, 2);
 
       // Filters are applied again in PostgreSQL even when the engine ignores them.
       const filtered = await search("q=robe&maxPrice=1000");
@@ -484,6 +538,19 @@ describe("search indexing and results (spec 18, PostgreSQL)", { skip: databaseUr
       // Visibility still applies.
       await h.prisma.shop.update({ where: { id: shopId }, data: { status: "SUSPENDED" } });
       assert.equal((await search("q=robe")).total, 0);
+    });
+
+    it("SEARCH_ENGINE=postgres (no engine at all): PostgreSQL answers and the result is not degraded (QA-01)", async () => {
+      await product({ name: "Robe en soie", description: "Coupe ample" });
+      await product({ name: "Sandales", description: "Cuir" });
+      const catalog = new CatalogService(h.prisma, MEDIA_BASE_URL);
+      const query = catalogListQuerySchema.parse({ q: "ROBE ample" });
+      const body = await catalog.list(query);
+      assert.deepEqual(body.products.map((item) => item.name), ["Robe en soie"]);
+      assert.deepEqual(body.search, { degraded: false });
+      // Visibility still applies.
+      await h.prisma.shop.update({ where: { id: shopId }, data: { status: "SUSPENDED" } });
+      assert.equal((await catalog.list(query)).total, 0);
     });
 
     it("keeps the listing response unchanged without a query", async () => {
@@ -670,6 +737,27 @@ describe(
       await runSearchIndexing({ prisma: h.prisma, index });
       assert.equal((await search("robe")).total, 0);
       assert.deepEqual(await h.prisma.searchIndexTask.findMany(), []);
+    });
+
+    it("removes a restricted product's document and re-adds it when restored (spec 19)", async () => {
+      const admin = await h.actor("ADMIN");
+      const id = await publish("Tunique modérée", "1200.00");
+      await runSearchIndexing({ prisma: h.prisma, index });
+      assert.deepEqual((await search("tunique")).products.map((item) => item.id), [id]);
+      const restrict = {
+        expectedStatus: "CLEAR",
+        sellerReasonCode: "MISLEADING_INFORMATION",
+        sellerMessage: "La description ne correspond pas aux photos.",
+        internalReason: "Vérifié par l'équipe de modération.",
+      };
+      assert.equal((await h.call(`/admin/products/${id}/moderation/restrict`, admin.token, { method: "POST", body: restrict })).status, 200);
+      await runSearchIndexing({ prisma: h.prisma, index });
+      assert.equal((await index.search({ ...catalogListQuerySchema.parse({ q: "tunique" }), q: "tunique" })).total, 0, "document removed");
+      assert.equal((await search("tunique")).total, 0);
+      const restore = { expectedStatus: "RESTRICTED", internalReason: "Restauration après vérification." };
+      assert.equal((await h.call(`/admin/products/${id}/moderation/restore`, admin.token, { method: "POST", body: restore })).status, 200);
+      await runSearchIndexing({ prisma: h.prisma, index });
+      assert.deepEqual((await search("tunique")).products.map((item) => item.id), [id]);
     });
   },
 );

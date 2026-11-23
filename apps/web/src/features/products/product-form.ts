@@ -1,7 +1,9 @@
 import {
+  MODERATION_ERROR_CODES,
   PRODUCT_ERROR_CODES,
   PRODUCT_MAX_STOCK,
   productCreateSchema,
+  VARIANT_SINGLE_VALUE_MESSAGE,
   variantCreateSchema,
   variantUpdateSchema,
   type ProductCategory,
@@ -116,11 +118,13 @@ export interface VariantFormValues {
   size: string
   color: string
 }
-export type VariantErrorKey = "attributeRequired" | "tooLong" | "invalidStock"
+export type VariantErrorKey = "attributeRequired" | "tooLong" | "singleValue" | "invalidStock"
 const orNull = (value: string): string | null => (value.trim() === "" ? null : value)
 
 function variantError(error: z.ZodError): VariantErrorKey {
-  return error.issues.some((issue) => issue.code === "too_big") ? "tooLong" : "attributeRequired"
+  if (error.issues.some((issue) => issue.code === "too_big")) return "tooLong"
+  if (error.issues.some((issue) => issue.message === VARIANT_SINGLE_VALUE_MESSAGE)) return "singleValue"
+  return "attributeRequired"
 }
 
 export function buildVariantCreate(values: VariantFormValues, stockText: string): FormResult<z.output<typeof variantCreateSchema>, VariantErrorKey> {
@@ -200,6 +204,9 @@ export type ProductFailure =
   | "variant-limit"
   | "variant-attribute-required"
   | "image-limit"
+  | "under-review"
+  | "removed"
+  | "moderation-conflict"
   | "rate-limited"
   | "unavailable"
   | "error"
@@ -216,6 +223,10 @@ const CONFLICTS: Record<string, ProductFailure> = {
   [PRODUCT_ERROR_CODES.variantAlreadyExists]: "variant-exists",
   [PRODUCT_ERROR_CODES.variantLimitReached]: "variant-limit",
   [PRODUCT_ERROR_CODES.imageLimitReached]: "image-limit",
+  // Spec 19: seller writes while under review or once removed, and resubmission conflicts.
+  [MODERATION_ERROR_CODES.underReview]: "under-review",
+  [MODERATION_ERROR_CODES.removed]: "removed",
+  [MODERATION_ERROR_CODES.conflict]: "moderation-conflict",
 }
 
 export function interpretProductResult<T>(result: ApiResult<T>): ProductOutcome<T> {

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import dotenv from "dotenv";
+
 import { createAdvisoryLock } from "../src/workers/advisory-lock.js";
 import {
   RETENTION_INTERVAL_MS,
@@ -175,6 +177,8 @@ describe("retention worker schedule (spec 04)", () => {
   });
 });
 
+// Like every other suite: without this, the lock suite silently skipped (QA-05).
+dotenv.config({ quiet: true });
 const databaseUrl = process.env["TEST_DATABASE_URL"];
 
 describe("retention worker lock (PostgreSQL)", { skip: databaseUrl === undefined ? "TEST_DATABASE_URL is not set" : false }, () => {
