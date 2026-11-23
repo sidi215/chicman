@@ -17,6 +17,13 @@
   # started by a build hook (CI); every other build is skipped.
   ignore = "test -z \"$INCOMING_HOOK_TITLE\""
 
+# The site's UI setting for the functions directory was mistakenly set to this
+# file's path, which fails every build. Declaring it here overrides the UI value.
+# The folder does not need to exist: the app ships no hand-written functions
+# (Next.js server code is bundled by the Netlify Next.js runtime).
+[functions]
+  directory = "apps/web/netlify/functions"
+
 [build.environment]
   NODE_VERSION = "22"
   NEXT_TELEMETRY_DISABLED = "1"
