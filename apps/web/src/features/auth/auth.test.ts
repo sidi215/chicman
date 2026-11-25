@@ -130,6 +130,12 @@ describe("Supabase error mapping", () => {
     assert.equal(authErrorKey({ code: "over_email_send_rate_limit" }), "rateLimited")
     assert.equal(authErrorKey({ status: 429 }), "rateLimited")
     assert.equal(authErrorKey({ name: "AuthRetryableFetchError" }), "network")
+    // A real network failure has status 0; a 5xx is the server's, never the customer's network.
+    assert.equal(authErrorKey({ name: "AuthRetryableFetchError", status: 0, message: "Failed to fetch" }), "network")
+    assert.equal(authErrorKey({ name: "AuthRetryableFetchError", status: 500, message: "Error sending confirmation email" }), "emailSendFailed")
+    assert.equal(authErrorKey({ name: "AuthRetryableFetchError", status: 500, message: "Error sending recovery email" }), "emailSendFailed")
+    assert.equal(authErrorKey({ name: "AuthRetryableFetchError", status: 503, message: "Service Unavailable" }), "serviceUnavailable")
+    assert.equal(authErrorKey({ name: "AuthRetryableFetchError", status: 522, message: "HTTP 522" }), "serviceUnavailable")
     assert.equal(authErrorKey(new Error("x")), "generic")
   })
 

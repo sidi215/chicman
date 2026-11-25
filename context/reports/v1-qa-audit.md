@@ -3,13 +3,19 @@
 **Date:** 2026-11-17
 **Auditor role:** independent QA (did not write the code under review)
 **Commit audited:** `60ac066` on `develop` (working tree clean at the start of the audit)
-**Verdict:** **QA FAIL** (see section 14). The core marketplace logic tested well. V1 still cannot launch: required launch infrastructure is missing, the real-account journeys have never been run, one mobile-web layout defect remains, and the owner has not decided part of the V1 scope.
+**Verdict (2026-11-25):** **QA PASS WITH CONDITIONS → QA PASS on deployment** (see section 14). The project owner reports conditions C1–C6 done. The code for C1, C2, and C6 is complete, and the verdict becomes **QA PASS** once the post-deploy checks in section 14 pass on production. **Original verdict (2026-11-17):** **QA FAIL**. The core marketplace logic tested well. V1 still cannot launch: required launch infrastructure is missing, the real-account journeys have never been run, one mobile-web layout defect remains, and the owner has not decided part of the V1 scope.
 
 > **Update 2026-11-20 (project owner decisions after the audit):**
 > - **QA-02 closed.** The project owner reports that the real-account end-to-end verification (section 5 workflows, web and Android) is done. The auditor did not observe it.
 > - **QA-03 decided.** Individual product moderation is **V1**. Customer oversight, marketplace statistics, category CRUD, and ratings and reviews are **post-V1**. The scope gap is closed, but V1 now requires a feature that is neither designed nor built. It is tracked as **QA-08 (High)** below, with its design open as O11.
 > - **Verdict unchanged: QA FAIL.** QA-01 (Critical) and QA-08 (High) remain. QA-04 and QA-05 (Medium) are unchanged.
 > - Docs updated: `project-overview.md`, `architecture.md`, `ui-context.md`, `business-decisions-features-10-18.md` (O4, O10, new O11), specs 16 and 17, `progress-tracker.md`.
+
+> **Update 2026-11-25 (deployment complete):**
+> - **QA-01 closed.** The project owner reports the free-provider deployment complete: API and worker on Render, web on Netlify, Supabase with Gmail custom SMTP, R2 media. Public registration with an outside address works after the Gmail app password was set (Supabase SMTP errors 535 and then 534 before that).
+> - **Live checks by the auditor (read-only):** API health `ok`, HSTS, and CORS for `https://chicman.netlify.app`; search answers `degraded: false` (PostgreSQL search); the R2 bucket root returns 404 (no public listing); an approved shop's product image and shop logo return `200 image/jpeg` from `r2.dev`; the web app answers 200 and `/register` loads.
+> - **Production logo incident (shop `9f5c3100…`, 2026-11-24):** the logo URL returned 404 while the object was absent from both buckets. The read-only audit found no code path that saves `logoUrl` before a successful media write. The likely cause is an `S3_ENDPOINT` with a bucket path, which makes the SDK store objects under keys prefixed with the bucket name. This was shown offline but not confirmed in production. On 2026-11-25 the logo and the product image load (200); the auditor did not observe the configuration change.
+> - **Verdict: QA PASS WITH CONDITIONS** (section 14).
 
 ---
 
@@ -223,6 +229,8 @@ Console: the only errors on `/login` come from inside Cloudflare's Turnstile ifr
 
 ### QA-01 — Launch prerequisites incomplete: public email delivery and production deployment (Critical)
 
+**Closed 2026-11-25:** deployed and working, as reported by the project owner; the auditor's live checks are in the 2026-11-25 update at the top. What remains goes to the launch conditions in section 14, not to this finding.
+
 **Status 2026-11-21:** artifacts implemented for a free-provider launch (owner decisions: free providers only; Render for the API; Netlify for the web; PostgreSQL search): `render.yaml`, `apps/api/Dockerfile.prod`, the API + worker launcher, `SEARCH_ENGINE=postgres`, `apps/web/netlify.toml` and the `assetlinks.json` build step, the nightly encrypted backup workflow, Android release signing, and the runbook `infrastructure/render/README.md`. Verified locally: the production image runs as on Render (migrations at start, API and worker, about 220 MB, health `ok`, search not degraded; graceful stop exits 0; a crashed process stops the container for a restart); config and search tests (46/46) and the API typecheck pass. Not verifiable without the accounts: the Render and Netlify deploys, Netlify's pnpm monorepo build, and the proxy hop counts (`TRUST_PROXY_HOPS`). **Still open until the owner provisions the services** and the runbook's checks (step 7) pass on the live URLs. (An earlier self-hosted VM variant of 2026-11-20 was replaced the next day.)
 
 - **Platform:** all.
@@ -335,14 +343,14 @@ Console: the only errors on `/login` come from inside Cloudflare's Turnstile ifr
 
 | ID | Severity | Business impact |
 |---|---|---|
-| QA-01 | Critical | No public registration and no production deployment; V1 cannot launch |
+| QA-01 | ~~Critical~~ Closed 2026-11-25 | Deployed; public registration works |
 | QA-02 | ~~High~~ Closed 2026-11-20 | Real-account verification reported done by the project owner |
 | QA-03 | ~~High~~ Decided 2026-11-20 | Scope decided; the remaining gap is QA-08 |
-| QA-08 | High | Required V1 product moderation is missing; a bad listing can only be handled by suspending the whole shop |
-| QA-04 | Medium | First impression on phones; sign-in hidden |
-| QA-05 | Medium | Regressions can merge undetected; the worker single-writer guarantee is untested in routine runs |
-| QA-06 | Low | Brief count mismatch in search results |
-| QA-07 | Informational | Data quality and documentation hygiene |
+| QA-08 | ~~High~~ Closed 2026-11-22 | Product moderation built (spec 19) and reviewed by the project owner |
+| QA-04 | ~~Medium~~ Fixed 2026-11-22 | Header wraps; verified 320–1440 px, French and Arabic |
+| QA-05 | ~~Medium~~ Fixed 2026-11-22 | CI on every push and pull request; deploys only after green CI |
+| QA-06 | ~~Low~~ Fixed 2026-11-22 | Exact totals with a stale index |
+| QA-07 | ~~Informational~~ Fixed 2026-11-22 | Variant values, docs, dev ports, unused dependency |
 
 No defect was found in checkout, stock, order lifecycle, delivery, COD amounts, authorization, or notification idempotency.
 
@@ -389,6 +397,34 @@ The independent probes used for this audit are kept outside the repository, in t
 **Order as of 2026-11-20:** items 1 and 5 are done (scope decided; real-account checks reported done). Next: decide O11 and build product moderation (QA-08), then QA-01, QA-04, and QA-05.
 
 ## 14. Final decision
+
+**2026-11-25 (later): all six conditions reported done by the project owner.**
+
+- **C1, C2, C6** are code complete and verified locally: web 320/320, Flutter 318/318, API config 22/22, typecheck, lint. They ship in the commit after `35460a6`. The auditor's live check before that push still served the old code.
+- **C3:** the Netlify variables are reported set. `/.well-known/assetlinks.json` still returned 404 before the push; the next build (triggered by the push) generates the file.
+- **C4, C5** are reported done by the owner and cannot be observed from outside.
+
+**Post-deploy checks (each closes its condition; then the verdict is QA PASS):**
+1. C6: `curl -s https://chicman.netlify.app/register | grep -c "head.removeChild(node)"` prints `1`, and the browser console on `/register` shows no React #418.
+2. C3: `curl https://chicman.netlify.app/.well-known/assetlinks.json` returns JSON with `com.chicman.chicman` and the release fingerprint; `adb shell pm get-app-links com.chicman.chicman` shows `verified`.
+3. C2: the Render deploy is live and `/api/v1/health` returns `ok` (an endpoint with a path would stop the API from starting).
+4. C1: a sign-up attempt while SMTP fails shows "L'e-mail n'a pas pu être envoyé…" rather than the network message (optional; needs a deliberate SMTP failure).
+
+**2026-11-25: QA PASS WITH CONDITIONS.** Every finding (QA-01 to QA-08) is closed or fixed, and the live production checks pass. V1 may take real users under these conditions, each owned by the project owner:
+
+| # | Condition | Why it matters | Status |
+|---|---|---|---|
+| C1 | Commit and deploy the auth error-message fix (web and Flutter): a failed Supabase email send or a 5xx is shown as "email could not be sent" or "service unavailable", not as a network error | Without it, an SMTP outage tells users to check their network | Code complete (web 320/320, Flutter 318/318); owner reports done; **closes with post-deploy check 4** |
+| C2 | Reject an `S3_ENDPOINT` that includes a path (config validation, test, runbook warning) | Prevents a repeat of the logo incident: uploads report success but images 404 | **Fixed 2026-11-25:** `parseStorageConfig` refuses an endpoint with a path, query, or fragment (the API does not start); config tests 22/22; runbook warning. Owner reports the Render value checked; **closes with post-deploy check 3** |
+| C3 | Set `ANDROID_PACKAGE_NAME` and `ANDROID_CERT_SHA256` on Netlify and rebuild, before distributing the Android APK | `/.well-known/assetlinks.json` returns 404, so App Links (email links opening the app) cannot verify | Owner reports the Netlify variables set; **closes with post-deploy check 2** |
+| C4 | Confirm Render's and Netlify's proxy hop counts and set `TRUST_PROXY_HOPS` | Per-IP rate limits may group visitors or be bypassable until then; per-user limits are unaffected | Reported done by the project owner (2026-11-25) |
+| C5 | Owner checklist, not observed by the auditor: protect `main` with the three CI checks and set the deploy-hook secrets; backup secrets and one manual backup run; UptimeRobot keep-alive; database password rotation; the security audit the owner planned before launch | Operational safety: unreviewed deploys, no restorable backup, a sleeping worker | Reported done by the project owner (2026-11-25); not observable by the auditor |
+| C6 | Fix React error #418 (hydration mismatch) on `/register` | Console error; React re-renders the page on the client | **Fixed 2026-11-25:** the cause is Netlify's HTML comment injected into `<head>` on every production page (cannot be disabled); #418 on every load with it, none with it removed. `headCleanupScript` (in the inline theme script) removes comments and blank text from `<head>` before hydration. Verified against production HTML: 6 loads (register, home, login, Arabic), comment served, no #418; web 320/320. **Closes with post-deploy check 1** |
+
+The free-tier limits in `infrastructure/render/README.md` (Gmail about 500 emails a day, `r2.dev` rate limits, a single Render instance) are accepted by the owner for the launch, not defects.
+
+---
+
 
 **2026-11-22:** QA-05, QA-06, and QA-07 fixed; QA-08 built and its manual checks done by the project owner. QA-01 (deployment) is deferred by the owner until after a security audit, so the verdict stays **QA FAIL** for launch until QA-01 passes. QA-04 fixed and verified the same day, and QA-08 reviewed and closed: **QA-01 is the only open finding.**
 

@@ -96,7 +96,7 @@ Below, replace them with your real URLs.
    | `SUPABASE_JWT_ISSUER` | `https://<ref>.supabase.co/auth/v1` |
    | `SUPABASE_PUBLISHABLE_KEY` | from step 2.3 |
    | `CATALOG_INTERNAL_KEY` | `openssl rand -hex 32`; the **same** value goes to Netlify |
-   | `S3_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` |
+   | `S3_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com`, **with nothing after `.com`**. The bucket page's "S3 API" URL ends in the bucket name; the API refuses to start with it, because objects would be stored under the wrong keys and every image would return 404. |
    | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | the Object Read & Write token |
    | `MEDIA_PUBLIC_BASE_URL` | `https://pub-<id>.r2.dev` |
 

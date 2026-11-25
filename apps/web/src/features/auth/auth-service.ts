@@ -62,7 +62,10 @@ export function createAuthService(supabase: SupabaseClient, callbackUrl: () => s
       })
       if (!error) return { ok: true }
       const key = authErrorKey(error)
-      return key === "rateLimited" || key === "captchaFailed" || key === "network" || key === "invalidEmail"
+      // A failed recovery e-mail stays hidden: only registered addresses get
+      // one, so showing it would reveal registration (spec 03). An outage
+      // affects every address alike and is shown.
+      return key === "rateLimited" || key === "captchaFailed" || key === "network" || key === "invalidEmail" || key === "serviceUnavailable"
         ? { ok: false, error: key }
         : { ok: true }
     },

@@ -148,6 +148,26 @@ describe("API configuration", () => {
       );
       assert.throws(() => loadConfig({ ...db, ...storage, LOGO_COMPLETION_LEASE_MS: "-1" }));
     });
+
+    it("refuses an S3_ENDPOINT with a path or bucket name (keys would be prefixed with the bucket)", () => {
+      for (const endpoint of [
+        "https://acct.r2.cloudflarestorage.com/chicman-uploads",
+        "https://acct.r2.cloudflarestorage.com/chicman-media/",
+        "http://localhost:8333/?x=1",
+      ]) {
+        assert.throws(
+          () => loadConfig({ ...db, ...storage, S3_ENDPOINT: endpoint }),
+          (error: Error) => error.message.includes("S3_ENDPOINT: must be the service URL only") && !error.message.includes("secret-value"),
+          endpoint,
+        );
+      }
+    });
+
+    it("accepts an S3_ENDPOINT without a path, with or without a trailing slash", () => {
+      for (const endpoint of ["https://acct.r2.cloudflarestorage.com", "https://acct.r2.cloudflarestorage.com/", "http://localhost:8333"]) {
+        assert.equal(loadConfig({ ...db, ...storage, S3_ENDPOINT: endpoint }).storage?.endpoint, endpoint);
+      }
+    });
   });
 
   describe("search engine (spec 18)", () => {
