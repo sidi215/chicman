@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useSyncExternalStore } from "react"
 
+import { headCleanupScript } from "@/lib/head-cleanup"
 import { THEME_INIT_FLAG, themeInitScript } from "@/lib/theme"
 
 const subscribe = () => () => {}
@@ -13,6 +14,10 @@ const subscribe = () => () => {}
  * Next answers a 404 with an empty document that the browser fills in. There,
  * React would create a <script> it never runs, and warns about it, so the
  * script is added directly instead.
+ *
+ * The server-rendered script also removes host-injected nodes from <head>
+ * before hydration (`headCleanupScript`); the 404 document is rendered on the
+ * client, so it has nothing to clean.
  */
 export function ThemeInit() {
   const fromHtml = useSyncExternalStore(subscribe, () => false, () => true)
@@ -24,5 +29,5 @@ export function ThemeInit() {
     document.head.append(script)
   }, [])
 
-  return fromHtml ? <script dangerouslySetInnerHTML={{ __html: themeInitScript }} /> : null
+  return fromHtml ? <script dangerouslySetInnerHTML={{ __html: `${headCleanupScript}\n${themeInitScript}` }} /> : null
 }

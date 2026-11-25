@@ -187,6 +187,10 @@ class AuthMessages {
       AuthFailure.captchaFailed:
           'La vérification anti-robot a échoué. Réessayez.',
       AuthFailure.network: 'Connexion impossible. Vérifiez votre réseau.',
+      AuthFailure.emailSendFailed:
+          'L\'e-mail n\'a pas pu être envoyé. Réessayez dans quelques minutes.',
+      AuthFailure.serviceUnavailable:
+          'Le service est momentanément indisponible. Réessayez dans quelques minutes.',
       AuthFailure.notConfigured: 'L\'authentification n\'est pas configurée.',
       AuthFailure.generic: 'Une erreur est survenue. Réessayez.',
     },
@@ -291,6 +295,10 @@ class AuthMessages {
       AuthFailure.captchaRequired: 'أكمل التحقق من أنك لست روبوتًا.',
       AuthFailure.captchaFailed: 'فشل التحقق من أنك لست روبوتًا. أعد المحاولة.',
       AuthFailure.network: 'تعذّر الاتصال. تحقق من الشبكة.',
+      AuthFailure.emailSendFailed:
+          'تعذّر إرسال البريد الإلكتروني. أعد المحاولة بعد بضع دقائق.',
+      AuthFailure.serviceUnavailable:
+          'الخدمة غير متاحة مؤقتًا. أعد المحاولة بعد بضع دقائق.',
       AuthFailure.notConfigured: 'المصادقة غير مهيأة.',
       AuthFailure.generic: 'حدث خطأ. أعد المحاولة.',
     },

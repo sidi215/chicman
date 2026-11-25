@@ -104,8 +104,8 @@ class SupabaseAuthRepository implements AuthRepository {
     try {
       await action();
       return null;
-    } on supa.AuthRetryableFetchException {
-      return AuthFailure.network;
+    } on supa.AuthRetryableFetchException catch (error) {
+      return authFailureFromRetryable(error.statusCode, error.message);
     } on supa.AuthException catch (error) {
       if (hideEnumeration && isEnumerationSensitive(error.code)) return null;
       return authFailureFromCode(error.code, statusCode: error.statusCode);
@@ -175,6 +175,9 @@ class SupabaseAuthRepository implements AuthRepository {
       AuthFailure.rateLimited ||
       AuthFailure.captchaFailed ||
       AuthFailure.network ||
+      // An outage affects every address alike; a failed recovery e-mail stays
+      // hidden, since only registered addresses get one (spec 03).
+      AuthFailure.serviceUnavailable ||
       AuthFailure.invalidEmail => failure,
       _ => null,
     };

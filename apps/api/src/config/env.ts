@@ -256,6 +256,18 @@ function parseStorageConfig(env: ParsedEnv): { storage: StorageConfig | undefine
     const value = env[key];
     if (value !== undefined && value !== "" && !httpUrl.safeParse(value).success) errors.push(`  - ${key}: must be an http(s) URL`);
   }
+  // The S3 client keeps an endpoint's path and adds the bucket after it, so
+  // `https://<account>.r2.cloudflarestorage.com/chicman-uploads` (the per-bucket
+  // "S3 API" URL Cloudflare shows) would store every object in that bucket
+  // under a key prefixed with the configured bucket name: uploads succeed while
+  // the public URLs return 404.
+  const endpoint = env.S3_ENDPOINT;
+  if (endpoint !== undefined && endpoint !== "" && httpUrl.safeParse(endpoint).success) {
+    const url = new URL(endpoint);
+    if (url.pathname !== "/" || url.search !== "" || url.hash !== "") {
+      errors.push("  - S3_ENDPOINT: must be the service URL only, without a path or bucket name (R2: https://<account-id>.r2.cloudflarestorage.com)");
+    }
+  }
   if (errors.length > 0) return { storage: undefined, errors };
   return {
     errors,

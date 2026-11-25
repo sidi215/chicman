@@ -13,6 +13,8 @@ enum AuthFailure {
   captchaRequired,
   captchaFailed,
   network,
+  emailSendFailed,
+  serviceUnavailable,
   notConfigured,
   generic,
 }
@@ -39,6 +41,21 @@ AuthFailure authFailureFromCode(String? code, {String? statusCode}) {
   }
   if (statusCode == '429') return AuthFailure.rateLimited;
   return AuthFailure.generic;
+}
+
+/// A retryable auth error: the client throws it for a real network failure
+/// (no status) and for every server response of 500 or more. A server error
+/// is never the customer's network (production sign-up, 2026-11-24: "Error
+/// sending confirmation email" read "check your network").
+AuthFailure authFailureFromRetryable(String? statusCode, String message) {
+  final status = int.tryParse(statusCode ?? '');
+  if (status == null || status < 500) return AuthFailure.network;
+  return RegExp(
+        r'error sending .*email',
+        caseSensitive: false,
+      ).hasMatch(message)
+      ? AuthFailure.emailSendFailed
+      : AuthFailure.serviceUnavailable;
 }
 
 /// Sign-up and resend errors that must look like success, so a response

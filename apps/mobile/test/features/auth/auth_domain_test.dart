@@ -21,6 +21,38 @@ Future<SessionCheck> check(int status, [Object? body]) async =>
     );
 
 void main() {
+  group('authFailureFromRetryable (server errors are not network errors)', () {
+    test('no status is a network failure', () {
+      expect(
+        authFailureFromRetryable(null, 'ClientException: Failed host lookup'),
+        AuthFailure.network,
+      );
+    });
+    test('a failed confirmation or recovery e-mail', () {
+      expect(
+        authFailureFromRetryable(
+          '500',
+          '{"code":"unexpected_failure","message":"Error sending confirmation email"}',
+        ),
+        AuthFailure.emailSendFailed,
+      );
+      expect(
+        authFailureFromRetryable('500', 'Error sending recovery email'),
+        AuthFailure.emailSendFailed,
+      );
+    });
+    test('any other 5xx is the service', () {
+      expect(
+        authFailureFromRetryable('503', 'Service Unavailable'),
+        AuthFailure.serviceUnavailable,
+      );
+      expect(
+        authFailureFromRetryable('522', ''),
+        AuthFailure.serviceUnavailable,
+      );
+    });
+  });
+
   group('phone normalization (same rule as web)', () {
     test('normalizes to E.164', () {
       expect(normalizePhoneNumber('22 12 34 56'), '+22222123456');

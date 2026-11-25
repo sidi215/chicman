@@ -2,6 +2,8 @@
 
 ## Current Phase
 
+**V1 deployed (2026-11-25): QA PASS WITH CONDITIONS; QA PASS once the post-deploy checks pass.** C1–C6 are reported done by the project owner. Production runs on free providers: the web app at `https://chicman.netlify.app`, the API and worker at `https://chicman-api.onrender.com`, Supabase (database and auth, Gmail custom SMTP), and R2 media through `r2.dev`. Every QA finding is closed; launch conditions C1–C6 are in `reports/v1-qa-audit.md` section 14.
+
 **Account types (AT-1, 2026-11-13): all phases done: contracts, migrations, API, operator tools, the development database (migrated, classified, provisioned, shop "vibe" transferred), the web, and Flutter (buyer only). Real-account end-to-end verification (registrations, web and Android) reported done by the project owner (2026-11-20).**
 
 **V1 scope decided (project owner, 2026-11-20):** individual product moderation is V1, specified in `feature-specs/19-product-moderation.md` (approved 2026-11-20 with PD-1 to PD-12; **implemented 2026-11-20**, pending the development migration and real-account checks); customer oversight, marketplace statistics, category CRUD, and ratings and reviews are post-V1. Independent QA audit: `reports/v1-qa-audit.md`.
@@ -68,6 +70,14 @@ Details: `feature-specs/03-authentication.md` (Verification Status) and `feature
 | 19 | Product Moderation | `feature-specs/19-product-moderation.md` | In Progress (2026-11-20: implemented on the API, web, and Flutter; every checklist item covered by automated tests or a browser run with a stubbed session; API 743, web 315, Flutter 315; migration applied to the **test database only**; a real sign-in and Android on a device are **not verified**; not committed) |
 
 ## Completed Work
+
+### QA-01: production deployment (2026-11-25)
+
+- **Deployed by the project owner** following `infrastructure/render/README.md`. Sign-up first failed because Supabase could not send email: Gmail returned 535 (bad credentials), then 534 (an app password is required). It works with a Gmail app password.
+- **Auth error messages (built 2026-11-24, not committed):** web `auth-errors.ts` and Flutter `authFailureFromRetryable` map a Supabase 5xx to `emailSendFailed` ("Error sending … email") or `serviceUnavailable`, instead of the network message; password reset still hides `emailSendFailed` (anti-enumeration). Web 317/317, Flutter 318/318, typecheck, lint, and analyze pass.
+- **Logo incident (2026-11-24):** shop `9f5c3100…` had a `logoUrl` that returned 404. The read-only audit found the code sound, since `logoUrl` is committed only after the media write succeeds. The likely cause is an `S3_ENDPOINT` with a bucket path, under which the SDK prefixes keys with the bucket name; this was shown offline only. On 2026-11-25 the logo and the product images load from `r2.dev`.
+- **Live checks (auditor, read-only, 2026-11-25):** health, HSTS, CORS, search `degraded: false`, R2 root not listable, logo and product image 200, web pages 200. `/.well-known/assetlinks.json` returns 404 (Android values not set on Netlify).
+- **Admins** are created with `admin:provision` from the owner's machine against the session pooler URL (runbook step 7.5).
 
 ### QA-04: storefront header overflow on phones (2026-11-22)
 
@@ -1089,7 +1099,7 @@ Each finding was checked against the code first. Findings that the code already 
 
 **AT-1 account types (owner):** all eight phases are implemented (2026-11-13). The real-account checks are reported done by the project owner (2026-11-20). Previously listed manual checks: a real buyer registration (web and Android) and a real seller registration (web) with email confirmation and Turnstile, through setup; sign in as the provisioned administrator and the Sellers of "chicrim" and "vibe" on the web and on Android (managed-on-web screen); decide whether to remove the now unused `image_picker` dependency. Later release: drop `UserRole`/`Role`.
 
-**QA-01, free-provider launch (next, owner):** the artifacts are implemented (2026-11-21): `render.yaml` (API + worker, Key Value), `apps/api/Dockerfile.prod`, `apps/api/scripts/start-api-and-worker.mjs`, `SEARCH_ENGINE=postgres` (API config, catalog, worker; tests), `apps/web/netlify.toml`, `apps/web/scripts/write-assetlinks.mjs`, `.github/workflows/db-backup.yml`, Android release signing from `android/key.properties`. Merge to `main`, then follow `infrastructure/render/README.md` steps 1–9. Open: the proxy hop counts of Render and Netlify for `TRUST_PROXY_HOPS` (step 7.8).
+**Launch conditions C1–C6 (QA report section 14):** reported done by the project owner (2026-11-25). The C1, C2, and C6 code ships in the commit after `35460a6`. After that deploy, run the four post-deploy checks in the QA report's section 14 (C6 cleanup script served and no #418; `assetlinks.json` served and `verified` on a device; API healthy with the checked `S3_ENDPOINT`; optionally the SMTP-failure message). Then the verdict is QA PASS.
 
 **Before production (web storefront):** set the same `CATALOG_INTERNAL_KEY` on the API and web, set `NEXT_PUBLIC_SITE_URL` to the real domain (canonical URLs use it), and put the web server behind a proxy that sets `X-Forwarded-For`. `robots.txt` is fixed at build time, so build with the real domain set. Then submit `/sitemap.xml` to Google Search Console.
 

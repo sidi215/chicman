@@ -6,7 +6,7 @@ import type { AuthErrorKey } from "./messages"
  */
 export function authErrorKey(error: unknown): AuthErrorKey {
   if (typeof error !== "object" || error === null) return "generic"
-  const { code, status, name } = error as { code?: unknown; status?: unknown; name?: unknown }
+  const { code, status, name, message } = error as { code?: unknown; status?: unknown; name?: unknown; message?: unknown }
   switch (code) {
     case "invalid_credentials":
       return "invalidCredentials"
@@ -26,6 +26,13 @@ export function authErrorKey(error: unknown): AuthErrorKey {
       return "invalidEmail"
   }
   if (status === 429) return "rateLimited"
+  // supabase-js reports every 5xx from Supabase as AuthRetryableFetchError
+  // with that status, and a real network failure with status 0. A server
+  // error must never be shown as the customer's network (production sign-up,
+  // 2026-11-24: "Error sending confirmation email" read "check your network").
+  if (typeof status === "number" && status >= 500) {
+    return typeof message === "string" && /error sending .*email/i.test(message) ? "emailSendFailed" : "serviceUnavailable"
+  }
   if (name === "AuthRetryableFetchError") return "network"
   return "generic"
 }
